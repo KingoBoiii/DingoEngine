@@ -2,7 +2,17 @@
 
 Read on demand from CLAUDE.md. The full source tree, where issues and reviews live, and what each release contained (the plan itself is ROADMAP.md).
 
+Index (Grep the heading, Read to the next one).
+- Project structure: Source tree, Vendor forks.
+- Issues, docs and reviews: Known bugs, v0.9 findings, Backlog, docs, Reviews.
+- Version history: v0.5.1, v0.6.0, v0.6.1, v0.6.2, v0.6.3, v0.7.0, v0.7.1, v0.7.2.
+- v0.8 line: v0.8.0, v0.8.1, v0.8.2, v0.8.3, Open from v0.8.
+- v0.9 line: v0.9.0, Candlewick on v0.9, Marionette on v0.9, v0.9.1.
+- v1.0 line: v1.0.0, After 1.0, Not in the version train.
+
 ## Project structure
+
+### Source tree
 
 ```
 include/DingoEngine/       Public API headers (Core, Graphics, Events, Windowing,
@@ -48,37 +58,162 @@ test/                      Dingo-TestFramework — interactive graphics/renderer
 docs/                      Per-feature docs (see Issues, docs and reviews below)
 ```
 
-Vendor forks that upstream as CMake (e.g. box2d) carry their own `premake5.lua`, `include`d from the root workspace.
+### Vendor forks
 
-
+- Vendor forks that upstream as CMake (e.g. box2d) carry their own `premake5.lua`, `include`d from the root workspace.
 
 ## Issues, docs and reviews
 
-- **Known bugs are GitHub issues** (since 2026-10-06): `bug` for defects and latent bugs, `enhancement` for limitations. `KNOWN-BUGS.md` is gone: the K-numbers plans and reviews cite are issues #73–#83, each with its K-number at the end of its title (K10 → #73 … K25 → #83); K1–K9, K12–K15 and K20 were fixed before the move (`git log -- KNOWN-BUGS.md`), and K18, K19 and K21–K24 in v0.8.3.
+### Known bugs
+
+- **Known bugs are GitHub issues** (since 2026-10-06):
+- `bug` for defects and latent bugs, `enhancement` for limitations.
+- `KNOWN-BUGS.md` is gone: the K-numbers plans and reviews cite are issues #73–#83, each with its K-number at the end of its title (K10 → #73 … K25 → #83); K1–K9, K12–K15 and K20 were fixed before the move (`git log -- KNOWN-BUGS.md`), and K18, K19 and K21–K24 in v0.8.3.
+
+### v0.9 findings
+
 - **v0.9's open findings are issues #111–#143**, filed 2026-10-08: the review's (#111–#142, the review ID at the end of each title), the missing per-light caster exclusion (#137) and *Candlewick*'s two leftovers (#143), the last two done on `feat/enhancement-physics3d-animation-loader`.
-- **Engine gaps no milestone takes are `enhancement` issues** too: `ROADMAP-BACKLOG.md` is gone. Its unplanned items were #98 (game UI layer, still open) and #99–#104 (Marionette's six, done on `feat/enhancement-physics3d-animation-loader` with #104's root-motion design in `.claude/plans/2026-10-09-enhancement-plan.md`); the rest shipped by v0.8.2 or sit in ROADMAP.md's v1.0. Plans cite its items as `#1b`, `#4a`… — the last full version is `git show 5c2e057:ROADMAP-BACKLOG.md`.
-- `docs/` — `getting-started`, `application-and-layers`, `scenes-and-ecs`, `rendering-2d`, `physics-2d`, `physics-3d`, `asset-pipeline`, `lighting`, `animation` (v0.8), `audio`, `saves-and-settings` (v1.0 P8), `versioning` and `conventions` (v1.0 P9: SemVer rules and the one lifetime rule), `distribution` (asset packages), `performance` and `shipping` (v1.0 P11), `migrating-to-1.0` (every v0.9 to 1.0 break), and `Doxyfile` (the API reference, v1.0 P11: `doxygen docs/Doxyfile`). Keep the relevant one in step when changing a public API.
-- `.claude/reviews/` — dated code-review reports, findings keyed `B*`/`O*`/`R*` with a per-finding fix status. The current ones are `2026-10-08-v0.9.0-review.md` (the v0.9 engine work: every finding fixed, 3 High, 11 Medium, 24 Low and the test gaps, the last as issues #111–#136 and #138–#142, titled "(v0.9 review <ID>)"; only #137 and #143 stay open), `2026-10-03-v0.8.0-review.md` (the animation engine work: every finding fixed or closed, the last 11 Lows in v1.0 P1), `2026-10-04-marionette-review.md` (the v0.8 game), `2026-10-01-v0.7.0-review.md` (the lighting engine work) and `2026-10-01-candlewick-review.md` (the game). Take the *fix-status section*, not the summary sentence, as the state, and confirm against `git log` before believing either. `2026-07-29-v0.6.0-review.md` is closed out; read it before touching the asset/hot-reload path, where it also records why a passing "before" run in an A/B repro is suspect.
+
+### Backlog
+
+- **Engine gaps no milestone takes are `enhancement` issues** too:
+- `ROADMAP-BACKLOG.md` is gone.
+- Its unplanned items were #98 (game UI layer, still open) and #99–#104 (Marionette's six, done on `feat/enhancement-physics3d-animation-loader` with #104's root-motion design in `.claude/plans/2026-10-09-enhancement-plan.md`); the rest shipped by v0.8.2 or sit in ROADMAP.md's v1.0.
+- Plans cite its items as `#1b`, `#4a`… — the last full version is `git show 5c2e057:ROADMAP-BACKLOG.md`.
+
+### docs
+
+- `docs/` — `getting-started`, `application-and-layers`, `scenes-and-ecs`, `rendering-2d`, `physics-2d`, `physics-3d`, `asset-pipeline`, `lighting`, `animation` (v0.8), `audio`, `saves-and-settings` (v1.0 P8), `versioning` and `conventions` (v1.0 P9: SemVer rules and the one lifetime rule), `distribution` (asset packages), `performance` and `shipping` (v1.0 P11), `migrating-to-1.0` (every v0.9 to 1.0 break), and `Doxyfile` (the API reference, v1.0 P11: `doxygen docs/Doxyfile`).
+- Keep the relevant one in step when changing a public API.
+
+### Reviews
+
+- `.claude/reviews/` — dated code-review reports, findings keyed `B*`/`O*`/`R*` with a per-finding fix status.
+- The current ones are `2026-10-08-v0.9.0-review.md` (the v0.9 engine work: every finding fixed, 3 High, 11 Medium, 24 Low and the test gaps, the last as issues #111–#136 and #138–#142, titled "(v0.9 review <ID>)"; only #137 and #143 stay open),
+- `2026-10-03-v0.8.0-review.md` (the animation engine work: every finding fixed or closed, the last 11 Lows in v1.0 P1),
+- `2026-10-04-marionette-review.md` (the v0.8 game),
+- `2026-10-01-v0.7.0-review.md` (the lighting engine work) and `2026-10-01-candlewick-review.md` (the game).
+- Take the *fix-status section*, not the summary sentence, as the state, and confirm against `git log` before believing either.
+- `2026-07-29-v0.6.0-review.md` is closed out; read it before touching the asset/hot-reload path, where it also records why a passing "before" run in an A/B repro is suspect.
 
 ## Version history
 
 The plan is [ROADMAP.md](../../ROADMAP.md) (v0.1 → v1.0); below is what each release shipped and where its branch, PR and plan live.
 
-- **v0.5.1** (merged): input rework + gamepad support.
-- **v0.6.0** (merged, `86abb61`): the asset pipeline described in engine-patterns.md — `AssetManager`, async loading, in-place texture/shader hot-reload, source-hash-validated shader cache, the F6 Assets panel — showcased by `examples/ArenaShooter` and the test app's Asset Manager Test (`--test=asset`), then a full review pass (see "Issues, docs and reviews" above).
-- **v0.6.1**: `Renderer3D` passes mesh UVs to custom materials as `a_TexCoord`. **v0.6.2**: game-workaround cleanup (cursor modes, focus event, any-input queries, executable-relative paths, 3D audio attenuation — see ROADMAP) plus mesh colliders — `ColliderShape3D::Mesh`/`ConvexHull`, `MeshCollider3DComponent`, opt-in `ContinuousCollision`, test app's Mesh Collider Test (`--test=collider`). **v0.6.3**: the known-bug sweep — K4, K5, K7, K8, K9, K12, K13 fixed, one commit each; K10 (GLM in public headers) and K11 (device migration across GPUs) deliberately deferred.
-- **v0.7.0** (engine work and the *Candlewick* example done on the branch, P0–P8 of `.claude/plans/2026-09-26-v0.7-lighting-plan.md` and `.claude/plans/2026-10-01-candlewick-plan.md`, whose "As built" notes override their designs; reviewed in `.claude/reviews/2026-10-01-v0.7.0-review.md`; released 2026-10-01): the lighting above, the Lighting Test (`--test=light`, with PASS/FAIL checks), DungeonCrawler3D's opt-in `--night`, EchoVault's orbs and sentries as lit emissive materials carrying point lights, and `examples/Candlewick` (lantern radius = oil, warden spot-light cones, a game-side light LOD, braziers as checkpoints; flags `--room=1..4`, `--debug-cone`, `--no-light-lod`, `--light-budget=16..32`, `--freeze`, `--overview`).
-- **v0.7.1** (released 2026-10-01, branch `v0.7.1`): the transform hierarchy in scenes-ecs-physics.md, pulled forward from v0.8 (P1–P3 of `.claude/plans/2026-10-01-v0.8-animation-plan.md`) — 3D and 2D parenting, subtree destroy/duplicate, every reader on world values through a per-pass memo, the physics rules, the Hierarchy Test (`--test=hierarchy`, `--hierarchy=2d|probe2d|stress|stressflat`), DungeonCrawler3D's parented character rigs, and EchoVault's sentry eye parented (line of sight from the eye, so sentries now detect the player).
-- **v0.7.2** (released 2026-10-03, branch `v0.7.2`): `ApplicationParams::UpdateInBackground` (engine-patterns.md "In the background", K20; default off pauses while minimized or unfocused), the K14 test-app minimize crash fixed, the Background Test (`--test=background`), and K21 filed.
-- **v0.8.0** (released 2026-10-05, PR #71 → `2b834fc`; built on `claude/v0-8-animation-character-fidelity-7209eb`, on top of v0.7.1, with master's v0.7.2 merged in at P11): P4 loader (skeletons, skin weights, clips; the Model 3D Test takes `--model=` and `--model-angle=`) P5 GPU skinning (`SubmitSkinnedMesh`, `SkinnedMeshRendererComponent`, the Animation Test) P6 (the animator, retargeting, joint sockets, the ancestor collision filter) P7 (Blend1D, masked layers, one-shots, parameters) P8 (clip events, the `.events` sidecar, `OnAnimationEvent`) P9 (in-place model hot-reload), P10 (the F7 Animation tab, F4 skinning stats, the skeleton overlay), P11 (docs/animation.md, `VERSION` 0.8.0, master's v0.7.2 merged in) and P12 (the review pass: `.claude/reviews/2026-10-03-v0.8.0-review.md`, 15 findings fixed) done. P13, the *Marionette* example (`examples/Marionette`, plan `.claude/plans/2026-10-03-marionette-plan.md`, whose "As built" notes override its design): M0–M6 done (assets, scaffold, movement, combat from clip events, three AI tiers and bouts, audio, screens and live `.events` editing, then the milestone review, tuning, DX11/DX12 and docs; it found the retargeting fix `a81727f`).
-- **v0.8.1** (branch `v0.8.1`, plan `.claude/plans/2026-10-06-v0.8.1-winding-plan.md`): the winding fixes in rendering.md (GitHub #68 `Material` drops `FrontCounterClockwise`, #69 `CreateSphere` wound inward), the default flipped to `true`, `PipelineParams::SetFrontCounterClockwise`, and the Mesh 3D Test's flags and winding checks. The Model 3D Test's models no longer draw inside out.
-- **v0.8.2** (branch `v0.8.2`, PR #84): start-up on a machine without a GPU. D3D12 falls back to WARP when no hardware adapter supports feature level 12_0 (it asserted), and Vulkan without a driver stops with a logged `DE_CORE_VERIFY` instead of crashing on a null instance; plus the render-target alpha fix in rendering.md "Blending". All three were found and fixed together, so none was filed as an issue.
-- **v0.8.3** (branch `v0.8.3`): closes every open `bug` issue, one commit each: #77 (texture generations from one counter), #78 (wireframe falls back to solid), #79 (the Vulkan acquire wait, in rendering.md), #80–#82 (animator range ends on a rebind, a disabled animator's events, a hidden layer's freeze), #86 (ImGui index padding, then every `GraphicsBuffer` upload, in rendering.md), #96 (`AudioAttenuationModel::None`), #97 (`GetAspectRatio` while minimized). Plus five *Headstone* requests: #93 (text rotation), #94 (text in z order), #89 (`SceneRenderer::Render(scene, target)`), #90 (`FileSystem::WriteImage`, `Texture::ReadPixels`/`SaveToFile`, in rendering.md "Readback") and #88 (XInput rumble, engine-patterns.md "Input"). New checks in the Animation, Background and Asset Manager Tests, and the Render Target Test (`--test=target`). The Vulkan fixes were never run, nor rumble: the dev machine has no Vulkan driver and no pad.
-- **Open from v0.8**: the Veteran balance item in `.claude/reviews/2026-10-04-marionette-review.md` (a tier-1 Knight still beats it).
-- **v0.9.0** (released 2026-10-08, PR #106 → `c0c5539`, built on `claude/dingo-v0-9-0-planning-ee00a9`, plan `.claude/plans/2026-10-06-v0.9-shadows-post-vfx-plan.md`, whose §9 "As built" notes override its design): P1–P12 (profiling, render-target groundwork, the post chain with tone mapping, bloom and AO, cascaded and local shadows, shadow probes, compute and storage buffers, GPU particles and particles from animation events, panels, docs, `VERSION` 0.9.0); P13 done (the review, its High findings and six picked Mediums fixed); P14 (*Candlewick*, plan `.claude/plans/2026-10-08-candlewick-v0.9-plan.md`) and P15 (*Marionette*, plan `.claude/plans/2026-10-08-marionette-v0.9-plan.md`) built and reviewed, see below. **Verified on the GPU machine** (RX 7900 XTX, 2026-10-08, plan §9 "GPU verification", PR #106's "Verified"): every check on Vulkan, DX11 and DX12, the 0 px gate, validation layers, timings and both examples; it fixed the skinned shadow layout (`6295be2`) and the uninitialised shadow probes that lost the Vulkan device in Release (`2d203b5`), and filed #145 (a missing vertex/index barrier, predating v0.9). The always-on GPU timers cost Vulkan ~0.05 ms a frame (NVRHI's Vulkan timer queries end the render pass); kept on by the owner's decision. The Tracy timeline capture was skipped. **F4 effect editor** (P12, D7): every `ParticleEffect` registers itself (`Internal::GetLiveParticleEffects`, main thread), and the Renderer tab's "Particle effect editor" edits one in place and copies `Internal::ParticleEffectToCode` (fluent C++, also logged).
-- **Candlewick on v0.9** (P14): every gameplay light (lantern, braziers, warden lamps and eyes) casts, nothing else does, and `MaxShadowedLocalLights` is 16 (`GAMEPLAY_LIGHTS_MAX` 14 fits, `static_assert`). Lantern parts, warden lamp glass/cap, flame cores, wax, markers, debug meshes and the **player** are `ShadowCasting::Off` (detection probes from inside the player's body; since #137 the engine has per-light caster groups and probe clearance, which Candlewick doesn't use yet). Cut-away walls turn `ShadowsOnly`. `Wardens::ClampRange` and `--no-range-clamp` are gone (`Wardens::Arm` enables the eye once physics exists). `Detection`: cone samples by `GetShadowedLightAttenuation(eye, sample, key = sample)`, braziers in `IsFlameLit` by their shadow (`PROBE_KEY_CHEST`), the lantern beacon by `GetLightVisibility(lantern, eye, PROBE_KEY_LANTERN + warden)`; every probe is asked every frame, the sight ray stays. `Flames.h/.cpp` hold seven particle effects (KeepWorld owns them); `PostProcessComponent` on the keep camera (Soft, bloom 0.35, AO). New flags: `--fixed-dt` (implied 1/60 by `--freeze`), `--perf` (with GPU timer means), `--no-post`, `--no-shadows`, `--no-particles`, `--hide-check`, `--background` (`--perf`, `--hide-check`, `--freeze` and `--background` update in the background; `--freeze` holds the keep after 600 steps and logs `[Freeze] held`). Since v1.0 P5 every `KeepWorld::SpawnDecor` mesh (floors, walls, braziers, sconces, candles) is `Static`.
-- **Marionette on v0.9** (P15): `ArenaVfx` owns the arena's effects and the impact emitters. `Fighter::BuildVfx` (controlled fighters, from `BuildHitRig`) parents dust emitters to the `foot.l`/`foot.r` sockets and the feet, and a trail emitter to the weapon part at the blade's tip; a `ParticleEventComponent` binds `step_l`/`step_r`/`dash` bursts and the `hitbox` range. `Combat::Judge` keeps a `Decision::Contact` (`ContactPoint`, the touch test itself unchanged); `Commit` bursts hit/block sparks or the parry flash there, and a killing hit queues `KO_DUST_DELAY` dust (`ArenaVfx::Update`). The moon and the four braziers cast; flame cores and debug spheres don't; a seen-through occluder turns `ShadowsOnly` (parts that cast nothing hide). Both cameras get `PostProcessComponent` (Soft, bloom 0.3, AO). New flags `--no-post`, `--no-shadows`, `--no-particles`. VFX never write gameplay state: `--check` and `--tournament` must read as before.
-- **v0.9.1** (released 2026-10-13, PR #179 → `1cc5e94`): everything merged after v0.9.0, with no plan of its own. Linux support (#107), asset packing (#167), the *Headstone* requests (#110, #149, #171), the bug PRs (#148, #165, #170, #175), the *Headstone* review follow-ups (#166), and the CI and cloud-session work (#173, #174, #176, #178). #98 (a game UI layer) is closed but not built yet; it ships in v1.0.0 (#147).
-- **v1.0.0** (released 2026-10-21, straight to master → `4145806f`): plan `.claude/plans/2026-10-08-v1.0-plan.md` (P1–P12; its §9 "As built" notes override the design), built on `feat/v1` in PR #147 and the PRs after it (#187, #222, #230, #233, #234, #240, #243, #246, #250, #253–#256, #259–#264, #269–#271, #278, #280, #282–#288, #291, #292, #294). Renderer throughput (retained submission, culling, instancing, static geometry, the skin palette arena, surface overrides, then the render CPU cuts of #271–#287 under #231); per-user logs, the crash handler, `FatalError` and `Dingo-UnitTests`; `SaveData`, `SaveSlots`, `Settings` and display modes; engine-owned launch flags; notices, the Inter font and `exeMetadata`; the API pass (50 findings: 37 change, 4 deprecate, 9 keep) with `docs/versioning.md` and `docs/conventions.md`; the Doxygen reference and the 1.0 guides; DingoUI (#256, closes #98); and *Hearthvale* (#261, complete 2026-10-20). `docs/migrating-to-1.0.md` lists every break. Owner GPU runs on Vulkan, DX11 and DX12 (RX 7900 XTX): sign-off `4faaaf0`, step 3 `5f8b7c5`, soaks `b53f300` (20 minutes) and `c4d4875` (60 minutes). The render CPU targets in #231 were missed and accepted. Shipped open: #186, #225, #226/#232, #239, #247 (Linux on real hardware, deferred).
+### v0.5.1
+
+- (merged): input rework + gamepad support.
+
+### v0.6.0
+
+- (merged, `86abb61`): the asset pipeline described in engine-patterns.md — `AssetManager`, async loading, in-place texture/shader hot-reload, source-hash-validated shader cache, the F6 Assets panel — showcased by `examples/ArenaShooter` and the test app's Asset Manager Test (`--test=asset`), then a full review pass (see "Issues, docs and reviews" above).
+
+### v0.6.1
+
+- `Renderer3D` passes mesh UVs to custom materials as `a_TexCoord`.
+
+### v0.6.2
+
+- game-workaround cleanup (cursor modes, focus event, any-input queries, executable-relative paths, 3D audio attenuation — see ROADMAP) plus mesh colliders — `ColliderShape3D::Mesh`/`ConvexHull`, `MeshCollider3DComponent`, opt-in `ContinuousCollision`, test app's Mesh Collider Test (`--test=collider`).
+
+### v0.6.3
+
+- the known-bug sweep — K4, K5, K7, K8, K9, K12, K13 fixed, one commit each; K10 (GLM in public headers) and K11 (device migration across GPUs) deliberately deferred.
+
+### v0.7.0
+
+- (engine work and the *Candlewick* example done on the branch, P0–P8 of `.claude/plans/2026-09-26-v0.7-lighting-plan.md` and `.claude/plans/2026-10-01-candlewick-plan.md`, whose "As built" notes override their designs; reviewed in `.claude/reviews/2026-10-01-v0.7.0-review.md`; released 2026-10-01): the lighting above, the Lighting Test (`--test=light`, with PASS/FAIL checks), DungeonCrawler3D's opt-in `--night`, EchoVault's orbs and sentries as lit emissive materials carrying point lights, and `examples/Candlewick` (lantern radius = oil, warden spot-light cones, a game-side light LOD, braziers as checkpoints; flags `--room=1..4`, `--debug-cone`, `--no-light-lod`, `--light-budget=16..32`, `--freeze`, `--overview`).
+
+### v0.7.1
+
+- (released 2026-10-01, branch `v0.7.1`): the transform hierarchy in scenes-ecs-physics.md, pulled forward from v0.8 (P1–P3 of `.claude/plans/2026-10-01-v0.8-animation-plan.md`) — 3D and 2D parenting, subtree destroy/duplicate, every reader on world values through a per-pass memo, the physics rules, the Hierarchy Test (`--test=hierarchy`, `--hierarchy=2d|probe2d|stress|stressflat`), DungeonCrawler3D's parented character rigs, and EchoVault's sentry eye parented (line of sight from the eye, so sentries now detect the player).
+
+### v0.7.2
+
+- (released 2026-10-03, branch `v0.7.2`): `ApplicationParams::UpdateInBackground` (engine-patterns.md "Background updates", K20; default off pauses while minimized or unfocused), the K14 test-app minimize crash fixed, the Background Test (`--test=background`), and K21 filed.
+
+### v0.8.0
+
+- (released 2026-10-05, PR #71 → `2b834fc`; built on `claude/v0-8-animation-character-fidelity-7209eb`, on top of v0.7.1, with master's v0.7.2 merged in at P11): P4 loader (skeletons, skin weights, clips; the Model 3D Test takes `--model=` and `--model-angle=`) P5 GPU skinning (`SubmitSkinnedMesh`, `SkinnedMeshRendererComponent`, the Animation Test) P6 (the animator, retargeting, joint sockets, the ancestor collision filter) P7 (Blend1D, masked layers, one-shots, parameters) P8 (clip events, the `.events` sidecar, `OnAnimationEvent`) P9 (in-place model hot-reload), P10 (the F7 Animation tab, F4 skinning stats, the skeleton overlay), P11 (docs/animation.md, `VERSION` 0.8.0, master's v0.7.2 merged in) and P12 (the review pass: `.claude/reviews/2026-10-03-v0.8.0-review.md`, 15 findings fixed) done.
+- P13, the *Marionette* example (`examples/Marionette`, plan `.claude/plans/2026-10-03-marionette-plan.md`, whose "As built" notes override its design):
+- M0–M6 done (assets, scaffold, movement, combat from clip events, three AI tiers and bouts, audio, screens and live `.events` editing, then the milestone review, tuning, DX11/DX12 and docs; it found the retargeting fix `a81727f`).
+
+### v0.8.1
+
+- (branch `v0.8.1`, plan `.claude/plans/2026-10-06-v0.8.1-winding-plan.md`): the winding fixes in rendering.md (GitHub #68 `Material` drops `FrontCounterClockwise`, #69 `CreateSphere` wound inward), the default flipped to `true`, `PipelineParams::SetFrontCounterClockwise`, and the Mesh 3D Test's flags and winding checks.
+- The Model 3D Test's models no longer draw inside out.
+
+### v0.8.2
+
+- (branch `v0.8.2`, PR #84): start-up on a machine without a GPU.
+- D3D12 falls back to WARP when no hardware adapter supports feature level 12_0 (it asserted), and Vulkan without a driver stops with a logged `DE_CORE_VERIFY` instead of crashing on a null instance; plus the render-target alpha fix in rendering.md "Pipeline state and winding".
+- All three were found and fixed together, so none was filed as an issue.
+
+### v0.8.3
+
+- (branch `v0.8.3`): closes every open `bug` issue, one commit each:
+- #77 (texture generations from one counter), #78 (wireframe falls back to solid), #79 (the Vulkan acquire wait, in rendering.md), #80–#82 (animator range ends on a rebind, a disabled animator's events, a hidden layer's freeze), #86 (ImGui index padding, then every `GraphicsBuffer` upload, in rendering.md), #96 (`AudioAttenuationModel::None`), #97 (`GetAspectRatio` while minimized).
+- Plus five *Headstone* requests:
+- #93 (text rotation), #94 (text in z order), #89 (`SceneRenderer::Render(scene, target)`), #90 (`FileSystem::WriteImage`, `Texture::ReadPixels`/`SaveToFile`, in rendering.md "Render targets and readback") and #88 (XInput rumble, engine-patterns.md "Input").
+- New checks in the Animation, Background and Asset Manager Tests, and the Render Target Test (`--test=target`).
+- The Vulkan fixes were never run, nor rumble: the dev machine has no Vulkan driver and no pad.
+
+### Open from v0.8
+
+- the Veteran balance item in `.claude/reviews/2026-10-04-marionette-review.md` (a tier-1 Knight still beats it).
+
+### v0.9.0
+
+- (released 2026-10-08, PR #106 → `c0c5539`, built on `claude/dingo-v0-9-0-planning-ee00a9`, plan `.claude/plans/2026-10-06-v0.9-shadows-post-vfx-plan.md`, whose §9 "As built" notes override its design): P1–P12 (profiling, render-target groundwork, the post chain with tone mapping, bloom and AO, cascaded and local shadows, shadow probes, compute and storage buffers, GPU particles and particles from animation events, panels, docs, `VERSION` 0.9.0); P13 done (the review, its High findings and six picked Mediums fixed); P14 (*Candlewick*, plan `.claude/plans/2026-10-08-candlewick-v0.9-plan.md`) and P15 (*Marionette*, plan `.claude/plans/2026-10-08-marionette-v0.9-plan.md`) built and reviewed, see below.
+- **Verified on the GPU machine** (RX 7900 XTX, 2026-10-08, plan §9 "GPU verification", PR #106's "Verified"): every check on Vulkan, DX11 and DX12, the 0 px gate, validation layers, timings and both examples; it fixed the skinned shadow layout (`6295be2`) and the uninitialised shadow probes that lost the Vulkan device in Release (`2d203b5`), and filed #145 (a missing vertex/index barrier, predating v0.9).
+- The always-on GPU timers cost Vulkan ~0.05 ms a frame (NVRHI's Vulkan timer queries end the render pass); kept on by the owner's decision.
+- The Tracy timeline capture was skipped.
+- **F4 effect editor** (P12, D7): every `ParticleEffect` registers itself (`Internal::GetLiveParticleEffects`, main thread), and the Renderer tab's "Particle effect editor" edits one in place and copies `Internal::ParticleEffectToCode` (fluent C++, also logged).
+
+### Candlewick on v0.9
+
+- (P14): every gameplay light (lantern, braziers, warden lamps and eyes) casts, nothing else does, and `MaxShadowedLocalLights` is 16 (`GAMEPLAY_LIGHTS_MAX` 14 fits, `static_assert`).
+- Lantern parts, warden lamp glass/cap, flame cores, wax, markers, debug meshes and the **player** are `ShadowCasting::Off` (detection probes from inside the player's body; since #137 the engine has per-light caster groups and probe clearance, which Candlewick doesn't use yet).
+- Cut-away walls turn `ShadowsOnly`.
+- `Wardens::ClampRange` and `--no-range-clamp` are gone (`Wardens::Arm` enables the eye once physics exists).
+- `Detection`: cone samples by `GetShadowedLightAttenuation(eye, sample, key = sample)`, braziers in `IsFlameLit` by their shadow (`PROBE_KEY_CHEST`), the lantern beacon by `GetLightVisibility(lantern, eye, PROBE_KEY_LANTERN + warden)`; every probe is asked every frame, the sight ray stays.
+- `Flames.h/.cpp` hold seven particle effects (KeepWorld owns them); `PostProcessComponent` on the keep camera (Soft, bloom 0.35, AO).
+- New flags:
+- `--fixed-dt` (implied 1/60 by `--freeze`), `--perf` (with GPU timer means), `--no-post`, `--no-shadows`, `--no-particles`, `--hide-check`, `--background` (`--perf`, `--hide-check`, `--freeze` and `--background` update in the background; `--freeze` holds the keep after 600 steps and logs `[Freeze] held`).
+- Since v1.0 P5 every `KeepWorld::SpawnDecor` mesh (floors, walls, braziers, sconces, candles) is `Static`.
+
+### Marionette on v0.9
+
+- (P15): `ArenaVfx` owns the arena's effects and the impact emitters.
+- `Fighter::BuildVfx` (controlled fighters, from `BuildHitRig`) parents dust emitters to the `foot.l`/`foot.r` sockets and the feet, and a trail emitter to the weapon part at the blade's tip; a `ParticleEventComponent` binds `step_l`/`step_r`/`dash` bursts and the `hitbox` range.
+- `Combat::Judge` keeps a `Decision::Contact` (`ContactPoint`, the touch test itself unchanged); `Commit` bursts hit/block sparks or the parry flash there, and a killing hit queues `KO_DUST_DELAY` dust (`ArenaVfx::Update`).
+- The moon and the four braziers cast; flame cores and debug spheres don't; a seen-through occluder turns `ShadowsOnly` (parts that cast nothing hide).
+- Both cameras get `PostProcessComponent` (Soft, bloom 0.3, AO).
+- New flags `--no-post`, `--no-shadows`, `--no-particles`.
+- VFX never write gameplay state:
+- `--check` and `--tournament` must read as before.
+
+### v0.9.1
+
+- (released 2026-10-13, PR #179 → `1cc5e94`): everything merged after v0.9.0, with no plan of its own.
+- Linux support (#107), asset packing (#167), the *Headstone* requests (#110, #149, #171), the bug PRs (#148, #165, #170, #175), the *Headstone* review follow-ups (#166), and the CI and cloud-session work (#173, #174, #176, #178).
+- #98 (a game UI layer) is closed but not built yet; it ships in v1.0.0 (#147).
+
+### v1.0.0
+
+- (released 2026-10-21, straight to master → `4145806f`): plan `.claude/plans/2026-10-08-v1.0-plan.md` (P1–P12; its §9 "As built" notes override the design), built on `feat/v1` in PR #147 and the PRs after it (#187, #222, #230, #233, #234, #240, #243, #246, #250, #253–#256, #259–#264, #269–#271, #278, #280, #282–#288, #291, #292, #294).
+- Renderer throughput (retained submission, culling, instancing, static geometry, the skin palette arena, surface overrides, then the render CPU cuts of #271–#287 under #231); per-user logs, the crash handler, `FatalError` and `Dingo-UnitTests`; `SaveData`, `SaveSlots`, `Settings` and display modes; engine-owned launch flags; notices, the Inter font and `exeMetadata`; the API pass (50 findings: 37 change, 4 deprecate, 9 keep) with `docs/versioning.md` and `docs/conventions.md`; the Doxygen reference and the 1.0 guides; DingoUI (#256, closes #98); and *Hearthvale* (#261, complete 2026-10-20).
+- `docs/migrating-to-1.0.md` lists every break.
+- Owner GPU runs on Vulkan, DX11 and DX12 (RX 7900 XTX): sign-off `4faaaf0`, step 3 `5f8b7c5`, soaks `b53f300` (20 minutes) and `c4d4875` (60 minutes).
+- The render CPU targets in #231 were missed and accepted.
+- Shipped open:
+- #186, #225, #226/#232, #239, #247 (Linux on real hardware, deferred).
+
+### After 1.0
+
 - **Then**: post-1.0 point and minor releases (1.x), under SemVer ([docs/versioning.md](../../docs/versioning.md)): a minor release adds, a patch release fixes, a removal waits for 2.0.
-- **Not in the version train**: **scripting** (was v0.7) and **networking/multiplayer** (was v0.8) both ship as out-of-band modules — see the "Modules" section at the end of `ROADMAP.md`. Online co-op is no longer part of the 1.0 launch.
+
+### Not in the version train
+
+- **Not in the version train**: **scripting** (was v0.7) and **networking/multiplayer** (was v0.8) both ship as out-of-band modules — see the "Modules" section at the end of `ROADMAP.md`.
+- Online co-op is no longer part of the 1.0 launch.

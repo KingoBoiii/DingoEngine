@@ -1,3 +1,5 @@
+**Status**: done (v0.9.1)
+
 # Enhancement group, 2026-10-09
 
 The routine run that opened this branch shipped #83, #99, #100, #101, #102, #103, #137 and #143,

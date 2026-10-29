@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a DingoEngine vX.Y.Z release end to end — the version branch and PR (VERSION bump plus release notes in ROADMAP, README and project history), the merge, the Build Windows + Build Linux gate on the merge commit, the lightweight tag, the GitHub release with its notes, the build-release workflow and its asset count, and the "docs: mark released" commit. Use when the owner says "make a release", "release vX.Y.Z", "cut v0.9.1", "tag it", "make the gh release", "tag the RC", "cut v1.0.0-rc.1", or asks what a release still needs. Also covers release candidates (vX.Y.Z-rc.N), which skip the version branch.
+description: "Cut a DingoEngine vX.Y.Z release end to end — the version branch and PR (VERSION bump plus release notes in ROADMAP, README and project history), the merge, the Build Windows + Build Linux gate on the merge commit, the lightweight tag, the GitHub release with its notes, the build-release workflow and its asset count, and the \"docs: mark released\" commit. Use when the owner says \"make a release\", \"release vX.Y.Z\", \"cut v0.9.1\", \"tag it\", \"make the gh release\", \"tag the RC\", \"cut v1.0.0-rc.1\", or asks what a release still needs. Also covers release candidates (vX.Y.Z-rc.N), which skip the version branch."
 ---
 
 # Release
@@ -34,17 +34,17 @@ A release is a version branch merged into `master`, then a tag, a GitHub release
 
 1. Lightweight tag on the merge commit: `git tag vX.Y.Z <sha> && git push origin refs/tags/vX.Y.Z`, then confirm with `git ls-remote --tags origin vX.Y.Z`. The full ref matters: while the `vX.Y.Z` branch exists, `git push origin vX.Y.Z` matches both and pushes nothing, and `gh release create` then makes an untagged draft.
 2. Notes file in the scratchpad, in the style of the previous release (`gh release view <last-tag> --json body --jq .body`): `## vX.Y.Z — <Title>`, one intro paragraph, `###` sections by area, a **Docs** list and a **Full changelog** compare link. Links are absolute `https://github.com/KingoBoiii/DingoEngine/blob/vX.Y.Z/...`: relative ones 404 on the release page.
-   Every release's notes, RCs too, include a **For games** section (Headstone reads release notes for engine bumps): breaking API changes with their `docs/` page, behaviour changes a game would notice, and the `headstone` issues the release closes.
+   Every release's notes, RCs too, include a **For games** section (Headstone reads release notes for an engine bump, with `gh release view vX.Y.Z`, instead of this repo): breaking API changes with their `docs/` page, behaviour changes a game would notice, and the `headstone` issues the release closes.
 3. `gh release create vX.Y.Z --verify-tag --title vX.Y.Z --notes-file <file>`, then check `gh release view vX.Y.Z --json isDraft` is `false`.
 
 ## 5. Assets
 
 - Always run `build-release.yml` yourself, straight after step 4, without asking: it is part of every release. It is `workflow_dispatch` only and uploads to an existing release, so it can't start earlier: `gh workflow run build-release.yml --ref vX.Y.Z`, then `gh run watch <id> --exit-status` in a background command. If a job fails, report it and re-run only the failed jobs (`gh run rerun <id> --failed`).
-- Expect **28 assets**: Windows 14 (DingoEngine Debug/Release/Distribution zips, the Distribution symbols zip + 10 example zips) and Linux 14 (3 engine `.tar.gz` + 10 examples + Dingo-TestFramework). A new example adds one per OS. Check with `gh release view vX.Y.Z --json assets --jq '.assets | length'`.
+- Expect **30 assets** (11 examples today): Windows 15 (DingoEngine Debug/Release/Distribution zips, the Distribution symbols zip + 11 example zips) and Linux 15 (3 engine `.tar.gz` + 11 examples + Dingo-TestFramework). Recompute from the workflow: Windows = 4 + the `example-game-*` jobs in `build-release.yml` (`grep -c '^  example-game-' .github/workflows/build-release.yml`); Linux = 3 + the directories in `examples/` (`scripts/package-linux-programs.sh` packs each) + 1. Check with `gh release view vX.Y.Z --json assets --jq '.assets | length'`.
 
 ## 6. Mark released
 
-Commit straight to `master` and push: `docs: mark vX.Y.Z released`. It updates the ROADMAP section with a `**Status**: released on <date> (PR #N → <sha>)` line and the project-history bullet with the same, plus anything else that still says "planned" or "in progress" for this version.
+Commit straight to `master` and push it with `DINGO_RELEASE_PUSH=1 git push origin master` (the `guard-git` hook blocks any other push to `master`): `docs: mark vX.Y.Z released`. It updates the ROADMAP section with a `**Status**: released on <date> (PR #N → <sha>)` line and the project-history bullet with the same, plus anything else that still says "planned" or "in progress" for this version.
 
 ## 7. Clean up
 
@@ -55,5 +55,5 @@ Delete the release branch locally and on origin (`git push origin --delete refs/
 - No version branch, PR or `VERSION` bump (steps 2 and 3.1 don't apply).
 - Tag the master merge commit to release from (for rc.1, the PR that finishes the milestone), after Build Windows and Build Linux pass there (step 3.2). Lightweight tag, full-ref push as in step 4.1.
 - Notes as in step 4.2, with `vX.Y.Z-rc.N` in the heading, the blob links and the compare link (the final tag doesn't exist yet). `gh release create vX.Y.Z-rc.N --verify-tag --prerelease --title vX.Y.Z-rc.N --notes-file <file>`, then check `gh release view vX.Y.Z-rc.N --json isPrerelease,isDraft` gives `true`/`false`; it must not show as Latest.
-- Step 5 as usual: `gh workflow run build-release.yml --ref vX.Y.Z-rc.N`, expect the usual **28 assets**. The workflow accepts only tags matching `^v\d+\.\d+\.\d+(-rc\.\d+)?$`.
+- Step 5 as usual: `gh workflow run build-release.yml --ref vX.Y.Z-rc.N`, expect the same count as step 5 (**30 assets** today). The workflow accepts only tags matching `^v\d+\.\d+\.\d+(-rc\.\d+)?$`.
 - Skip step 6 and step 7's branch deletion. Add an "RC tagged" line to the milestone plan (commit it straight to `master` like step 6), then reply as step 7 does: release URL, tag sha, asset count.

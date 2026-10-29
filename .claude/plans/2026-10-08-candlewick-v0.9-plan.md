@@ -1,3 +1,5 @@
+**Status**: done (v0.9.0)
+
 # P14 — *Candlewick* on v0.9: shadows you hide in, bloom, particle flames
 
 Drafted 2026-10-08 on branch `claude/dingo-v0-9-0-planning-ee00a9` @ `0543d88` (v0.9 P1–P13 done, none

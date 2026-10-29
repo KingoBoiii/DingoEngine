@@ -1,8 +1,17 @@
 {
   "model": "claude-sonnet-5-5",
-  "effortLevel": "medium",
+  "modelSettings": {
+    "claude-sonnet-5-5": {
+      "effortLevel": "medium"
+    }
+  },
   "env": {
     "CLAUDE_AUTOCOMPACT_PCT_OVERRIDE": "20"
+  },
+  "permissions": {
+    "deny": [
+      "Edit(/vendor/**)"
+    ]
   },
   "hooks": {
     "SessionStart": [
@@ -13,6 +22,19 @@
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/session-start.sh\"",
             "timeout": 3600
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/guard-git.sh\"",
+            "timeout": 10,
+            "onFailure": "block"
           }
         ]
       }
