@@ -368,6 +368,7 @@ namespace Dingo
 					m_Data->Interpolation.BeforeTick(m_Data->Registry, m_Data->Physics);
 					m_Data->Physics.Step(m_Data->Registry, step);
 					m_Data->Interpolation.AfterTick(m_Data->Registry);
+					DeliverConstraintBreaks();
 					++m_Data->Tick;
 					m_Data->Updating = true;
 				}
@@ -406,6 +407,7 @@ namespace Dingo
 		{
 			DE_PROFILE_SCOPE("PhysicsSync::Step");
 			m_Data->Physics.Step(m_Data->Registry, deltaTime);
+			DeliverConstraintBreaks();
 		}
 
 		if (m_Data->Physics.HasRagdolls(m_Data->Registry))
@@ -424,6 +426,32 @@ namespace Dingo
 		DE_PROFILE_SCOPE("AudioSync");
 		InterpolatedView view(*this);
 		Internal::AudioSync::SyncListenerAndSources(m_Data->Registry, m_Data->Memo);
+	}
+
+	void Scene::DeliverConstraintBreaks()
+	{
+		std::vector<Internal::PhysicsSync::BrokenConstraint> broken;
+		m_Data->Physics.TakeBrokenConstraints(broken);
+		if (broken.empty())
+			return;
+
+		const bool wasUpdating = m_Data->Updating;
+		m_Data->Updating = true;
+		const entt::registry& registry = m_Data->Registry;
+		for (const Internal::PhysicsSync::BrokenConstraint& item : broken)
+		{
+			const bool aValid = registry.valid(item.BodyA);
+			const bool bValid = item.BodyB != entt::null && registry.valid(item.BodyB);
+			const Entity a = aValid ? Wrap(static_cast<std::uint32_t>(item.BodyA)) : Entity();
+			const Entity b = bValid ? Wrap(static_cast<std::uint32_t>(item.BodyB)) : Entity();
+			if (aValid)
+				m_Data->Scripts.DeliverConstraintBroken(item.BodyA, b, item.Info);
+			if (bValid)
+				m_Data->Scripts.DeliverConstraintBroken(item.BodyB, a, item.Info);
+		}
+		m_Data->Updating = wasUpdating;
+		if (!wasUpdating)
+			FlushPendingDestroys();
 	}
 
 	void Scene::FlushPendingDestroys()

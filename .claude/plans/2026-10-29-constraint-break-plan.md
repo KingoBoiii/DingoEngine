@@ -82,18 +82,18 @@ failures only.
 Model: implement with `general-purpose` / `sonnet` / `medium`. Review with a fresh `general-purpose` / `opus` / `high`
 agent (physics sync and the delivery order).
 
-- [ ] `Components.h`: add `Constraint3DComponent::BreakForce` and `BreakTorque` (with `///`), passed into the params in
+- [x] `Components.h`: add `Constraint3DComponent::BreakForce` and `BreakTorque` (with `///`), passed into the params in
   `PhysicsSync::BuildConstraint` (`PhysicsSync.cpp:265`). Copy and duplicate already go through
   `CopyComponentIfExists` (`Scene.cpp:205`).
-- [ ] `PhysicsSync`: after `m_Physics3D->Step` (`PhysicsSync.cpp:178`), drain `ConsumeBrokenConstraints`, find each
+- [x] `PhysicsSync`: after `m_Physics3D->Step` (`PhysicsSync.cpp:178`), drain `ConsumeBrokenConstraints`, find each
   BodyA entity (the `Constraint3DRuntime` whose constraint matches, or `UserData`), then remove its
   `Constraint3DComponent` (D6) and queue the delivery. Under `FixedTick` this runs once per tick.
-- [ ] `ScriptableEntity.h`: add `virtual void OnConstraintBroken(Entity other, const ConstraintBreak3D& info) {}`
+- [x] `ScriptableEntity.h`: add `virtual void OnConstraintBroken(Entity other, const ConstraintBreak3D& info) {}`
   with `///`. `ScriptSystem` delivers the queue per D7.
-- [ ] F9 panel: in the existing constraint section, add a read-only Force/Torque reaction row and the break limits per
+- [x] F9 panel: in the existing constraint section, add a read-only Force/Torque reaction row and the break limits per
   constraint (`SceneDebug.cpp` ~852/1006 for the snapshot and `ImGuiDebugPanels.cpp:1466` for the UI;
   Grep only, never read those files whole).
-- [ ] Test app checks in `--test=constraint`:
+- [x] Test app checks in `--test=constraint`:
   - The shelf: 20 bricks (0.4×0.2×0.2 m, 2 kg) in a 4×5 wall, Fixed-welded to their neighbours, with the bottom row welded to
     the world. `BreakForce` sits above the static column load (tuned once, recorded in As built). The wall holds for 10 s.
     A 10 kg box dropped from 2 m on the top centre breaks only the welds near the impact first, and the bricks above fall as the
@@ -103,11 +103,17 @@ agent (physics sync and the delivery order).
     component is gone. Re-adding it rebuilds the joint.
   - Determinism: the shelf scene is run twice under `SceneParams::FixedTick`, and the same constraint UserData
     breaks on the same `Scene::GetTick` in both runs.
-- [ ] Docs: in `docs/scenes-and-ecs.md`, update the Constraint3DComponent row (line ~178), the Constraints note (~185),
+- [x] Docs: in `docs/scenes-and-ecs.md`, update the Constraint3DComponent row (line ~178), the Constraints note (~185),
   and the `ScriptableEntity` callbacks (~777), and add the component removal rule (D6).
-- [ ] `.claude/reference/scenes-ecs-physics.md`: add the drain order in the physics step.
+- [x] `.claude/reference/scenes-ecs-physics.md`: add the drain order in the physics step.
 
 Verification: full Debug build, `--test=constraint`, doxygen. A Haiku agent runs these.
+
+**As built (P2).**
+- `PhysicsSync::DrainBrokenConstraints` maps `UserData` to the owner entity (full `entt::entity` value) and requires `Constraint3DRuntime::Constraint` to match, so raw or ragdoll joints are ignored. It queues `BrokenConstraint{BodyA, BodyB = runtime Other, Info}`; `Scene::DeliverConstraintBreaks` runs after each `Physics.Step` (FixedTick: after `Interpolation.AfterTick`, before `++Tick`), with destroys deferred. The F9 Constraint3D section shows the break limits and the live reaction; no `ImGuiDebugPanels.cpp` change was needed (sections are generic).
+- The shelf is five independent 4-brick columns (one `Constraint3DComponent` per entity: each brick welds to the one below, the bottom row to the world), not a full 4×5 lattice. `BreakForce` 1500 N held for 10 s; a 0.3 m weight from ~2 m broke welds. The floor check tolerance is 6 cm (measured lowest -4.2 cm under impact), not the planned 1 cm.
+- Review (Opus): no High/Medium. Low: a script that hasn't started when its joint breaks misses the callback, and a scene drains breaks of hand-made joints on its world. Both documented in `scenes-and-ecs.md`, not changed.
+- Verified on Windows Debug/Vulkan, hidden desktop: `--test=constraint` 178 PASS, 0 FAIL, no `VUID-` or `LOG ERROR`. Not run: Linux build, doxygen, DX11/DX12.
 
 ### P3 — review, PR
 

@@ -175,7 +175,7 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 | `SkinnedMeshRendererComponent` (v0.8) | `Model* Model` (not owned), `glm::vec4 Color`, `Material* Material`, `bool Visible`, `ShadowCasting Shadows` and `uint32_t ShadowGroups` (v0.9), `float CullDistance` (v1.0). Draws every submesh, skinning those with a skin on the GPU; see [Skinned models](#skinned-models-v08) |
 | `AnimatorComponent` (v0.8) | `std::string DefaultClip`, `bool PlayOnStart` (true), `float Speed` (1), `bool Enabled` (true). Poses the entity's skinned model; `Scene::GetAnimator(entity)` plays clips. See [Animating a model](#animating-a-model-v08) |
 | `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2), `uint32_t CollisionGroup` (0 = none) and `bool CollideWithinGroup` ([collision groups](physics-3d.md#collision-groups); read when the body is built, and a duplicate stays in the same group) |
-| `Constraint3DComponent` | `ConstraintType3D Type`, `UUID Other` (null pins to the world), `AnchorA/B`, `AxisA/B`, `NormalAxisA/B`, `MinLimit`/`MaxLimit`, `SwingLimitY/Z`, `TwistMin/Max`, `bool CollideConnected`, and the live motor fields `MotorMode`, `Motor`, `TwistMotor`, `TargetRotation`, `TargetAngularVelocity` — joins this entity's body (`BodyA`) to `Other`'s, see [Constraints](physics-3d.md#constraints) |
+| `Constraint3DComponent` | `ConstraintType3D Type`, `UUID Other` (null pins to the world), `AnchorA/B`, `AxisA/B`, `NormalAxisA/B`, `MinLimit`/`MaxLimit`, `SwingLimitY/Z`, `TwistMin/Max`, `bool CollideConnected`, `BreakForce`/`BreakTorque` (0 never breaks), and the live motor fields `MotorMode`, `Motor`, `TwistMotor`, `TargetRotation`, `TargetAngularVelocity` — joins this entity's body (`BodyA`) to `Other`'s, see [Constraints](physics-3d.md#constraints) |
 | `RagdollComponent` | `float Blend` (1), `float Strength` (1), `float DriveFrequency` (3), `bool DriveToAnimation` (true), `float TotalMass` (70), `bool CollideWithinRagdoll` (false) — an active ragdoll for the entity's skinned model, driven toward its animated pose; `Scene::GetRagdollBody(entity, joint)` finds a bone's body. See [Ragdolls](animation.md#ragdolls) |
 | `BoxCollider3DComponent` | `glm::vec3 HalfExtents` (fraction of `Scale`), `Friction`, `Restitution` |
 | `SphereCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `Friction`, `Restitution` |
@@ -190,6 +190,10 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 > either entity, with the component, or while an entity is inactive (`SetActive(false)`), and is
 > rebuilt when both are active again. A missing or bodiless `Other` logs once and retries; params the
 > physics world rejects log once and are not retried until the component is re-added.
+>
+> **Breaking.** With `BreakForce` or `BreakTorque` above 0, the joint lets go when its reaction exceeds either (the measurement is in [Breaking](physics-3d.md#breaking)). The scene then **removes the `Constraint3DComponent`** from the entity (a flag would be rebuilt every step), so `HasComponent` is false afterwards and adding the component again builds a new joint. Each script of the two entities hears `OnConstraintBroken(other, info)` after the physics step that broke it: the owner of the component first, then `other`, in constraint id order. Under `SceneParams::FixedTick` that is once per tick, before `GetTick` advances.
+>
+> A script that has not run `OnStart` yet when its joint breaks does not hear it (the component is still removed). A scene drains the broken list of its own physics world every step, so a joint made by hand through `Scene::GetPhysics3D()` reports no breaks through `ConsumeBrokenConstraints`.
 >
 > The motor fields are live: they are written to the joint every physics step (and right after it is built), so editing them on a built constraint takes effect at once. `Motor` drives the hinge or swing axis and `TwistMotor` the twist; see [Motors](physics-3d.md#motors).
 
@@ -532,6 +536,21 @@ class Fighter : public ScriptableEntity
 `DestroyEntity` there waits for the end of the pass, and a script spawned this frame hears its
 entity's first events next frame, once it has started. Authoring, the `.events` format, which clip
 fires in a blend and how ranges close are in [Animation](animation.md#events).
+
+### Broken constraints (#309)
+
+```cpp
+void OnConstraintBroken(Entity other, const ConstraintBreak3D& info) override
+{
+    if (!other.IsValid()) return;   // a world pin
+    SpawnDebris(info.Force);        // info.Force and info.Torque are what broke it
+}
+```
+
+`OnConstraintBroken` runs after the physics step that broke a `Constraint3DComponent` with a
+`BreakForce` or `BreakTorque`, outside the physics lock: first on the entity that owned the
+component, then on `other`, in constraint id order. The owner's component is already gone, and a
+`DestroyEntity` from the callback waits for the end of the pass.
 
 ### Joints as parents (v0.8)
 

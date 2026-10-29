@@ -6,7 +6,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <memory>
+#include <set>
+#include <vector>
 
 namespace
 {
@@ -1042,6 +1045,176 @@ namespace Dingo
 		Check(y(late) < 0.6f, "scene: a body created while running joins its group");
 	}
 
+	namespace
+	{
+		class BreakListener : public ScriptableEntity
+		{
+		public:
+			explicit BreakListener(std::function<void(Entity, const ConstraintBreak3D&)> sink) : m_Sink(std::move(sink)) {}
+
+			void OnConstraintBroken(Entity other, const ConstraintBreak3D& info) override { m_Sink(other, info); }
+
+		private:
+			std::function<void(Entity, const ConstraintBreak3D&)> m_Sink;
+		};
+
+		struct ShelfBreak
+		{
+			ConstraintId3D Constraint;
+			std::uint32_t UserData;
+			std::uint64_t Tick;
+
+			bool operator==(const ShelfBreak&) const = default;
+		};
+
+		struct ShelfResult
+		{
+			std::vector<ShelfBreak> Breaks;
+			std::uint32_t Calls = 0;
+			std::uint32_t BreaksBeforeDrop = 0;
+			float Lowest = 1000.0f;
+		};
+
+		constexpr float k_ShelfBreakForce = 1500.0f;
+
+		ShelfResult RunShelf(float holdSeconds, float afterSeconds)
+		{
+			ShelfResult result;
+			SceneParams params;
+			params.FixedTick = true;
+			Scene scene("Shelf", params);
+			constexpr float k_Step = 1.0f / 60.0f;
+			scene.SetFixedTimeStep(k_Step);
+
+			Entity floor = scene.CreateEntity("Floor");
+			floor.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, -0.5f, 0.0f }, { 10.0f, 1.0f, 4.0f }));
+			floor.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Static));
+
+			std::set<ConstraintId3D> seen;
+			auto sink = [&](Entity, const ConstraintBreak3D& info)
+			{
+				++result.Calls;
+				if (seen.insert(info.Constraint).second)
+					result.Breaks.push_back({ info.Constraint, info.UserData, scene.GetTick() });
+			};
+
+			std::vector<Entity> bricks;
+			std::vector<Entity> column(5, Entity());
+			for (int row = 0; row < 4; row++)
+			{
+				for (int col = 0; col < 5; col++)
+				{
+					const glm::vec3 position(col * 0.4f - 0.8f, 0.1f + 0.2f * row, 0.0f);
+					Entity brick = scene.CreateEntity("Brick");
+					brick.AddComponent<Transform3DComponent>(Transform3DComponent(position, { 0.4f, 0.2f, 0.2f }));
+					brick.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
+					Constraint3DComponent weld(ConstraintType3D::Fixed, row == 0 ? UUID() : column[col].GetUUID());
+					if (row == 0)
+						weld.AnchorB = position;
+					else
+					{
+						weld.AnchorA = { 0.0f, -0.1f, 0.0f };
+						weld.AnchorB = { 0.0f, 0.1f, 0.0f };
+					}
+					weld.BreakForce = k_ShelfBreakForce;
+					brick.AddComponent<Constraint3DComponent>(weld);
+					brick.AddScript<BreakListener>(sink);
+					column[col] = brick;
+					bricks.push_back(brick);
+				}
+			}
+
+			scene.OnStart();
+			auto trackLowest = [&]()
+			{
+				for (Entity brick : bricks)
+					result.Lowest = (std::min)(result.Lowest, brick.GetComponent<Transform3DComponent>().Position.y - 0.1f);
+			};
+
+			const int holdTicks = static_cast<int>(holdSeconds / k_Step);
+			for (int i = 0; i < holdTicks; i++)
+			{
+				scene.OnUpdate(k_Step);
+				trackLowest();
+			}
+			result.BreaksBeforeDrop = static_cast<std::uint32_t>(result.Breaks.size());
+
+			Entity weight = scene.CreateEntity("Weight");
+			weight.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, 2.95f, 0.0f }, { 0.3f, 0.3f, 0.3f }));
+			weight.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
+			scene.CreateRigidBody(weight);
+
+			const int afterTicks = static_cast<int>(afterSeconds / k_Step);
+			for (int i = 0; i < afterTicks; i++)
+			{
+				scene.OnUpdate(k_Step);
+				trackLowest();
+			}
+			return result;
+		}
+	}
+
+	void ConstraintTest::RunBreakSceneChecks()
+	{
+		{
+			Scene scene("Hand");
+			std::uint32_t calls = 0;
+			UUID reportedOther;
+			Entity hand = scene.CreateEntity("Hand");
+			hand.AddComponent<Transform3DComponent>(Transform3DComponent({ 0.0f, 50.0f, 0.0f }));
+			hand.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
+			Entity crate = scene.CreateEntity("Crate");
+			crate.AddComponent<Transform3DComponent>(Transform3DComponent({ 1.0f, 50.0f, 0.0f }));
+			crate.AddComponent<RigidBody3DComponent>(RigidBody3DComponent(BodyType3D::Dynamic));
+
+			Constraint3DComponent grip(ConstraintType3D::Point, crate.GetUUID());
+			grip.AnchorA = { 0.5f, 0.0f, 0.0f };
+			grip.AnchorB = { -0.5f, 0.0f, 0.0f };
+			grip.BreakForce = 300.0f;
+			hand.AddComponent<Constraint3DComponent>(grip);
+			hand.AddScript<BreakListener>([&](Entity other, const ConstraintBreak3D&)
+			{
+				++calls;
+				if (other.IsValid())
+					reportedOther = other.GetUUID();
+			});
+
+			scene.OnStart();
+			for (int i = 0; i < 30; i++)
+				scene.OnUpdate(1.0f / 60.0f);
+			Check(calls == 0 && hand.HasComponent<Constraint3DComponent>(), "break scene: a hand holding a crate in free fall does not break");
+
+			scene.ApplyImpulse(crate, { 0.0f, 0.0f, 50000.0f });
+			for (int i = 0; i < 30; i++)
+				scene.OnUpdate(1.0f / 60.0f);
+			Check(calls == 1, "break scene: the hand's script receives OnConstraintBroken exactly once");
+			Check(reportedOther == crate.GetUUID(), "break scene: other is the crate");
+			Check(!hand.HasComponent<Constraint3DComponent>(), "break scene: the component is removed");
+
+			for (int i = 0; i < 60; i++)
+				scene.OnUpdate(1.0f / 60.0f);
+			Check(calls == 1, "break scene: a broken joint does not fire again or rebuild");
+
+			const float apart = glm::length(hand.GetComponent<Transform3DComponent>().Position - crate.GetComponent<Transform3DComponent>().Position);
+			grip.BreakForce = 0.0f;
+			hand.AddComponent<Constraint3DComponent>(grip);
+			for (int i = 0; i < 180; i++)
+				scene.OnUpdate(1.0f / 60.0f);
+			const float rejoined = glm::length(hand.GetComponent<Transform3DComponent>().Position - crate.GetComponent<Transform3DComponent>().Position);
+			Check(apart > 3.0f && rejoined < apart * 0.5f, "break scene: re-adding the component rebuilds the joint");
+		}
+
+		const ShelfResult held = RunShelf(10.0f, 4.0f);
+		Check(held.BreaksBeforeDrop == 0, "shelf: the wall holds for 10 s");
+		Check(!held.Breaks.empty(), "shelf: a dropped weight breaks welds");
+		Check(held.Calls >= held.Breaks.size() && held.Calls <= held.Breaks.size() * 2, "shelf: each break reaches its bodies' scripts once");
+		Check(held.Lowest > -0.06f, "shelf: no brick sinks into the floor (lowest " + std::to_string(held.Lowest) + ")");
+
+		const ShelfResult first = RunShelf(1.0f, 3.0f);
+		const ShelfResult second = RunShelf(1.0f, 3.0f);
+		Check(!first.Breaks.empty() && first.Breaks == second.Breaks, "shelf: the same welds break on the same tick in two FixedTick runs");
+	}
+
 	void ConstraintTest::RunBreakChecks()
 	{
 		constexpr float g = 9.81f;
@@ -1177,6 +1350,7 @@ namespace Dingo
 		RunGroupChecks();
 		RunGroupSceneChecks();
 		RunBreakChecks();
+		RunBreakSceneChecks();
 
 		m_BoxMesh = Mesh::CreateBox();
 		m_Scene = new Scene("Constraint Test");

@@ -97,8 +97,15 @@ namespace Dingo
 			}
 		}
 
+		void PhysicsSync::TakeBrokenConstraints(std::vector<BrokenConstraint>& out)
+		{
+			out.insert(out.end(), m_Broken.begin(), m_Broken.end());
+			m_Broken.clear();
+		}
+
 		void PhysicsSync::Stop(entt::registry& registry)
 		{
+			m_Broken.clear();
 			if (m_Physics2D && m_Physics2D->IsValid())
 			{
 				m_Physics2D->Shutdown(); // also destroys all bodies + shapes
@@ -176,6 +183,7 @@ namespace Dingo
 			SyncAncestorFilters(registry);
 			DriveKinematicChildren(registry, deltaTime);
 			m_Physics3D->Step(deltaTime, collisionSteps);
+			DrainBrokenConstraints(registry);
 
 			m_ChildWriteBacks.clear();
 
@@ -260,6 +268,24 @@ namespace Dingo
 				BuildConstraint(registry, handle);
 		}
 
+		void PhysicsSync::DrainBrokenConstraints(entt::registry& registry)
+		{
+			m_BreakScratch.clear();
+			m_Physics3D->ConsumeBrokenConstraints(m_BreakScratch);
+			for (const ConstraintBreak3D& info : m_BreakScratch)
+			{
+				const entt::entity handle = static_cast<entt::entity>(info.UserData);
+				if (!registry.valid(handle))
+					continue;
+				const Constraint3DRuntime* runtime = registry.try_get<Constraint3DRuntime>(handle);
+				if (!runtime || runtime->Constraint != info.Constraint)
+					continue;
+
+				m_Broken.push_back({ handle, runtime->Other, info });
+				registry.remove<Constraint3DComponent>(handle);
+			}
+		}
+
 		void PhysicsSync::BuildConstraint(entt::registry& registry, entt::entity handle)
 		{
 			if (m_ConstraintRejected.contains(handle))
@@ -327,6 +353,8 @@ namespace Dingo
 			params.TwistMin = settings.TwistMin;
 			params.TwistMax = settings.TwistMax;
 			params.CollideConnected = settings.CollideConnected;
+			params.BreakForce = settings.BreakForce;
+			params.BreakTorque = settings.BreakTorque;
 			params.UserData = static_cast<std::uint32_t>(handle);
 
 			const ConstraintId3D constraint = m_Physics3D->CreateConstraint(params);

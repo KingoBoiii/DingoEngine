@@ -445,6 +445,9 @@ namespace Dingo
 		void DetachScript(std::uint32_t handle);
 		void DestroyEntityNow(std::uint32_t handle);
 		void FlushPendingDestroys();
+		// Hands the joints the last physics step broke to their entities' scripts (OnConstraintBroken),
+		// then flushes the destroys those scripts asked for.
+		void DeliverConstraintBreaks();
 		// While alive, physics-written transforms hold the pose between the last two ticks
 		// (SceneParams::InterpolatePhysics); the latest tick is restored when it goes. Nests.
 		class InterpolatedView

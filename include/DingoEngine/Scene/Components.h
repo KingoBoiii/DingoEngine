@@ -834,6 +834,12 @@ namespace Dingo
 		/// True lets the two bodies collide; false (the default) ignores their contacts.
 		bool CollideConnected = false;
 
+		/// Force in newtons above which the joint breaks; 0 (the default) never breaks. Read when the joint
+		/// builds. When it breaks the Scene removes this component, so the entity's scripts get
+		/// OnConstraintBroken and re-adding the component builds a new joint. See ConstraintParams3D::BreakForce.
+		float BreakForce = 0.0f;
+		float BreakTorque = 0.0f; ///< Torque in newton-metres above which the joint breaks; 0 never breaks.
+
 		/// The motor fields below only drive a Hinge or SwingTwist. They are live: the Scene writes them to the
 		/// joint at the start of every physics step (Physics3D::SetMotor), so editing them needs no rebuild.
 		/// How the motors drive; a SwingTwist uses the same mode for Motor and TwistMotor.

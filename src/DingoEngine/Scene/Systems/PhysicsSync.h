@@ -51,6 +51,19 @@ namespace Dingo
 			// kinematic child, which is driven before the step to where its parent will be after it.
 			void Step(entt::registry& registry, float deltaTime);
 
+			// A joint that broke in a step. BodyA is the entity that owned the Constraint3DComponent
+			// (its component is already removed), BodyB the one it joined to, or null for the world.
+			struct BrokenConstraint
+			{
+				entt::entity BodyA;
+				entt::entity BodyB;
+				ConstraintBreak3D Info;
+			};
+
+			// Appends the breaks since the last call, in step then constraint id order, and forgets them.
+			// The caller delivers them to scripts outside the step.
+			void TakeBrokenConstraints(std::vector<BrokenConstraint>& out);
+
 			// Instantiates whatever body/controller the entity's components call for.
 			// Each route no-ops if its world isn't live or the component is absent.
 			void CreateBodiesForEntity(entt::registry& registry, entt::entity handle);
@@ -119,6 +132,10 @@ namespace Dingo
 			void SyncConstraints(entt::registry& registry);
 			void BuildConstraint(entt::registry& registry, entt::entity handle);
 
+			// Right after the 3D step: empties the world's broken-joint list and, for each, removes the
+			// Constraint3DComponent (SyncConstraints would rebuild it otherwise) and queues the delivery.
+			void DrainBrokenConstraints(entt::registry& registry);
+
 		private:
 			struct ChildWriteBack
 			{
@@ -182,6 +199,8 @@ namespace Dingo
 			std::unordered_set<entt::entity> m_ConstraintReported;
 			std::unordered_set<entt::entity> m_ConstraintRejected;
 			std::vector<entt::entity> m_ConstraintScratch;
+			std::vector<ConstraintBreak3D> m_BreakScratch;
+			std::vector<BrokenConstraint> m_Broken;
 			RagdollSystem m_Ragdolls;
 
 			std::vector<std::uint64_t> m_IgnoredPairs;
