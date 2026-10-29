@@ -38,6 +38,7 @@ namespace Dingo
 		void RunMotorSceneChecks();
 		void RunGroupChecks();
 		void RunGroupSceneChecks();
+		void RunBreakChecks();
 
 	private:
 		TestChecks m_Checks;

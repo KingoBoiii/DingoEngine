@@ -43,32 +43,39 @@ The owner approved D1–D8 and the phases on 2026-10-29.
 Model: implement with `general-purpose` / `sonnet` / `medium`. Review with a fresh `general-purpose` / `opus` / `high`
 agent (physics backend internals: solver lambdas, the step order, handle lifetime).
 
-- [ ] `PhysicsTypes3D.h`: add `ConstraintParams3D::BreakForce` and `BreakTorque` (defaults 0, with `///`) and
+- [x] `PhysicsTypes3D.h`: add `ConstraintParams3D::BreakForce` and `BreakTorque` (defaults 0, with `///`) and
   `struct ConstraintBreak3D { ConstraintId3D Constraint; PhysicsBodyId3D BodyA, BodyB; std::uint32_t UserData;
   float Force, Torque; }`. No Jolt type in either.
-- [ ] `Physics3D.h`: add `SetConstraintBreakLimits`, `GetConstraintBreakLimits(constraint, float&, float&)`
+- [x] `Physics3D.h`: add `SetConstraintBreakLimits`, `GetConstraintBreakLimits(constraint, float&, float&)`
   (returns bool, false on a stale handle), `GetConstraintReaction(constraint, float&, float&)` (bool) and
   `ConsumeBrokenConstraints(std::vector<ConstraintBreak3D>&)` (appends, then clears the internal list). All
   are pure virtual, with `///`.
-- [ ] `JoltPhysics3DData.h`: add `BreakForce`/`BreakTorque` to `ConstraintRecord`, plus `Breakable` (D3) and
+- [x] `JoltPhysics3DData.h`: add `BreakForce`/`BreakTorque` to `ConstraintRecord`, plus `Breakable` (D3) and
   `std::vector<ConstraintBreak3D> Broken`.
-- [ ] `JoltPhysics3D.cpp`: add a helper `ReadReaction(const ConstraintRecord&, float& force, float& torque)` that switches
+- [x] `JoltPhysics3D.cpp`: add a helper `ReadReaction(const ConstraintRecord&, float& force, float& torque)` that switches
   on the type per D2 and is shared by `GetConstraintReaction` and the break pass. Run the break pass at the end of `Step`
   after `Update`: skip the pass when both bodies are asleep, collect the breaking ids, then destroy each (D4).
   Validate `CreateConstraint` params (a negative or NaN limit → warn, treat as 0).
-- [ ] The test app (`test/src/Tests/Physics/ConstraintTest.cpp`; never read it whole, Grep for the check
+- [x] The test app (`test/src/Tests/Physics/ConstraintTest.cpp`; never read it whole, Grep for the check
   list) gets raw-API checks:
   - The rope: 6 Distance links with `BreakForce` 3000 N, link 3 at 1500 N, and a 200 kg body hung from the end
     (about 1962 N). Exactly one break, on link 3, and `ConsumeBrokenConstraints` returns it once with the right BodyA/BodyB/UserData.
   - Reaction readback: a static hang reads about m·g within 5%. A sleeping pair reads 0.
   - The handle is stale after a break, and a new constraint's id is greater than the broken one's.
   - Set/Get break limits round-trip. Negative and NaN values are ignored.
-- [ ] Docs: in `docs/physics-3d.md`, add a "Breaking" subsection under Constraints (after Motors, line ~307) with the D2
+- [x] Docs: in `docs/physics-3d.md`, add a "Breaking" subsection under Constraints (after Motors, line ~307) with the D2
   table, D1 and the sleep note.
 
 Verification: build the engine and `Dingo-TestFramework` (public header change → full `make -j"$(nproc)"
 config=debug`), run `--test=constraint`, and run doxygen with an empty warnings file. A Haiku agent runs these and reports
 failures only.
+
+**As built (P1).**
+- `ReadReaction` also returns 0 for a disabled constraint (Jolt freezes its lambdas), and before the first `Step`. `SetConstraintBreakLimits` does not wake bodies.
+- A non-finite limit (including +inf) is rejected like a negative or NaN one.
+- `Breakable` is kept sorted with `lower_bound`, since `SetConstraintBreakLimits` can make an older id breakable.
+- A hung body sleeps after ~0.5 s and then reads 0, so the m*g check samples at 0.25 s.
+- Verified on Windows (Debug, hidden desktop): `--test=constraint` 167 PASS, 0 FAIL, no `VUID-` or `LOG ERROR`. Not run: Linux build, doxygen (not installed here). P1 review (Opus) fixed: stale disabled reaction, hang-check timing, doc gaps.
 
 ### P2 — Scene, scripts, F9 panel
 

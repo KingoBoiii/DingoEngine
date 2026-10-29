@@ -192,6 +192,82 @@ namespace Dingo
 				bodyInterface.ActivateBody(ToBodyId(record.BodyB));
 		}
 
+		bool ValidBreakLimit(float limit)
+		{
+			return std::isfinite(limit) && limit >= 0.0f;
+		}
+
+		void TrackBreakable(Internal::JoltPhysics3DData& data, ConstraintId3D id, bool breakable)
+		{
+			auto pos = std::lower_bound(data.Breakable.begin(), data.Breakable.end(), id);
+			const bool present = pos != data.Breakable.end() && *pos == id;
+			if (breakable && !present)
+				data.Breakable.insert(pos, id);
+			else if (!breakable && present)
+				data.Breakable.erase(pos);
+		}
+
+		// Jolt keeps only the last collision sub-step's accumulated impulse, so this reads one sub-step
+		// scaled to a per-second rate. Motor lambdas are left out on purpose.
+		void ReadReaction(const Internal::JoltPhysics3DData& data, const Internal::JoltPhysics3DData::ConstraintRecord& record, float& force, float& torque)
+		{
+			force = 0.0f;
+			torque = 0.0f;
+			if (!(data.LastDeltaTime > 0.0f) || !record.Constraint->GetEnabled())
+				return;
+
+			const JPH::BodyInterface& bodyInterface = data.PhysicsSystem.GetBodyInterface();
+			const bool awake = bodyInterface.IsActive(ToBodyId(record.BodyA))
+				|| (record.BodyB != k_InvalidBody3D && bodyInterface.IsActive(ToBodyId(record.BodyB)));
+			if (!awake)
+				return;
+
+			const JPH::TwoBodyConstraint* joint = record.Constraint.GetPtr();
+			float lambdaForce = 0.0f;
+			float lambdaTorque = 0.0f;
+			switch (record.Type)
+			{
+			case ConstraintType3D::Fixed:
+			{
+				const auto* fixed = static_cast<const JPH::FixedConstraint*>(joint);
+				lambdaForce = fixed->GetTotalLambdaPosition().Length();
+				lambdaTorque = fixed->GetTotalLambdaRotation().Length();
+				break;
+			}
+			case ConstraintType3D::Point:
+				lambdaForce = static_cast<const JPH::PointConstraint*>(joint)->GetTotalLambdaPosition().Length();
+				break;
+			case ConstraintType3D::Hinge:
+			{
+				const auto* hinge = static_cast<const JPH::HingeConstraint*>(joint);
+				lambdaForce = hinge->GetTotalLambdaPosition().Length();
+				lambdaTorque = hinge->GetTotalLambdaRotation().Length() + std::abs(hinge->GetTotalLambdaRotationLimits());
+				break;
+			}
+			case ConstraintType3D::SwingTwist:
+			{
+				const auto* swingTwist = static_cast<const JPH::SwingTwistConstraint*>(joint);
+				lambdaForce = swingTwist->GetTotalLambdaPosition().Length();
+				lambdaTorque = (std::max)({ std::abs(swingTwist->GetTotalLambdaSwingY()), std::abs(swingTwist->GetTotalLambdaSwingZ()), std::abs(swingTwist->GetTotalLambdaTwist()) });
+				break;
+			}
+			case ConstraintType3D::Distance:
+				lambdaForce = std::abs(static_cast<const JPH::DistanceConstraint*>(joint)->GetTotalLambdaPosition());
+				break;
+			case ConstraintType3D::Slider:
+			{
+				const auto* slider = static_cast<const JPH::SliderConstraint*>(joint);
+				lambdaForce = slider->GetTotalLambdaPosition().Length() + std::abs(slider->GetTotalLambdaPositionLimits());
+				lambdaTorque = slider->GetTotalLambdaRotation().Length();
+				break;
+			}
+			}
+
+			const float scale = static_cast<float>(data.LastCollisionSteps) / data.LastDeltaTime;
+			force = lambdaForce * scale;
+			torque = lambdaTorque * scale;
+		}
+
 		class QueryBodyFilter final : public JPH::BodyFilter
 		{
 		public:
@@ -325,6 +401,7 @@ namespace Dingo
 
 		Internal::JoltPhysics3DData::ConstraintRecord record = std::move(it->second);
 		data.Constraints.erase(it);
+		TrackBreakable(data, id, false);
 
 		data.PhysicsSystem.RemoveConstraint(record.Constraint.GetPtr());
 
@@ -636,6 +713,37 @@ namespace Dingo
 		m_Data->LastDeltaTime = deltaTime;
 		m_Data->LastCollisionSteps = (std::max)(collisionSteps, 1);
 		m_Data->PhysicsSystem.Update(deltaTime, collisionSteps, &m_Data->TempAllocator, &m_Data->JobSystem);
+
+		Internal::JoltPhysics3DData& data = *m_Data;
+		if (data.Breakable.empty())
+			return;
+
+		std::vector<ConstraintBreak3D> breaking;
+		for (ConstraintId3D id : data.Breakable)
+		{
+			const Internal::JoltPhysics3DData::ConstraintRecord& record = data.Constraints.at(id);
+			float force = 0.0f, torque = 0.0f;
+			ReadReaction(data, record, force, torque);
+			const bool byForce = record.BreakForce > 0.0f && force > record.BreakForce;
+			const bool byTorque = record.BreakTorque > 0.0f && torque > record.BreakTorque;
+			if (byForce || byTorque)
+				breaking.push_back({ id, record.BodyA, record.BodyB, record.UserData, force, torque });
+		}
+
+		for (const ConstraintBreak3D& entry : breaking)
+		{
+			DestroyConstraintInternal(data, entry.Constraint);
+			if (data.Broken.size() >= Internal::JoltPhysics3DData::k_MaxBroken)
+			{
+				if (!data.BrokenOverflowWarned)
+				{
+					DE_CORE_WARN("Physics3D: more than {} broken constraints were never consumed; dropping the oldest", Internal::JoltPhysics3DData::k_MaxBroken);
+					data.BrokenOverflowWarned = true;
+				}
+				data.Broken.erase(data.Broken.begin());
+			}
+			data.Broken.push_back(entry);
+		}
 	}
 
 	void JoltPhysics3D::SetGravity(const glm::vec3& gravity)
@@ -1021,12 +1129,18 @@ namespace Dingo
 		record.LocalB = pointB;
 		record.UserData = params.UserData;
 		record.HingeAxisA = axisA;
+		record.BreakForce = ValidBreakLimit(params.BreakForce) ? params.BreakForce : 0.0f;
+		record.BreakTorque = ValidBreakLimit(params.BreakTorque) ? params.BreakTorque : 0.0f;
+		if (record.BreakForce != params.BreakForce || record.BreakTorque != params.BreakTorque)
+			DE_CORE_WARN("Physics3D::CreateConstraint: a negative or NaN break limit was treated as 0");
+		const bool breakable = record.BreakForce > 0.0f || record.BreakTorque > 0.0f;
 		if (!params.CollideConnected && !pinned)
 		{
 			AddPairIgnore(data, params.BodyA, params.BodyB);
 			record.IgnoresPair = true;
 		}
 		data.Constraints.emplace(id, std::move(record));
+		TrackBreakable(data, id, breakable);
 
 		data.BodyConstraints[params.BodyA].push_back(id);
 		if (!pinned)
@@ -1237,6 +1351,53 @@ namespace Dingo
 			lambda = axis == MotorAxis3D::Twist ? total.GetX() : (std::max)(std::abs(total.GetY()), std::abs(total.GetZ()));
 		}
 		return std::abs(lambda) * static_cast<float>(m_Data->LastCollisionSteps) / m_Data->LastDeltaTime;
+	}
+
+	void JoltPhysics3D::SetConstraintBreakLimits(ConstraintId3D constraint, float breakForce, float breakTorque)
+	{
+		if (!m_Data || !ValidBreakLimit(breakForce) || !ValidBreakLimit(breakTorque))
+			return;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end())
+			return;
+
+		it->second.BreakForce = breakForce;
+		it->second.BreakTorque = breakTorque;
+		TrackBreakable(*m_Data, constraint, breakForce > 0.0f || breakTorque > 0.0f);
+	}
+
+	bool JoltPhysics3D::GetConstraintBreakLimits(ConstraintId3D constraint, float& outBreakForce, float& outBreakTorque) const
+	{
+		if (!m_Data)
+			return false;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end())
+			return false;
+
+		outBreakForce = it->second.BreakForce;
+		outBreakTorque = it->second.BreakTorque;
+		return true;
+	}
+
+	bool JoltPhysics3D::GetConstraintReaction(ConstraintId3D constraint, float& outForce, float& outTorque) const
+	{
+		if (!m_Data)
+			return false;
+		auto it = m_Data->Constraints.find(constraint);
+		if (it == m_Data->Constraints.end())
+			return false;
+
+		ReadReaction(*m_Data, it->second, outForce, outTorque);
+		return true;
+	}
+
+	void JoltPhysics3D::ConsumeBrokenConstraints(std::vector<ConstraintBreak3D>& outBroken)
+	{
+		if (!m_Data)
+			return;
+		outBroken.insert(outBroken.end(), m_Data->Broken.begin(), m_Data->Broken.end());
+		m_Data->Broken.clear();
+		m_Data->BrokenOverflowWarned = false;
 	}
 
 	bool JoltPhysics3D::RayCast(const Ray& ray, float maxDistance, RayCastHit3D& outHit, const QueryFilter3D& filter) const

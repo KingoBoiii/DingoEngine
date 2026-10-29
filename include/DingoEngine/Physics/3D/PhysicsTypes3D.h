@@ -165,10 +165,29 @@ namespace Dingo
 		/// Free for the caller (Physics3D::GetConstraintUserData).
 		std::uint32_t UserData = 0;
 
+		/// Newtons of reaction force above which the constraint breaks and is destroyed (Physics3D::ConsumeBrokenConstraints).
+		/// 0 never breaks. A negative, NaN or infinite value is treated as 0 with a warning.
+		float BreakForce = 0.0f;
+		/// Newton-metres of reaction torque above which the constraint breaks. 0 never breaks. Point and Distance have
+		/// no torque, so it has no effect on them. A negative, NaN or infinite value is treated as 0 with a warning.
+		float BreakTorque = 0.0f;
+
 		/// A Fixed constraint with no bodies; CreateConstraint fails until BodyA is set.
 		ConstraintParams3D() = default;
 		/// Sets the type and the two bodies (b invalid pins a to the world); everything else keeps its default.
 		ConstraintParams3D(ConstraintType3D type, PhysicsBodyId3D a, PhysicsBodyId3D b) : Type(type), BodyA(a), BodyB(b) {}
+	};
+
+	/// One constraint that broke (Physics3D::ConsumeBrokenConstraints). A snapshot: the handle is already stale and
+	/// the bodies may be destroyed by the time it is read.
+	struct ConstraintBreak3D
+	{
+		ConstraintId3D Constraint = k_InvalidConstraint3D; ///< The destroyed constraint's handle.
+		PhysicsBodyId3D BodyA = k_InvalidBody3D;           ///< The constraint's first body.
+		PhysicsBodyId3D BodyB = k_InvalidBody3D;           ///< The second body, or k_InvalidBody3D for a world pin.
+		std::uint32_t UserData = 0;                        ///< The UserData the constraint was created with.
+		float Force = 0.0f;                                ///< The reaction force in N at the break.
+		float Torque = 0.0f;                               ///< The reaction torque in N*m at the break.
 	};
 
 	/// Which rotation axis of a constraint a motor drives (Physics3D::SetMotor).

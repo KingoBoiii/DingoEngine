@@ -80,6 +80,10 @@ namespace Dingo
 		void SetMotorTargetRotation(ConstraintId3D constraint, const glm::quat& rotation) override;
 		void SetMotorTargetVelocity(ConstraintId3D constraint, const glm::vec3& angularVelocity) override;
 		float GetMotorTorque(ConstraintId3D constraint, MotorAxis3D axis) const override;
+		void SetConstraintBreakLimits(ConstraintId3D constraint, float breakForce, float breakTorque) override;
+		bool GetConstraintBreakLimits(ConstraintId3D constraint, float& outBreakForce, float& outBreakTorque) const override;
+		bool GetConstraintReaction(ConstraintId3D constraint, float& outForce, float& outTorque) const override;
+		void ConsumeBrokenConstraints(std::vector<ConstraintBreak3D>& outBroken) override;
 
 		std::unique_ptr<CharacterController3D> CreateCharacterController(const CharacterControllerParams3D& params) override;
 
