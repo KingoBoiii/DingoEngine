@@ -82,43 +82,19 @@ Most of the cost is context re-read on every call (context size × number of cal
 - **Long command output:** send builds and test runs to a file in the scratchpad, then read only the errors, warnings in files you changed, and `[FAIL]`, `VUID-` and `LOG ERROR` lines.
 - **Release notes are what Headstone reads for an engine bump** (`gh release view vX.Y.Z`), instead of this repo. Give each release a **For games** section: breaking API changes with their `docs/` page, behaviour changes a game would notice, and the `headstone` issues it closes.
 
-## Code conventions
-
-| Thing | Convention |
-|---|---|
-| Namespace | `Dingo` (everything) |
-| Members | `m_Name` (instance), `s_Name` (static), `k_Name` or `UPPER_SNAKE_CASE` constants, `UPPER_SNAKE_CASE` macros |
-| Backend classes | `Vulkan*`, `DirectX12*`, `Nvrhi*`, `Win*` |
-| Log macros | engine `DE_CORE_INFO/WARN/ERROR/ASSERT`; client `DE_INFO/...` |
-| Event binding | `DE_BIND_EVENT_FN(fn)`; bit flags via `DE_BIT(x)` |
-| Resource creation | fluent `*Params` structs passed to a static `Create()`: `Texture::Create(TextureParams().SetWidth(512)...)` |
-| PCH | `depch.h` / `depch.cpp` |
-
-- On-screen text is UTF-8. Only the engine builds with `/utf-8`, so non-ASCII literals in the test app and examples are hex-escaped.
-- Public APIs use abstract classes, a static `Create()` and opaque handles (see `Physics3D`). GLM in public headers is fine.
-- Prefer `RGBA8_UNORM` for ordinary colour textures.
-
 ## Rules that break things if forgotten
 
-**Build and shipping**
 - Never modify anything under `vendor/` (`.claude/settings.json` denies edits there). Force pushes, pushes to `master` and rebases of a pushed branch are blocked by `.claude/hooks/guard-git.sh`.
-- Every executable that links the engine calls `copyAssimpRuntime()` in its `premake5.lua`, or it dies with `STATUS_DLL_NOT_FOUND` before `main` (on Linux it fails to link). A game that ships packed assets also calls `embedPackKey()` after it and passes `Dingo::Generated::GetPackageKey()` as `ApplicationParams.Assets.PackageKey`. Each example and the test app also calls `exeMetadata { Name = ..., Company = ..., Copyright = ... }` after it, with an `icon.ico` and `icon.png` beside it (`scripts/icons/make-icons.sh`), or it ships without a version resource, icon or desktop entry. Add a new example to `.github/workflows/build-release.yml`'s packaging and the `.vscode` entries too.
-- Never leave a `.dpak` in `build/bin/`: the engine mounts `<exe stem>.dpak` at start-up. Re-run premake after changing a `dpak.key`.
 
-**C++ and headers** (MSVC and GCC both have to accept it)
-- EnTT, Box2D, Jolt, ImGui, miniaudio and NVRHI never appear in a public header.
-- `DE_CORE_ASSERT(cond, msg)` takes a plain string only; format arguments don't compile. `DE_CORE_WARN/ERROR` do take them.
-- `<Windows.h>` leaks `min`, `max`, `near` and `far` into test code and public headers. Write `(std::min)(a, b)`, `(std::max)(...)`, `(std::numeric_limits<T>::max)()`, and never name anything `near` or `far`.
-- In a public header, a member named after its own type spells the type qualified: `Dingo::Mesh* Mesh`. GCC rejects `Mesh* Mesh`.
-- Paths become text only through `Internal::PathToUtf8`/`PathToGenericUtf8`/`PathFromUtf8` (`Core/PathText.h`). Never call `path.string()`/`generic_string()` in the engine, or build a `path` from a `std::string`: on Windows they go through the ANSI code page and throw on a name it can't map. Games and the test app follow the same rule through the public `FileSystem::PathToUtf8`/`PathToGenericUtf8`/`PathFromUtf8`.
+C++ conventions load from `.claude/rules/cpp.md` when a .cpp/.h is touched, public-API rules from `.claude/rules/public-api.md` when `include/DingoEngine/` or `docs/` is, and build and shipping rules from `.claude/rules/build.md` when a `premake5.lua`, workflow, script or `dpak.key` is.
 
-Rendering, shadows-and-post, animation, DingoUI and engine-invariant rules load from `.claude/rules/` when their files are touched. The reference files below have one `##` heading per topic and an index at the top: Grep the heading, then Read that range.
+Rendering, shadows-and-post, animation, DingoUI, engine-invariant, C++, public-API and build rules load from `.claude/rules/` when their files are touched. The reference files below have one `##` heading per topic and an index at the top: Grep the heading, then Read that range.
 
 ## Comments — keep them to a minimum
 
 Do not write code comments unless absolutely necessary. A comment must earn its place by stating a load-bearing "why" — a constraint, invariant, or non-obvious consequence the code cannot express itself. Never narrate what the next line does, never leave change-tracking or review commentary ("added X", "fixed Y"), and apply the same restraint to scripts, YAML, shaders, and example code. When in doubt, leave it out.
 
-The exception is `include/DingoEngine/`: every public declaration gets a `///` line saying what it promises (decision D7 in [the v1.0 plan](.claude/plans/2026-10-08-v1.0-plan.md), line 819; `docs/conventions.md` "Documentation"). The `API reference` workflow fails a PR that leaves one out.
+The `///` documentation rule for `include/DingoEngine/` loads from `.claude/rules/public-api.md`.
 
 ## Reference — read when the task needs it
 
