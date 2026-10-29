@@ -33,14 +33,22 @@ Otherwise map each touched area to what to run. Test cases are picked with `--te
 | `Particle*` | `--test=particle` |
 | compute, `GraphicsBuffer*` storage paths | `--test=compute` |
 | `Framebuffer*`, `Texture*`, `TextureReadback*`, `Sampler*`, `RenderPass*`, `CommandList*` | `--test=target` |
+| `Scene/SceneRenderer*`, scenes rendered into a `Framebuffer` target | `--test=target` |
 | `Model*`, `AssimpVfsIO*` | `--test=model`, `--test=asset` |
 | `Skeleton*`, `Animator*`, `AnimationClip*`, `Skinning.glsl`, `Scene/Systems/Animation*` | `--test=anim` (plus `--anim=crowd`) |
 | `Asset/`, `Asset/Pack/`, VFS | `--test=asset`, `--test=pack` |
 | `Audio/` | `--test=bus` |
+| `Audio/MiniAudio/*` capture paths, the capture calls in `AudioEngine.h` | `--test=capture` |
 | `Physics/3D/`, `Scene/Systems/PhysicsSync*`, colliders | `--test=collider`, `--test=hierarchy` |
+| `Physics/3D/JoltPhysics/*` constraints, constraint components, `PhysicsSync*` joints | `--test=constraint` |
+| `RagdollComponent`, `RagdollRecipe*`, `Scene/Systems/RagdollSystem*` | `--test=ragdoll` |
+| fixed tick in `Scene.cpp`, `Scene/Systems/PhysicsInterpolation*`, `ScriptSystem*` `OnFixedUpdate` | `--test=fixedtick` |
+| `Scene/Systems/StaticGeometry*`, `MeshRendererComponent::Static`, instancing, animator culling | `--test=throughput` (plus `--throughput=mixed`, `skinned`, `shadow`) |
 | `Scene/` hierarchy, transforms | `--test=hierarchy` |
 | `Physics/2D/` | `--test=hierarchy --hierarchy=2d`, AngryBirds |
 | `Core/Application*`, `Windowing/`, `Core/Input*` | `--test=background`, `--test=cursor` |
+| `Windowing/DisplayMode*`, `Window*` fullscreen, `Core/Settings*`, `Core/LaunchFlags*` | `--test=display` (plus `--display-exclusive=next`, `--window=1280x720`) |
+| `UI/DingoUI/**`, `include/DingoEngine/UI/DingoUI*`, `DingoUI.glsl` | `--test=dingoui` (plus `--dingoui=stress`) |
 | `Graphics/NVRHI/`, `SwapChain*`, `GraphicsContext*` | every test case on every backend |
 
 Then add:

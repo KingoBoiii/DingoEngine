@@ -1,3 +1,5 @@
+**Status**: open
+
 # Memory stats
 
 ## Context

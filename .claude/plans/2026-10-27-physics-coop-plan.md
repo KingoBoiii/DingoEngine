@@ -1,3 +1,5 @@
+**Status**: open
+
 # physics-coop: active ragdolls (#298)
 
 Started by a routine run (Mode B, group `physics-coop`). The owner wasn't there, so the decisions

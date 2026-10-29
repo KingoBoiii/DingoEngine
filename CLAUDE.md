@@ -4,18 +4,15 @@ DingoEngine is a C++20 game engine on NVRHI, targeting Vulkan (primary), DirectX
 
 ## How we work
 
-- **Roles.** The owner (KingoBoiii) sets direction, decides design questions, merges every PR and runs the GPU checks on Windows (RX 7900 XTX, VS 2026, Vulkan/DX11/DX12). Claude writes most of the code, mostly in cloud sessions on Linux with no GPU (Mesa llvmpipe under Xvfb).
-- **Where work comes from.** Either a milestone plan or a group of GitHub issues:
-  - **Plans**: `.claude/plans/YYYY-MM-DD-<topic>-plan.md`, with the owner's decisions at the top and phases (P1, P2… or A, B…). Each phase appends "As built" notes to the plan, and those override the design. The PR body carries a phases checklist; a later run continues from the first unchecked phase. One phase per session (see Token budget).
-  - **Issues**: defects are labelled `bug`, limitations and requests `enhancement`. A run takes one label's group. Leave issues labelled `wontfix` or `routine:skip` alone, and anything that needs hardware the session lacks (multi-GPU, a gamepad).
-  - **The scheduled routine** works both through the `routine-run` skill: one PR phase (Mode A) or one issue group (Mode B) per run, claimed with the `routine:claimed` label.
-- **Branches.** `feat/<topic>`, `fix/bug-<topic>`, `feat/enhancement-<topic>`, `vX.Y.Z` for point releases. A cloud session's assigned `claude/…` branch overrides these. Bring master in with a merge commit; never rebase or force-push a branch someone else has. Stack a PR on another only when both rewrite the same code, and say so at the top of the PR.
-- **Commits.** Conventional, lowercase: `type(scope): summary`, scoped by engine area (`renderer3d`, `asset`, `scene`, `post`, `animation`, `audio`, `graphics`, `core`, `build`, `ci`). One commit per issue, ending in `(#N)`. The body says why, not what.
-- **PRs.** Opened only when the owner asks (or by a routine run). Write the body with the `pr-writeup` skill: summary and `Closes #N` lines; **What changed** (table: issue | commit | change); **Left out**; **Needs testing on a real GPU: Yes/No** with exactly what to run on which backend; **Run log** (Did / Verification / Questions I answered myself, as *Q – Options – Chose* / Skipped / Next). The owner appends "GPU verification (owner)" after running it, on Windows, with the `pr-gpu-test` skill.
-- **Decisions.** When the owner isn't there to ask, decide and record it in the PR's *Questions I answered myself*. Changes to public behaviour or a plan's design go to the owner first when they are around.
-- **Review.** Before the final push, one fresh review agent reads the whole diff. Fix every High and Medium, and fix or explain each Low in the PR. A milestone gets a full report in `.claude/reviews/YYYY-MM-DD-<name>-review.md`; findings left open become issues.
-- **Docs travel with the code.** A public API change updates its `docs/*.md` page in the same PR, and a changed engine pattern updates the matching `.claude/reference/` file. A bug found in passing becomes an issue, not a TODO.
-- **Showcases.** Each milestone ships or upgrades an example in `examples/` that uses the new feature, often with a `--check` mode.
+- **Roles.** The owner (KingoBoiii) sets direction, decides design, merges every PR and runs the GPU checks on Windows (RX 7900 XTX, VS 2026, Vulkan/DX11/DX12). Claude writes most code in Linux cloud sessions without a GPU (llvmpipe under Xvfb).
+- **Where work comes from.** Plans in `.claude/plans/YYYY-MM-DD-<topic>-plan.md` (a `**Status**:` first line, the owner's decisions on top, "As built" notes override the design; one phase per session), or GitHub issues by label (`bug`, `enhancement`; skip `wontfix`, `routine:skip` and anything needing hardware the session lacks). The routine takes both through `routine-run`.
+- **Branches.** `feat/<topic>`, `fix/bug-<topic>`, `feat/enhancement-<topic>`, `vX.Y.Z` for point releases; a cloud session pushes to its assigned `claude/…` branch unless the owner names one in the prompt. Bring master in with a merge commit; never rebase or force-push a branch someone else has. Stack a PR only when both rewrite the same code, and say so at its top.
+- **Commits.** Conventional, lowercase `type(scope): summary`, one per issue ending in `(#N)` (scopes: the `commit` skill).
+- **PRs.** Only when the owner asks or a routine runs. Body via `pr-writeup`; the owner adds GPU results via `pr-gpu-test`.
+- **Decisions.** With the owner away, decide and record it under the PR's *Questions I answered myself*; with them around, public-behaviour or plan-design changes go to them first.
+- **Review.** Before the final push one fresh review agent reads the whole diff: fix every High and Medium, fix or explain each Low in the PR. A milestone gets `.claude/reviews/YYYY-MM-DD-<name>-review.md`; open findings become issues.
+- **Docs travel with the code.** A public API change updates its `docs/*.md` page in the same PR; a changed engine pattern, its `.claude/reference/` file. A bug found in passing becomes an issue, not a TODO.
+- **Showcases.** Each milestone ships or upgrades an `examples/` project using the feature, often with a `--check` mode.
 
 ## Keywords
 
@@ -36,106 +33,72 @@ DingoEngine is a C++20 game engine on NVRHI, targeting Vulkan (primary), DirectX
 
 ## Verifying changes
 
-Keep it to the smallest check that proves the change. CI (`build-linux.yml` with the full smoke test, `build-windows.yml`) runs only on pushes to master. A PR gets only `lint.yml`, a syntax-only compile of its changed files with GCC and MSVC (warnings reported, never fatal), and, when it touches `include/` or `docs/`, the `API reference` workflow (Doxygen, fails on any warning). So these steps are its only build-and-run check before the owner runs the GPU backends.
+The smallest check that proves the change. CI runs only on pushes to master; a PR gets `lint.yml` (syntax-only compile of changed files) and, if it touches `include/` or `docs/`, `API reference` (Doxygen, fails on any warning).
 
-1. **Docs, comments, plans, CI or scripts that no build runs**: nothing to run. Don't set up the toolchain for them. A change to `include/` or a guide runs `mkdir -p build/docs && doxygen docs/Doxyfile` and leaves `build/docs/warnings.txt` empty.
-2. **Code**: build Debug on Linux, only the projects you touched (the engine plus the test app or example that uses it). A change to a public header or a `premake5.lua` builds every project (`make -j"$(nproc)" config=debug`), since nothing else catches a broken example before merge. No warnings in files you changed.
-3. **Run only the affected feature's test case**: `cd test && timeout 60 xvfb-run -a ../build/bin/Debug-linux-x86_64/Dingo-TestFramework/Dingo-TestFramework --test=<case>`. The app stays open after its checks, so the timeout ends it. Pass = no `[FAIL]`, no `VUID-`, no `LOG ERROR` in the output. If you changed an example that has `--check`, run that too. On Windows, build the same projects with MSBuild as described under "Build and run", and run the test app directly from `test/` with the same `--test=<case>` flag and the same pass criteria.
-4. **Add a check only for new behaviour or a fixed bug**, inside the existing test case (`test/src/Tests/`, helpers in `Tests/TestChecks.h`). Pure engine code (no window or device) gets a doctest case in `test/UnitTests` instead, run with `../build/bin/Debug-linux-x86_64/Dingo-UnitTests/Dingo-UnitTests`.
-5. **Don't** run the full smoke test, other configurations, A/B or mutation runs, or performance captures unless asked; master's CI runs the smoke test after the merge.
-6. **Never claim GPU, D3D11/D3D12 or Windows results.** List them under "Needs testing on a real GPU" in the PR.
+- **Docs, comments, plans, CI or scripts no build runs**: run nothing, set up no toolchain. For `include/` or a guide: `mkdir -p build/docs && doxygen docs/Doxyfile` leaves `build/docs/warnings.txt` empty.
+- **Code changes**: the build-and-test steps load from `.claude/rules/verify.md`.
+- **Don't** run the full smoke test, other configurations, A/B or mutation runs, or performance captures unless asked; master's CI smoke-tests after the merge.
+- **Never claim GPU, D3D11/D3D12 or Windows results**; list them under "Needs testing on a real GPU".
 
 ## Sub-agent selection
 
-The main session runs Sonnet at medium effort (`.claude/settings.json`) and orchestrates. Each agent call sets `model` and `effort` from this table:
+The main session (Sonnet, medium; `.claude/settings.json`) orchestrates. Roles are project agents in `.claude/agents/` (`.claude/reference/agent-models.md` says why each model); call them by `subagent_type`.
 
-| Need | Agent | Model | Effort |
-|---|---|---|---|
-| One known file, symbol or string | No agent: `Grep`/`Read` directly | | |
-| Find where something lives across many files (call sites, every reader of a component, every place a format is written) | `Explore` ("medium" or "very thorough") | `haiku` | `low` |
-| Run a build, a test case or any command and report the errors and `[FAIL]`/`VUID-`/`LOG ERROR` lines | `general-purpose` | `haiku` | `low` |
-| Mechanical sweeps: check docs against code, update every reference to a renamed API, fill a test case from a clear spec | `general-purpose` | `sonnet` | `medium` |
-| Implement a well-specified, contained change (one issue, one phase step, a test, an example's game code) | `general-purpose`, one per change, parallel with `isolation: "worktree"` when the files don't overlap | `sonnet` | `medium` |
-| Mockups, and Blender or art work | `general-purpose` | `sonnet` | `medium` |
-| Design a phase or a multi-file change | `Plan`, result recorded in the plan file with `file:line` anchors | `sonnet` | `medium` |
-| Design an engine-core change (render-thread or GPU synchronisation, NVRHI state and barriers, shader bindings, hierarchy and physics sync, animator internals, save formats, netcode) before writing it | `Plan`, result recorded in the plan file with `file:line` anchors | `opus` | `high` |
-| Implement an engine-core change from that design | `general-purpose`, the prompt carries the design | `sonnet` | `medium` |
-| Pre-push review of the whole diff | One fresh `general-purpose` agent with no context from the work (or the `code-review` skill) | `sonnet` | `medium` |
-| Pre-push review of a diff that touches engine internals (renderer, threading, GPU synchronisation, save formats, netcode) | Same, fresh agent | `opus` | `high` (`xhigh` for renderer, threading or synchronisation) |
-| Root-cause a bug in Vulkan/GPU work (device lost, validation error, a wrong frame), a Jolt NaN, netcode, a save format or an engine-internal race | `general-purpose` | `opus` | `xhigh` |
-| Root-cause any other bug | `general-purpose` | `sonnet` | `medium` |
-| Milestone review, or a bug Opus failed on twice | `general-purpose` | `fable` | `high`, only when the owner asks |
-| Questions about Claude Code, hooks, skills, the API | `claude-code-guide` | its default | |
+| Need | Agent |
+|---|---|
+| One known file or symbol | No agent: `Grep`/`Read` |
+| Search many files | `code-explorer` (haiku, low) |
+| Run a build or test | `build-runner` (haiku, low) |
+| One contained change | `implementer` (sonnet, medium); parallel with `isolation: "worktree"` if files don't overlap |
+| Mechanical sweep (docs against code, every reference to a rename, a test from a spec), mockups, Blender or art | `implementer` (sonnet, medium) |
+| Design a phase or a multi-file change | built-in `Plan`, `model: sonnet`; result in the plan file with `file:line` anchors |
+| Design an engine-core change | `engine-designer` (opus, high) |
+| Pre-push review | `fresh-reviewer` (sonnet, medium) or the `code-review` skill |
+| Review engine internals | `engine-reviewer` (opus, xhigh; `effort: high` without renderer, threading or synchronisation) |
+| GPU, Jolt, netcode, save-format, race bugs | `gpu-bug-hunter` (opus, xhigh) |
+| Any other bug | `bug-hunter` (sonnet, medium) |
+| Milestone or cross-cutting design | `fable-advisor` (fable, high, read-only), only when the owner asks |
+| Claude Code questions | `claude-code-guide` |
 
-Why these picks: Haiku returns facts, not judgement, so it searches and runs commands but never edits engine code or reviews. Sonnet is the default for everyday work, the main session included. Opus is reserved for the engine-internals rows because a subtle mistake there only shows on a real GPU, so engine-core code gets an Opus design first and an Opus review after, with Sonnet writing it in between; Fable is the owner's call. For judgement work, lower Opus's effort before switching to a cheaper model. Judge cost per finished task: a cheaper agent whose work has to be redone isn't cheaper, and if a Sonnet agent's change fails review twice, redo it on Opus.
-
-Rules for every agent:
-- Give it a self-contained prompt: the goal, the files involved, the rule that applies from this file or a reference file, and what to return (a conclusion and `file:line`s, not file dumps).
-- Run agents in parallel only when their work doesn't overlap. Never let two agents edit the same file.
-- Don't delegate and then search the same thing yourself, and don't spawn an agent for a one-step lookup.
-- An agent's report isn't shown to the owner; relay what matters. Check an agent's claims about code before acting on them, and review code a `sonnet` agent wrote before it is committed.
+Rules the agent files can't carry:
+- A self-contained prompt: goal, files, the rule that applies, what to return. Don't delegate and then search the same thing yourself. One agent per independent job; continue it with SendMessage for follow-ups on the same work.
+- Never two agents on one file; parallel only when their work doesn't overlap.
+- Reports aren't shown to the owner: relay what matters, check code claims before acting, review `implementer` code before committing it.
 
 ## Token budget
 
-Most of the cost is context re-read on every call (context size × number of calls), not the text you write. Measured: the v0.8.0 animation milestone ran three days in one session, reached 967k context and cost 13 units per prompt; single-phase sessions cost 2–5.
-
-- **One session, one job.** A plan, each phase, each issue group, each PR test and each release get their own session. The plan's "As built" notes and the PR's phases checklist carry the state between them. When a job is done, say so in one line and suggest **handoff** plus a new session. Past ~200k context or a day old: stop at the next clean point (phase committed and pushed).
-- **The session model fits the job.** Sonnet is the default. For work in the engine-internals rows of "Sub-agent selection" (Vulkan/GPU root-causing, Jolt NaN, netcode, save formats, render-thread and synchronisation changes), say so at the start and suggest the owner switch the session to Opus.
-- **Agents follow "Sub-agent selection" above.** One agent per independent job. Continue an agent with SendMessage for follow-ups on the same work instead of starting a new one.
-- **Read narrowly:** the `.claude/reference/` file for the area first, then Grep, then Read only the lines you need. Never read these whole: `test/src/Tests/Scene/AnimationTest.cpp`, `Graphics/Renderer3D.cpp`, `UI/ImGui/ImGuiDebugPanels.cpp`, `Graphics/Animator.cpp`, `Graphics/Model.cpp`, `Asset/AssetManager.cpp`, `test/src/Tests/Renderer/LightingTest.cpp`.
-- **Long command output:** send builds and test runs to a file in the scratchpad, then read only the errors, warnings in files you changed, and `[FAIL]`, `VUID-` and `LOG ERROR` lines.
-- **Release notes are what Headstone reads for an engine bump** (`gh release view vX.Y.Z`), instead of this repo. Give each release a **For games** section: breaking API changes with their `docs/` page, behaviour changes a game would notice, and the `headstone` issues it closes.
-
-## Code conventions
-
-| Thing | Convention |
-|---|---|
-| Namespace | `Dingo` (everything) |
-| Members | `m_Name` (instance), `s_Name` (static), `k_Name` or `UPPER_SNAKE_CASE` constants, `UPPER_SNAKE_CASE` macros |
-| Backend classes | `Vulkan*`, `DirectX12*`, `Nvrhi*`, `Win*` |
-| Log macros | engine `DE_CORE_INFO/WARN/ERROR/ASSERT`; client `DE_INFO/...` |
-| Event binding | `DE_BIND_EVENT_FN(fn)`; bit flags via `DE_BIT(x)` |
-| Resource creation | fluent `*Params` structs passed to a static `Create()`: `Texture::Create(TextureParams().SetWidth(512)...)` |
-| PCH | `depch.h` / `depch.cpp` |
-
-- On-screen text is UTF-8. Only the engine builds with `/utf-8`, so non-ASCII literals in the test app and examples are hex-escaped.
-- Public APIs use abstract classes, a static `Create()` and opaque handles (see `Physics3D`). GLM in public headers is fine.
-- Prefer `RGBA8_UNORM` for ordinary colour textures.
+- **One session, one job**: a plan, each phase, issue group, PR test or release; the plan's "As built" notes and the PR's phases checklist carry state. When done, say so in one line and suggest **handoff** and a new session. Past ~200k context or a day old, stop at the next clean point (phase committed and pushed); `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=20` in `.claude/settings.json` is that limit: change both together.
+- **The model fits the job**: Sonnet by default; for engine internals (the Opus rows above) say so at the start and suggest the owner switch to Opus.
+- **Read narrowly**: the area's `.claude/reference/` file, then Grep, then only the lines you need. Never read a source file over 40 KB whole (`find src include test examples -name '*.[ch]*' -size +40000c`).
+- **Long output** goes to a scratchpad file; read only errors, warnings in files you changed, and `[FAIL]`, `VUID-` and `LOG ERROR` lines.
 
 ## Rules that break things if forgotten
 
-**Build and shipping**
-- Never modify anything under `vendor/`.
-- Every executable that links the engine calls `copyAssimpRuntime()` in its `premake5.lua`, or it dies with `STATUS_DLL_NOT_FOUND` before `main` (on Linux it fails to link). A game that ships packed assets also calls `embedPackKey()` after it and passes `Dingo::Generated::GetPackageKey()` as `ApplicationParams.Assets.PackageKey`. Each example and the test app also calls `exeMetadata { Name = ..., Company = ..., Copyright = ... }` after it, with an `icon.ico` and `icon.png` beside it (`scripts/icons/make-icons.sh`), or it ships without a version resource, icon or desktop entry. Add a new example to `.github/workflows/build-release.yml`'s packaging and the `.vscode` entries too.
-- Never leave a `.dpak` in `build/bin/`: the engine mounts `<exe stem>.dpak` at start-up. Re-run premake after changing a `dpak.key`.
+- Never modify `vendor/` (`.claude/settings.json` denies it). `.claude/hooks/guard-git.sh` blocks force pushes (`--force-with-lease` only on `claude/*` and `vX.Y.Z` branches), pushes to `master` and rebases of a pushed branch.
+- Never leave a `.dpak` in `build/bin/`: the engine mounts `<exe stem>.dpak` at start-up.
 
-**C++ and headers** (MSVC and GCC both have to accept it)
-- EnTT, Box2D, Jolt, ImGui, miniaudio and NVRHI never appear in a public header.
-- `DE_CORE_ASSERT(cond, msg)` takes a plain string only; format arguments don't compile. `DE_CORE_WARN/ERROR` do take them.
-- `<Windows.h>` leaks `min`, `max`, `near` and `far` into test code and public headers. Write `(std::min)(a, b)`, `(std::max)(...)`, `(std::numeric_limits<T>::max)()`, and never name anything `near` or `far`.
-- In a public header, a member named after its own type spells the type qualified: `Dingo::Mesh* Mesh`. GCC rejects `Mesh* Mesh`.
-- Paths become text only through `Internal::PathToUtf8`/`PathToGenericUtf8`/`PathFromUtf8` (`Core/PathText.h`). Never call `path.string()`/`generic_string()` in the engine, or build a `path` from a `std::string`: on Windows they go through the ANSI code page and throw on a name it can't map. Games and the test app follow the same rule through the public `FileSystem::PathToUtf8`/`PathToGenericUtf8`/`PathFromUtf8`.
-
-Rendering and engine-invariant rules load from `.claude/rules/` when their files are touched.
+The rest load from `.claude/rules/` when a matching file is touched: C++, public API, build and shipping, verification, rendering, shadows and post, animation, DingoUI, engine invariants.
 
 ## Comments — keep them to a minimum
 
 Do not write code comments unless absolutely necessary. A comment must earn its place by stating a load-bearing "why" — a constraint, invariant, or non-obvious consequence the code cannot express itself. Never narrate what the next line does, never leave change-tracking or review commentary ("added X", "fixed Y"), and apply the same restraint to scripts, YAML, shaders, and example code. When in doubt, leave it out.
 
-The exception is `include/DingoEngine/`: every public declaration gets a `///` line saying what it promises (decision D7, `docs/conventions.md` "Documentation"). The `API reference` workflow fails a PR that leaves one out.
+The `///` documentation rule for `include/DingoEngine/` loads from `.claude/rules/public-api.md`.
 
 ## Reference — read when the task needs it
 
-Read the relevant file before changing that area. They hold the detail that used to live here.
+Read the area's file before changing it. Each has one `##` or `###` heading per topic and an index on top: Grep the heading, Read that range.
 
 | File | Contents |
 |---|---|
-| [.claude/reference/engine-patterns.md](.claude/reference/engine-patterns.md) | Key patterns: entry point, layers, teardown, debug window, background updates, input, VSync, assets and hot-reload, asset packages, audio and buses, events. Also failure contracts, the vendor list and the detail behind the header, `<Windows.h>` and UTF-8 rules |
-| [.claude/reference/scenes-ecs-physics.md](.claude/reference/scenes-ecs-physics.md) | Scene lifecycle, scripts, components, lights and fog, the transform hierarchy and sockets, character controllers, runtime handles, physics stepping and queries |
-| [.claude/reference/rendering.md](.claude/reference/rendering.md) | Shaders and their cache, Renderer2D/3D, translucency, lighting, lit materials, skinning, the animator, events, root motion, model reload, render targets, post chain, shadows, compute, particles, and the Vulkan/NVRHI rules |
-| [.claude/reference/build-details.md](.claude/reference/build-details.md) | Linux build and packaging, the new-executable checklist, profiling, Debug-ASan, versioning, devices without a GPU |
-| [.claude/reference/project-history.md](.claude/reference/project-history.md) | The full source tree with every example, where issues and reviews live, and what each release shipped |
-| [ROADMAP.md](ROADMAP.md) | The plan, v0.1 → v1.0, and the out-of-band modules |
-| [LINUX-SUPPORT.md](LINUX-SUPPORT.md) | Linux status and Appendix A (why the toolchain is built from source; `scripts/build-linux-toolchain.sh` does it) |
-| `docs/` | One page per feature (see `docs/README.md`). Keep the relevant page in step with a public API change |
-| `.claude/plans/`, `.claude/reviews/` | Milestone plans (their "As built" notes win) and dated review reports (trust the fix-status section, and check `git log`) |
+| [.claude/reference/engine-patterns.md](.claude/reference/engine-patterns.md) | Application, layers, input, assets, audio, events |
+| [.claude/reference/scenes-ecs-physics.md](.claude/reference/scenes-ecs-physics.md) | Scenes, components, hierarchy, physics |
+| [.claude/reference/rendering.md](.claude/reference/rendering.md) | Shaders, renderers, lighting, animation, post, shadows, Vulkan/NVRHI |
+| [.claude/reference/build-details.md](.claude/reference/build-details.md) | Packaging, executables, profiling, ASan, versioning |
+| [.claude/reference/project-history.md](.claude/reference/project-history.md) | Source tree, examples, releases |
+| `.claude/skills/session-meter/`, `usage-meter/` | Mods, not skills, loaded only when the session starts at the repo root: meter bands (README in each) |
+| [ROADMAP.md](ROADMAP.md) | v0.1 → v1.0 plan, out-of-band modules |
+| [LINUX-SUPPORT.md](LINUX-SUPPORT.md) | Linux status; why the toolchain is built from source |
+| `docs/` | One page per feature (`docs/README.md`) |
+| `.claude/plans/`, `.claude/reviews/` | As built notes win; trust a review's fix-status section, check `git log` |
+

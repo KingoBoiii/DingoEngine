@@ -34,7 +34,7 @@ If the run was started with an argument (a PR number, an issue label, or issue n
 2. A PR is **workable** when it has an unfinished phase, isn't claimed or `routine:skip`, and neither its description nor its plan says the next step needs a GPU, a Windows machine, other hardware, or the owner. Record every PR you skip and why.
 3. Take the workable PR with the lowest number and claim it.
 4. `git fetch origin` and `git checkout -B <branch> origin/<branch>`. Init submodules only if you need them to build.
-5. Read the plan in full, including its "As built" notes (they override the design), plus the CLAUDE.md reference file and `docs/` page for the area you touch.
+5. Read only what the phase needs, by Grep and line range (`grep -n "^#" <plan>`, then Read those ranges): the decisions at the top, the next unfinished phase's section and the "As built" notes (they override the design). Plans with `**Status**: done` on their first line are finished; skip them. Then the `.claude/reference/` file and `docs/` page for the area you touch.
 6. Implement exactly the **next** unfinished phase, never more than one, in full, as code. Only if it truly can't fit in this run, stop at a coherent sub-step, commit it as `<type>(<scope>): <phase> part 1 — …`, and leave the box unticked with a note of what remains.
 7. Verify (section 5), then commit and push (section 6).
 8. Tick the phase's box in the PR description with the short commit hash (add "*not yet built or run*" if it wasn't), and update the plan's "As built" notes in the same commit when the plan uses them.
@@ -45,7 +45,7 @@ If the run was started with an argument (a PR number, an issue label, or issue n
 
 1. List open issues. The REST endpoint also returns PRs: drop entries with a `pull_request` field. Exclude `wontfix`, `routine:skip`, claimed issues, and issues an open PR closes or fixes.
 2. **Group by label.** An issue with several labels goes in the group of its *most unique* label, the one carried by the fewest open non-wontfix issues (`enhancement, headstone` → `headstone`). Ties: `bug`, then `headstone`, then alphabetical.
-3. **Pick one group**, in this order: `bug`, `headstone`, then the smallest remaining group. A PR holds at most 10 issues; a larger group is split, lowest numbers first, and later runs take the rest. Leave out issues that are too vague or need a GPU or other hardware to be done right, and record why.
+3. **Pick one group**, in this order: `bug`, `headstone`, then the smallest remaining group. A PR holds at most 10 issues; a larger group is split, lowest numbers first, and later runs take the rest. Leave out issues that are too vague or need a GPU or other hardware the session lacks (multi-GPU, a gamepad) to be done right, and record why.
 4. Branch from the latest `origin/master` as `<type>/<group>-<short-topic>`: `fix/bug-default-graphics-api`, `feat/headstone-fog-vsync-audio-buses`, `feat/enhancement-physics3d-sensors`.
 5. **Fix the issues in this run**: as many as fit, in code, one commit per issue (`fix(graphics): default GraphicsParams to Vulkan (#109)`). Keep the matching `docs/` page, CLAUDE.md and `.claude/reference/` file in step when a public API or engine pattern changes (that may be its own `docs:` commit). Keep going until every issue is done or the run is genuinely out of room; a short run that leaves work undone is a failure.
 6. **Never open a plan-only PR.** A plan file is allowed only alongside at least one fully implemented issue. If issues remain, the PR gets a `## Phases` checklist: the issues done in this run ticked with their hashes, one unticked phase per remaining issue or small cluster, so later runs continue it through Mode A. Design notes those phases need go in `.claude/plans/<YYYY-MM-DD>-<group>-plan.md`, committed with the first issue's work.
@@ -53,17 +53,20 @@ If the run was started with an argument (a PR number, an issue label, or issue n
 
 ## 5. Verification
 
-Follow CLAUDE.md "Verifying changes": build Debug on Linux for the projects you touched, run the affected test cases under Xvfb, and the `--check` of any example you changed. CI runs the full smoke test only after the merge, on master.
+Follow CLAUDE.md "Verifying changes" and `.claude/rules/verify.md` (and CLAUDE.md "Build and run", Cloud sessions, for the toolchain). Routine-specific:
 
-- The SessionStart hook has already set the toolchain up (CLAUDE.md "Build and run", Cloud sessions): start at `./Generate-Linux.sh`. Only if the hook reported a failure, run `scripts/build-linux-toolchain.sh` yourself.
+- Only if the SessionStart hook reported a failure, run `scripts/build-linux-toolchain.sh` yourself.
 - If the branch can't build on Linux, review the code very carefully for compile errors on MSVC and GCC, and say plainly in the commit body and the run log: "not yet built or run".
-- Before committing, a **fresh sub-agent** (not the one that wrote the code; model and effort from CLAUDE.md "Sub-agent selection": Sonnet medium for ordinary diffs, Opus high or xhigh for engine-internals diffs) reviews the diff for correctness. Fix every High and Medium it finds; fix or explain each Low in the run log.
+- Before committing, follow the Review bullet of CLAUDE.md "How we work" with the agent CLAUDE.md "Sub-agent selection" names for the diff. Fix every High and Medium it finds; fix or explain each Low in the run log.
 
 ## 6. Commits, pushes and hard rules
 
-- Exactly one commit per phase (Mode A) or per issue (Mode B); an extra commit only to fix build or CI breakage of that same work, named as such. Conventional format `<type>(<scope>): <description>`, present tense, concise. Never mention Claude or AI in the subject or body text; the session's attribution trailers still go at the end.
-- Never force-push, never rebase published history, never push to `master`, never merge a PR.
-- Never modify anything under `vendor/`. Never merge, close or delete PRs, issues or branches. Never change repository settings, secrets or labels other than adding and removing `routine:claimed`; never touch `routine:skip`.
+Follow the Branches and Commits bullets of CLAUDE.md "How we work", and its "Rules that break things if forgotten". Routine-specific:
+
+- Exactly one commit per phase (Mode A) or per issue (Mode B); an extra commit only to fix build or CI breakage of that same work, named as such. Never mention Claude or AI in the subject or body text; the session's attribution trailers still go at the end.
+- Never spawn `fable-advisor`: it is the owner's call alone.
+- Never force-push or rebase a pushed branch (the `guard-git` hook enforces it), never push to `master`, never merge a PR.
+- Never merge, close or delete PRs, issues or branches. Never change repository settings, secrets or labels other than adding and removing `routine:claimed`; never touch `routine:skip`.
 - Session title, if you have a tool to set it: `Routine: PR #<n> <phase>` or `Routine: <group> issues → PR #<n>`.
 - If nothing is workable in either mode, change nothing and write only the run log as the session's final message.
 

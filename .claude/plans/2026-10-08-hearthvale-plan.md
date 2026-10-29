@@ -1,3 +1,5 @@
+**Status**: done (v1.0.0)
+
 # Hearthvale — the v1.0 release game: plan
 
 Drafted 2026-10-08 on `feat/v1` (base `master` @ `4ff48ea`, v0.9.0 plus the
