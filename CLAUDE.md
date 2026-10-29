@@ -5,7 +5,7 @@ DingoEngine is a C++20 game engine on NVRHI, targeting Vulkan (primary), DirectX
 ## How we work
 
 - **Roles.** The owner (KingoBoiii) sets direction, decides design, merges every PR and runs the GPU checks on Windows (RX 7900 XTX, VS 2026, Vulkan/DX11/DX12). Claude writes most code in Linux cloud sessions without a GPU (llvmpipe under Xvfb).
-- **Where work comes from.** Plans in `.claude/plans/YYYY-MM-DD-<topic>-plan.md` (a `**Status**:` first line, the owner's decisions on top, "As built" notes override the design; one phase per session), or GitHub issues by label (`bug`, `enhancement`). The routine takes both through `routine-run`.
+- **Where work comes from.** Plans in `.claude/plans/YYYY-MM-DD-<topic>-plan.md` (a `**Status**:` first line, the owner's decisions on top, "As built" notes override the design; one phase per session), or GitHub issues by label (`bug`, `enhancement`; skip `wontfix` and `routine:skip`). The routine takes both through `routine-run`.
 - **Branches.** `feat/<topic>`, `fix/bug-<topic>`, `feat/enhancement-<topic>`, `vX.Y.Z` for point releases; an assigned `claude/…` branch wins. Bring master in with a merge commit; never rebase or force-push a branch someone else has. Stack a PR only when both rewrite the same code, and say so at its top.
 - **Commits.** Conventional, lowercase `type(scope): summary`, one per issue ending in `(#N)` (scopes: the `commit` skill).
 - **PRs.** Only when the owner asks or a routine runs. Body via `pr-writeup`; the owner adds GPU results via `pr-gpu-test`.
@@ -42,7 +42,7 @@ The smallest check that proves the change. CI runs only on pushes to master; a P
 
 ## Sub-agent selection
 
-The main session (Sonnet, medium; `.claude/settings.json`) orchestrates. Roles are project agents in `.claude/agents/` (`README.md` there says why each model); call them by `subagent_type`.
+The main session (Sonnet, medium; `.claude/settings.json`) orchestrates. Roles are project agents in `.claude/agents/` (`.claude/reference/agent-models.md` says why each model); call them by `subagent_type`.
 
 | Need | Agent |
 |---|---|
