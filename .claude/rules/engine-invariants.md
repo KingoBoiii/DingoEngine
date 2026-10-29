@@ -18,3 +18,5 @@ paths:
 - `Application::OnDestroy()` stays in `Run()`'s exit path, never in `Destroy()`, where virtual dispatch no longer reaches the override. GPU teardown goes in `Layer::OnDetach`.
 - Any new code that reads a transform as world space goes through `HierarchySystem`.
 - A factory returns a ready object or `nullptr`, and `delete` frees everything; engine-only surface is private or under `Internal` (docs/conventions.md). SemVer from 1.0.0 (docs/versioning.md): an API addition waits for a minor release, a removal or rename for a major one.
+- A new scene system skips entities carrying `InactiveComponent`, as every existing one does (`.claude/reference/scenes-ecs-physics.md` "Active").
+- A scene call that draws or reads transforms for the camera runs inside a `Scene::InterpolatedView`, or it sees the latest tick instead of the blended pose.

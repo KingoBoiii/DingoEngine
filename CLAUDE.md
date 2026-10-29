@@ -116,7 +116,7 @@ Most of the cost is context re-read on every call (context size × number of cal
 - In a public header, a member named after its own type spells the type qualified: `Dingo::Mesh* Mesh`. GCC rejects `Mesh* Mesh`.
 - Paths become text only through `Internal::PathToUtf8`/`PathToGenericUtf8`/`PathFromUtf8` (`Core/PathText.h`). Never call `path.string()`/`generic_string()` in the engine, or build a `path` from a `std::string`: on Windows they go through the ANSI code page and throw on a name it can't map. Games and the test app follow the same rule through the public `FileSystem::PathToUtf8`/`PathToGenericUtf8`/`PathFromUtf8`.
 
-Rendering and engine-invariant rules load from `.claude/rules/` when their files are touched.
+Rendering, shadows-and-post, animation, DingoUI and engine-invariant rules load from `.claude/rules/` when their files are touched. The reference files below have one `##` heading per topic and an index at the top: Grep the heading, then Read that range.
 
 ## Comments — keep them to a minimum
 
