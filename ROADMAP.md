@@ -563,6 +563,57 @@ DX12 in Release, not Vulkan. *Hearthvale*'s Release `--layout=demo` frame time, 
 stepping, night light budget, gamepad, audio and a packed run were not checked on a GPU. Linux has not
 run on real hardware.
 
+## v1.1.0 — Joints, Ragdolls & Fixed Tick
+**Status**: released on 2026-10-29 (straight to master → `84b77a9e`, no release PR).
+
+The first minor release under [versioning](docs/versioning.md): it only adds API, so a game built
+against 1.0 compiles and behaves the same, and a scene made the 1.0 way (`FixedTick = false`) steps
+physics exactly as before. It closes the `physics-coop` issue group, what a physics-driven co-op game
+needs from the engine. The ragdoll plan is `.claude/plans/2026-10-27-physics-coop-plan.md`.
+
+- **Constraints and motors** ([#295](https://github.com/KingoBoiii/DingoEngine/issues/295),
+  [#296](https://github.com/KingoBoiii/DingoEngine/issues/296), PR
+  [#303](https://github.com/KingoBoiii/DingoEngine/pull/303)). Fixed, Point, Hinge, SwingTwist,
+  Distance and Slider joints in `Physics3D` (`ConstraintParams3D`) and in a scene
+  (`Constraint3DComponent`), with Position and Velocity motors on Hinge and SwingTwist and an F9 motor
+  panel. [Constraints](docs/physics-3d.md#constraints).
+- **Breakable constraints** ([#309](https://github.com/KingoBoiii/DingoEngine/issues/309), PR
+  [#311](https://github.com/KingoBoiii/DingoEngine/pull/311)). `BreakForce`/`BreakTorque`, the reaction
+  readback, `ConsumeBrokenConstraints` and `ScriptableEntity::OnConstraintBroken`; a broken joint's
+  component is removed. [Breaking](docs/physics-3d.md#breaking).
+- **Collision groups** ([#297](https://github.com/KingoBoiii/DingoEngine/issues/297), PR
+  [#303](https://github.com/KingoBoiii/DingoEngine/pull/303)). A set of bodies ignores each other
+  without pair lists. [Collision groups](docs/physics-3d.md#collision-groups).
+- **Active ragdolls** ([#298](https://github.com/KingoBoiii/DingoEngine/issues/298),
+  [#307](https://github.com/KingoBoiii/DingoEngine/issues/307), PRs
+  [#306](https://github.com/KingoBoiii/DingoEngine/pull/306),
+  [#308](https://github.com/KingoBoiii/DingoEngine/pull/308)). `RagdollComponent` builds a ragdoll from
+  a skinned model's skeleton and drives it toward the animated pose; `.ragdoll` recipes override the
+  automatic build and hot-reload; `Animator::BlendGlobalTransforms`, `RigidBodyParams3D::Mass` and
+  `Scene::GetRagdollBody`. [Ragdolls](docs/animation.md#ragdolls).
+- **Fixed simulation tick** ([#299](https://github.com/KingoBoiii/DingoEngine/issues/299), PR
+  [#304](https://github.com/KingoBoiii/DingoEngine/pull/304)). Opt-in `SceneParams::FixedTick` steps
+  physics with `OnFixedUpdate`, with tick numbers and render interpolation between ticks.
+  [Fixed simulation tick](docs/scenes-and-ecs.md#fixed-simulation-tick-v11).
+- **Microphone capture** ([#300](https://github.com/KingoBoiii/DingoEngine/issues/300), PR
+  [#304](https://github.com/KingoBoiii/DingoEngine/pull/304)). `AudioEngine::StartCapture` and
+  `ReadCaptured`, gain, a noise gate, device switching and loss fallback.
+  [Capture](docs/audio.md#capture-v11).
+
+Shipped open: the v1.0.0 list, unchanged
+([#186](https://github.com/KingoBoiii/DingoEngine/issues/186),
+[#225](https://github.com/KingoBoiii/DingoEngine/issues/225),
+[#226](https://github.com/KingoBoiii/DingoEngine/issues/226)/[#232](https://github.com/KingoBoiii/DingoEngine/issues/232),
+[#239](https://github.com/KingoBoiii/DingoEngine/issues/239),
+[#247](https://github.com/KingoBoiii/DingoEngine/issues/247)).
+
+**Test**: the cloud sessions ran Linux, GCC, Debug, on Mesa llvmpipe under Xvfb. The owner ran every
+feature PR on Windows 11 with an RX 7900 XTX, Debug, on Vulkan (validation), DX11 and DX12 (debug
+layer): `--test=constraint` 181, `--test=ragdoll` 40, `--test=fixedtick` 14 and `--test=capture` 15
+PASS, with collider, hierarchy, anim and bus as regressions, and no `VUID-` or debug-layer messages.
+Smoothness at 144 Hz, the microphone level following a voice and dragging the panel sliders were checked
+only in part by hand. Linux has not run on real hardware.
+
 ---
 
 ## Modules — shipped out of band

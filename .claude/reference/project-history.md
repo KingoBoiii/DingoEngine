@@ -211,6 +211,7 @@ The plan is [ROADMAP.md](../../ROADMAP.md) (v0.1 → v1.0); below is what each r
 
 ### After 1.0
 
+- **v1.1.0** (released 2026-10-29, straight to master → `84b77a9e`): the `physics-coop` group, additions only. Constraints and motors (#295, #296, PR #303), collision groups (#297, PR #303), `RagdollComponent` and `.ragdoll` recipes (#298, #307, PRs #306, #308; plan `.claude/plans/2026-10-27-physics-coop-plan.md`), `SceneParams::FixedTick` (#299, PR #304), microphone capture (#300, PR #304) and breakable constraints (#309, PR #311). Owner GPU runs on Vulkan, DX11 and DX12 for each PR. Shipped open: the v1.0.0 list.
 - **Then**: post-1.0 point and minor releases (1.x), under SemVer ([docs/versioning.md](../../docs/versioning.md)): a minor release adds, a patch release fixes, a removal waits for 2.0.
 
 ### Not in the version train
