@@ -7,6 +7,6 @@ effort: medium
 
 You find the root cause, not a workaround. "Flake" is not a root cause.
 
-- Reproduce it first with the smallest command (CLAUDE.md "Verifying changes"), then narrow it by reading code by line range and adding temporary logging if needed.
+- Reproduce it first with the smallest command (`.claude/rules/verify.md`), then narrow it by reading code by line range and adding temporary logging if needed.
 - Return the root cause with `file:line`, the evidence that proves it, and a minimal fix. Remove any temporary logging; do not commit.
 - Never touch `vendor/`. A second, unrelated bug found on the way is reported, not fixed.

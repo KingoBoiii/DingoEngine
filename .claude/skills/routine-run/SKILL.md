@@ -45,7 +45,7 @@ If the run was started with an argument (a PR number, an issue label, or issue n
 
 1. List open issues. The REST endpoint also returns PRs: drop entries with a `pull_request` field. Exclude `wontfix`, `routine:skip`, claimed issues, and issues an open PR closes or fixes.
 2. **Group by label.** An issue with several labels goes in the group of its *most unique* label, the one carried by the fewest open non-wontfix issues (`enhancement, headstone` → `headstone`). Ties: `bug`, then `headstone`, then alphabetical.
-3. **Pick one group**, in this order: `bug`, `headstone`, then the smallest remaining group. A PR holds at most 10 issues; a larger group is split, lowest numbers first, and later runs take the rest. Leave out issues that are too vague or need a GPU or other hardware to be done right, and record why.
+3. **Pick one group**, in this order: `bug`, `headstone`, then the smallest remaining group. A PR holds at most 10 issues; a larger group is split, lowest numbers first, and later runs take the rest. Leave out issues that are too vague or need a GPU or other hardware the session lacks (multi-GPU, a gamepad) to be done right, and record why.
 4. Branch from the latest `origin/master` as `<type>/<group>-<short-topic>`: `fix/bug-default-graphics-api`, `feat/headstone-fog-vsync-audio-buses`, `feat/enhancement-physics3d-sensors`.
 5. **Fix the issues in this run**: as many as fit, in code, one commit per issue (`fix(graphics): default GraphicsParams to Vulkan (#109)`). Keep the matching `docs/` page, CLAUDE.md and `.claude/reference/` file in step when a public API or engine pattern changes (that may be its own `docs:` commit). Keep going until every issue is done or the run is genuinely out of room; a short run that leaves work undone is a failure.
 6. **Never open a plan-only PR.** A plan file is allowed only alongside at least one fully implemented issue. If issues remain, the PR gets a `## Phases` checklist: the issues done in this run ticked with their hashes, one unticked phase per remaining issue or small cluster, so later runs continue it through Mode A. Design notes those phases need go in `.claude/plans/<YYYY-MM-DD>-<group>-plan.md`, committed with the first issue's work.
@@ -53,7 +53,7 @@ If the run was started with an argument (a PR number, an issue label, or issue n
 
 ## 5. Verification
 
-Follow CLAUDE.md "Verifying changes" (and "Build and run", Cloud sessions, for the toolchain). Routine-specific:
+Follow CLAUDE.md "Verifying changes" and `.claude/rules/verify.md` (and CLAUDE.md "Build and run", Cloud sessions, for the toolchain). Routine-specific:
 
 - Only if the SessionStart hook reported a failure, run `scripts/build-linux-toolchain.sh` yourself.
 - If the branch can't build on Linux, review the code very carefully for compile errors on MSVC and GCC, and say plainly in the commit body and the run log: "not yet built or run".

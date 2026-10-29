@@ -34,7 +34,7 @@ A release is a version branch merged into `master`, then a tag, a GitHub release
 
 1. Lightweight tag on the merge commit: `git tag vX.Y.Z <sha> && git push origin refs/tags/vX.Y.Z`, then confirm with `git ls-remote --tags origin vX.Y.Z`. The full ref matters: while the `vX.Y.Z` branch exists, `git push origin vX.Y.Z` matches both and pushes nothing, and `gh release create` then makes an untagged draft.
 2. Notes file in the scratchpad, in the style of the previous release (`gh release view <last-tag> --json body --jq .body`): `## vX.Y.Z — <Title>`, one intro paragraph, `###` sections by area, a **Docs** list and a **Full changelog** compare link. Links are absolute `https://github.com/KingoBoiii/DingoEngine/blob/vX.Y.Z/...`: relative ones 404 on the release page.
-   Every release's notes, RCs too, include a **For games** section (Headstone reads release notes for engine bumps): breaking API changes with their `docs/` page, behaviour changes a game would notice, and the `headstone` issues the release closes.
+   Every release's notes, RCs too, include a **For games** section (Headstone reads release notes for an engine bump, with `gh release view vX.Y.Z`, instead of this repo): breaking API changes with their `docs/` page, behaviour changes a game would notice, and the `headstone` issues the release closes.
 3. `gh release create vX.Y.Z --verify-tag --title vX.Y.Z --notes-file <file>`, then check `gh release view vX.Y.Z --json isDraft` is `false`.
 
 ## 5. Assets
