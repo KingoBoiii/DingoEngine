@@ -26,6 +26,8 @@ namespace Dingo
 					return false;
 				if (registry.all_of<CharacterController3DRuntime>(handle))
 					return true;
+				if (const RagdollRuntime* ragdoll = registry.try_get<RagdollRuntime>(handle); ragdoll && ragdoll->FollowsRoot)
+					return true;
 
 				const RigidBody3DRuntime* runtime = registry.try_get<RigidBody3DRuntime>(handle);
 				if (!runtime || runtime->Type == BodyType3D::Static)
@@ -144,6 +146,8 @@ namespace Dingo
 			for (auto [handle, runtime] : registry.view<const RigidBody3DRuntime>().each())
 				m_Scratch.push_back(handle);
 			for (auto [handle, runtime] : registry.view<const CharacterController3DRuntime>(entt::exclude<RigidBody3DRuntime>).each())
+				m_Scratch.push_back(handle);
+			for (auto [handle, runtime] : registry.view<const RagdollRuntime>(entt::exclude<RigidBody3DRuntime, CharacterController3DRuntime>).each())
 				m_Scratch.push_back(handle);
 
 			for (entt::entity handle : m_Scratch)

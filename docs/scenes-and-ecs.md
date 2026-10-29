@@ -176,6 +176,7 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 | `AnimatorComponent` (v0.8) | `std::string DefaultClip`, `bool PlayOnStart` (true), `float Speed` (1), `bool Enabled` (true). Poses the entity's skinned model; `Scene::GetAnimator(entity)` plays clips. See [Animating a model](#animating-a-model-v08) |
 | `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2), `uint32_t CollisionGroup` (0 = none) and `bool CollideWithinGroup` ([collision groups](physics-3d.md#collision-groups); read when the body is built, and a duplicate stays in the same group) |
 | `Constraint3DComponent` | `ConstraintType3D Type`, `UUID Other` (null pins to the world), `AnchorA/B`, `AxisA/B`, `NormalAxisA/B`, `MinLimit`/`MaxLimit`, `SwingLimitY/Z`, `TwistMin/Max`, `bool CollideConnected`, and the live motor fields `MotorMode`, `Motor`, `TwistMotor`, `TargetRotation`, `TargetAngularVelocity` — joins this entity's body (`BodyA`) to `Other`'s, see [Constraints](physics-3d.md#constraints) |
+| `RagdollComponent` | `float Blend` (1), `float Strength` (1), `bool DriveToAnimation` (true), `float TotalMass` (70), `bool CollideWithinRagdoll` (false) — an active ragdoll for the entity's skinned model, driven toward its animated pose; `Scene::GetRagdollBody(entity, joint)` finds a bone's body. See [Ragdolls](animation.md#ragdolls) |
 | `BoxCollider3DComponent` | `glm::vec3 HalfExtents` (fraction of `Scale`), `Friction`, `Restitution` |
 | `SphereCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `Friction`, `Restitution` |
 | `CapsuleCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `float HalfHeight` (fraction of `Scale.y`), `Friction`, `Restitution` |
@@ -1018,7 +1019,7 @@ shown.
   through the hierarchy. The runtime state behind the settings components (the live 2D or 3D body
   with its position and velocity, the character controller and whether it is grounded, the playing sound, the
   bound animator and each layer's clip, the particle emitters, and the attached script's type and
-  whether it has started, and a constraint's id, type, other entity, enabled flag and value) follows in its own sections, marked *runtime, read-only*. A constraint's motor panel is the exception: mode, parameters and targets are editable and show the live angle and torque.
+  whether it has started, and a constraint's id, type, other entity, enabled flag and value) follows in its own sections, marked *runtime, read-only*. A constraint's motor panel is the exception: mode, parameters and targets are editable and show the live angle and torque. So is a ragdoll's section: `Blend`, `Strength` and `DriveToAnimation` are editable, above each body's joint, mass, speed and motor torque.
 
 The selection is kept by entity UUID and a scene serial that is never reused: destroying the
 selected entity empties the inspector, and destroying the selected scene falls back to the first

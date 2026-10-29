@@ -4,6 +4,7 @@
 #include "DingoEngine/Graphics/Texture.h"
 #include "DingoEngine/Graphics/Skeleton.h"
 #include "DingoEngine/Graphics/AnimationClip.h"
+#include "DingoEngine/Graphics/RagdollRecipe.h"
 
 #include <filesystem>
 #include <memory>
@@ -68,7 +69,7 @@ namespace Dingo
 	{
 	public:
 		/// Loads the model and creates its textures, reading the `<stem>.events` sidecar if the
-		/// file has clips. Returns nullptr on failure (error is logged). Caller owns the returned
+		/// file has clips and the `<stem>.ragdoll` sidecar if it has a skeleton. Returns nullptr on failure (error is logged). Caller owns the returned
 		/// Model. A relative filepath is looked up under the asset root first, then the working
 		/// directory. A headless app loads it without textures.
 		[[nodiscard]] static Model* LoadFromFile(const std::filesystem::path& filepath);
@@ -87,7 +88,7 @@ namespace Dingo
 		/// while a frame that draws it is in flight.
 		void Destroy();
 
-		/// Reads the file again, with its .events sidecar, into this same Model. The objects a game
+		/// Reads the file again, with its .events and .ragdoll sidecars, into this same Model. The objects a game
 		/// may hold stay valid (hold Mesh*, Material* and Texture*, not SubMesh entries, which a
 		/// reload that adds submeshes moves):
 		/// - Meshes and materials by submesh index; extra submeshes are added, missing ones
@@ -106,7 +107,11 @@ namespace Dingo
 		/// changed, when the sidecar exists but can't be read, or the model wasn't loaded from a
 		/// file.
 		bool ReloadEvents();
-		/// Counts the successful reloads, ReloadEvents included.
+		/// Replaces the ragdoll recipes with the .ragdoll sidecar's (none when it's gone), leaving the
+		/// rest alone: what a hot-reload of the sidecar alone does. False, with nothing changed, when
+		/// the sidecar exists but can't be read, or the model wasn't loaded from a file.
+		bool ReloadRagdollRecipes();
+		/// Counts the successful reloads, ReloadEvents and ReloadRagdollRecipes included.
 		uint32_t GetGeneration() const { return m_Generation; }
 		/// The absolute path LoadFromFile read; empty for a Model built by hand.
 		const std::filesystem::path& GetFilePath() const { return m_FilePath; }
@@ -139,6 +144,19 @@ namespace Dingo
 		/// LoadFromFile reads `<model stem>.events` beside a model with clips by itself.
 		bool LoadEvents(const std::filesystem::path& filepath);
 
+		/// Replaces the ragdoll recipes with those of a `.ragdoll` file (docs/animation.md, "Ragdoll
+		/// recipes"). A line that doesn't parse, or names a joint the skeleton lacks, warns with its
+		/// number and is skipped. False, with nothing changed, when the file can't be read or the model
+		/// has no skeleton. LoadFromFile reads `<model stem>.ragdoll` beside a skinned model by itself.
+		bool LoadRagdollRecipes(const std::filesystem::path& filepath);
+		/// The recipes, in file order; empty without a .ragdoll file.
+		const std::vector<RagdollRecipe>& GetRagdollRecipes() const { return m_RagdollRecipes; }
+		/// The recipe with that name, the empty name being the file's default one; nullptr when none.
+		const RagdollRecipe* FindRagdollRecipe(std::string_view name) const;
+		/// Moves whenever the recipes may have changed (a load of them, or any reload), so a ragdoll
+		/// built from them knows to rebuild.
+		uint32_t GetRagdollRecipeRevision() const { return m_RagdollRecipeRevision; }
+
 	private:
 		struct ModelTexture
 		{
@@ -164,7 +182,9 @@ namespace Dingo
 		std::vector<std::unique_ptr<Skeleton>> m_RetiredSkeletons;
 		std::filesystem::path m_FilePath;
 		ModelLoadParams m_LoadParams;
+		std::vector<RagdollRecipe> m_RagdollRecipes;
 		uint32_t m_Generation = 0;
+		uint32_t m_RagdollRecipeRevision = 0;
 	};
 
 }

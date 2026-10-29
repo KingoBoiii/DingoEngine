@@ -569,6 +569,12 @@ namespace Dingo
 			return k_InvalidBody3D;
 		}
 
+		if (params.Type == BodyType3D::Dynamic && params.Mass > 0.0f && std::isfinite(params.Mass))
+		{
+			settings.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+			settings.mMassPropertiesOverride.mMass = params.Mass;
+		}
+
 		const JPH::EActivation activation = isStatic ? JPH::EActivation::DontActivate : JPH::EActivation::Activate;
 		const JPH::BodyID id = bodyInterface.CreateAndAddBody(settings, activation);
 		if (id.IsInvalid())

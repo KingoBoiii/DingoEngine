@@ -9,6 +9,7 @@
 #include "DingoEngine/Physics/3D/Physics3D.h"
 #include "DingoEngine/Physics/3D/CharacterController3D.h"
 #include "DingoEngine/Scene/Systems/HierarchySystem.h"
+#include "DingoEngine/Scene/Systems/RagdollSystem.h"
 
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
@@ -73,6 +74,11 @@ namespace Dingo
 			PhysicsBodyId3D RuntimeBody3D(const entt::registry& registry, entt::entity handle) const;
 			// The entity whose live body this is (its UserData, checked against its runtime), else null.
 			entt::entity EntityOfBody3D(const entt::registry& registry, PhysicsBodyId3D body) const;
+			// After the frame's animation and physics: hands each ragdoll's simulated bones to its animator,
+			// alpha of the way from their previous step's pose to their latest (below 0: as they are).
+			void PoseRagdolls(entt::registry& registry, float alpha);
+			bool HasRagdolls(const entt::registry& registry) const;
+			PhysicsBodyId3D RagdollBody(const entt::registry& registry, entt::entity handle, std::string_view joint) const;
 			// The entities with a body or a character controller inside the sensor entity's body.
 			void SensorOverlaps3D(const entt::registry& registry, entt::entity sensor, std::vector<entt::entity>& out) const;
 
@@ -81,6 +87,7 @@ namespace Dingo
 			void DropBody3D(entt::registry& registry, entt::entity handle);
 			void DropController(entt::registry& registry, entt::entity handle);
 			void DropConstraint(entt::registry& registry, entt::entity handle);
+			void DropRagdoll(entt::registry& registry, entt::entity handle);
 
 			// Start's bake passes `memo`; a single late body works its pose out on demand.
 			void CreateBody2D(entt::registry& registry, entt::entity handle, HierarchySystem::WorldMemo* memo = nullptr);
@@ -175,6 +182,7 @@ namespace Dingo
 			std::unordered_set<entt::entity> m_ConstraintReported;
 			std::unordered_set<entt::entity> m_ConstraintRejected;
 			std::vector<entt::entity> m_ConstraintScratch;
+			RagdollSystem m_Ragdolls;
 
 			std::vector<std::uint64_t> m_IgnoredPairs;
 			std::vector<std::uint64_t> m_IgnoredControllerBodies;

@@ -1052,10 +1052,141 @@ position += rotation * (scale * step.Translation);
 rotation  = rotation * step.Rotation;
 ```
 
+## Ragdolls
+
+A `RagdollComponent` beside a `SkinnedMeshRendererComponent` gives the character an active ragdoll:
+one dynamic capsule per bone, joined by joints whose motors pull it toward the animated pose. The
+scene builds it when its 3D physics starts, or on the next physics step for one added later, from
+the pose the model is in at that moment.
+
+```cpp
+Entity fox = scene->CreateEntity("Fox");
+fox.AddComponent<Transform3DComponent>(Transform3DComponent(position, glm::vec3(scale)));
+fox.AddComponent<SkinnedMeshRendererComponent>(SkinnedMeshRendererComponent(model));
+fox.AddComponent<AnimatorComponent>(AnimatorComponent("Walk"));
+fox.AddComponent<RagdollComponent>();          // driven: holds the walk
+
+// Later, on a hit:
+RagdollComponent& ragdoll = fox.GetComponent<RagdollComponent>();
+ragdoll.DriveToAnimation = false;              // limp: falls, and the entity follows its hips
+scene->GetPhysics3D()->ApplyImpulse(scene->GetRagdollBody(fox, "b_Spine02_03"), push);
+```
+
+| Field | Meaning |
+|---|---|
+| `Blend` (1) | 0 shows the animation untouched (the bodies still simulate), 1 the simulated bones, between mixes each simulated joint. Read every frame. |
+| `Strength` (1) | Scales the joint motors and how firmly the hips track the animated root. 0 is limp. |
+| `DriveToAnimation` (true) | False turns the motors off and leaves the root untracked. |
+| `TotalMass` (70 kg) | Shared out by bone size, or by a recipe's `mass=` shares. Read at build. |
+| `CollideWithinRagdoll` (false) | Lets the ragdoll's limbs hit each other, except two joined by a joint. Read at build. |
+| `Recipe` (empty) | The model's [ragdoll recipe](#ragdoll-recipes) to build with; empty uses the `.ragdoll` file's default recipe, if any. Changing it rebuilds. |
+
+**What gets a body.** The root body is the first joint with two or more children (the hips). Below it
+every bone with a child gets a capsule along the bone to its main child, unless its name marks it as a
+finger, toe, face, twist helper or attachment point, or it is shorter than 0.3 times its parent bone;
+those fold into the nearest body above them. A joint whose name says elbow, forearm, knee, calf or shin
+is a `Hinge` that bends the way the bone already bends; the rest are `SwingTwist` joints whose cone and
+twist limits depend on the name (torso, arm, leg, other). Limits are measured from the build pose: a
+hinge built straight has no bend side to go by and gets ±150°, and each cone is centred on the build
+pose rather than on an anatomical rest. More
+than 20 bodies, or a skeleton without a branching joint, logs an error once and builds nothing. The
+Fox in `test/assets/models/Fox` gets 16: hips, two spine bones, neck (the head rides on it), two
+bones per arm, two per hind leg plus the foot, and two tail bones.
+
+**Size and mass.** A capsule's radius is the 85th-percentile distance from its bone of the rest-pose vertices
+that bone (or a joint folded into it) moves most, between 0.08 and 0.6 times the bone's length. A bone
+with fewer than 8 such vertices falls back to its length and how far its other children sit off it.
+Mass follows the bone's size rather than the measured skin: a skinny bone under a lot of fur (the
+Fox's tail tip) would otherwise outweigh the hips, and a joint between bodies that unequal won't hold
+a pose. A recipe overrides both.
+
+**Driving.** Each physics step sets every joint's motor target to the animated pose's relative
+rotation, with gains scaled by the bone's own inertia (a 3 Hz spring at `Strength` 1), and moves the
+hips toward the animated root. The root correction moves the whole ragdoll as one rigid body, so the
+limbs below the hips don't soak it up and leave the body swinging on a pinned hip. With `Strength` 0 or `DriveToAnimation` off, the ragdoll is limp.
+Without an `AnimatorComponent` the target is the model's rest pose, and the ragdoll keeps its own
+animator to draw the result. At `Strength` 1 the ragdoll's mean motion takes the animated root's
+velocity plus a 3 Hz pull toward it every step, so a shove on the hips is undone within a fraction
+of a second while the limbs still give way; use a `Strength` below 1 to let a shove move the whole
+body. The drive aims at the previous frame's animation, so a moving character's hips trail it by one
+frame. A driven ragdoll never sleeps, `Blend` 0 still simulates it, and teleporting the entity drags
+the whole ragdoll across to the new place over a fraction of a second.
+
+**The entity follows a limp ragdoll.** While `Blend` is above 0 and the ragdoll isn't driven, the
+entity's position moves with the hips body every physics step, so its children, sockets and a following
+camera go where the body went, and clip root motion is ignored. An entity with its own
+`RigidBody3DComponent` or `CharacterController3DComponent` never follows: switch the controller off
+(or remove it) before letting the body fall. When the ragdoll is driven again (`Strength` back above 0 with
+`DriveToAnimation` on), the entity is put back at the height above the ground it had when it went limp,
+measured by a ray down from the hips: the pose then stands up from the ground the body lies on, not from
+where the fall left the entity. The height is eased in at 2 m/s rather than snapped, and the first second after a limp spell runs at a quarter of `Strength`: full strength straight out of limp leaves the tail ringing. The entity stays where it fell sideways. With no ground under the hips it stays where it is.
+
+**Bodies.** `Scene::GetRagdollBody(entity, "jointName")` returns a bone's body, or its nearest
+simulated ancestor's (a hand finds its forearm's), for impulses, ray-cast filters or sensors.
+`Scene::GetEntityFromBody3D` maps every ragdoll body back to the entity. The bodies share one
+collision group, and go with the component, the entity, `SetActive(false)` and `OnStop`.
+Reactivating or restarting rebuilds them; so does a model swap or a skeleton reload. The entity's
+scale is read at build: rescaling it later needs a rebuild (remove and re-add the component).
+
+The blended bones reach the animator through `Animator::BlendGlobalTransforms`, which a game can also
+call itself on a standalone `Animator` after `Update`.
+
+**Fixed tick.** Under `SceneParams::FixedTick` the motors target the previous frame's animation. The
+blended bones, and a following entity, are interpolated between the last two ticks like any other
+body. A body moved by hand between ticks (`Physics3D::SetPosition`) slides there over one tick.
+The animator holds the drawn bones, so under `FixedTick` a script's `Animator::GetJointTransform` or
+a socket on a simulated bone can sit up to one tick behind the bodies.
+
+**Debugging.** The F9 Scene tab's inspector has a **Ragdoll** section: `Blend`, `Strength` and
+`DriveToAnimation` are editable, and each body lists its joint type, mass, speed and live motor
+torque against its limit. The Ragdoll Test (`--test=ragdoll`) shoves a driven and a limp fox, drops
+one down a flight of stairs, and steps eight at once against a frame-time budget.
+
+### Ragdoll recipes
+
+A model with a skeleton reads `<stem>.ragdoll` beside it, if one is there (`Fox.gltf` →
+`Fox.ragdoll`). It overrides the automatic build per joint: which joints get no body, and each body's
+shape, radius, mass share and joint limits. Lines before the first `[name]` form the default recipe,
+which every `RagdollComponent` with an empty `Recipe` uses; a `[name]` starts a recipe that
+`RagdollComponent::Recipe = "name"` picks. A named recipe starts empty: it inherits nothing from
+the default one, its excludes included.
+
+```text
+# Fox.ragdoll
+exclude b_Tail02_013               # no body; it rides on b_Tail01_012
+b_Hip_01   shape=box radius=12 mass=0.2
+b_Neck_04  shape=sphere
+b_LeftLeg02_016  hinge=-5..140     # degrees, from the bone lying straight
+b_Spine02_03     swing=30,20 twist=15
+
+[heavy]
+b_Hip_01 mass=0.5
+```
+
+| Key | Meaning |
+|---|---|
+| `exclude <joint>...` | Those joints, and every joint below them, get no body. |
+| `shape=capsule\|sphere\|box` | The collider. A sphere sits halfway along the bone; a box runs along it, `radius` across. |
+| `radius=<r>` | In the model's units (the space of `Mesh::GetVertices()`), scaled with the entity. Replaces the measured radius. |
+| `mass=<share>` | The bone's share of `TotalMass`, above 0 and at most 1. The bones without one share the rest by size; shares that add up to 1 or more are scaled down with the others (logged), and shares on every body that add up to less than 1 are scaled up to the whole `TotalMass`. |
+| `hinge=<min>..<max>` | Makes it a hinge, with limits in degrees from the bone lying straight along its parent (positive bends it further). The build pose stays inside them. A bone built straight has no bend side to go by: positive turns it about its joint's own X axis. |
+| `swing=<a>` or `swing=<y>,<z>` | Makes it a swing-twist joint, with these cone half-angles in degrees. |
+| `twist=<t>` or `twist=<min>..<max>` | Swing-twist too, with the twist limits in degrees from the build pose, so min ≤ 0 ≤ max. |
+
+Joint names match the skeleton exactly. A line naming a joint the skeleton lacks, an unknown key or a
+bad value logs a warning with its line number and is skipped (a bad value drops only its key). So is a
+line that asks for both a hinge and swing or twist limits. A recipe line for a joint that gets no body
+(excluded, folded or above the hips) logs a warning when the ragdoll is built. An unknown
+`RagdollComponent::Recipe` logs a warning once and builds without a recipe.
+
+`Model::GetRagdollRecipes()` and `Model::FindRagdollRecipe(name)` read the parsed file, and
+`Model::ReloadRagdollRecipes()` re-reads it. Every ragdoll built from the model rebuilds on its next
+physics step after a reload of the file or the model.
+
 ## Hot-reload
 
 With the AssetManager's hot-reload on (`params.Assets.EnableHotReload = true`, or the toggle in the F6
-tab), saving a model's file, or its `.events` file, reloads it **in place**, while the game runs. For
+tab), saving a model's file, its `.events` file or its `.ragdoll` file, reloads it **in place**, while the game runs. For
 an unmanaged model call `Model::Reload()`; for a managed one `AssetManager::Reload(handle)`.
 
 - Every pointer a game may hold survives: the `Model*`, each `Mesh*` (with a new `GetId()`), each
@@ -1066,8 +1197,11 @@ an unmanaged model call `Model::Reload()`; for a managed one `AssetManager::Relo
   still bound to it. A scene's animators start over on the new skeleton with their `DefaultClip`. A
   standalone `Animator` keeps running on the old one until you `SetSkeleton`.
 - A save of the `.events` file alone only replaces the clips' events (`Model::ReloadEvents()`).
+- A save of the `.ragdoll` file alone only replaces the [ragdoll recipes](#ragdoll-recipes)
+  (`Model::ReloadRagdollRecipes()`), and the model's ragdolls rebuild.
 - A file that no longer loads logs an error and leaves the model as it was.
-- `Model::GetGeneration()` counts the successful reloads, `ReloadEvents` included.
+- `Model::GetGeneration()` counts the successful reloads, `ReloadEvents` and `ReloadRagdollRecipes`
+  included.
 - **Events you added in code with `AddEvent` are dropped by a reload**, replaced by the file's and the
   `.events` file's. Prefer the sidecar for anything that should survive, or add them again when the
   generation moves:
@@ -1187,7 +1321,8 @@ Not available:
 - [Asset Pipeline](asset-pipeline.md) - loading models, the `.events` sidecar, and
   [Model hot-reload](asset-pipeline.md#model-hot-reload-v08).
 - [Lighting & Shading](lighting.md) - lit materials, which skinned meshes draw with.
-- [3D Physics](physics-3d.md) - kinematic bodies and character controllers.
+- [3D Physics](physics-3d.md) - kinematic bodies, character controllers, and the
+  [constraints](physics-3d.md#constraints) a [ragdoll](#ragdolls) is built from.
 - The test app's **Animation Test** (`test/`, `--test=anim`, flags [above](#debugging)).
 - `examples/Marionette` - the worked example: combat windows from `.events`, a masked block layer,
   weapons and hit spheres on sockets, clip libraries shared by four characters, and live `.events`

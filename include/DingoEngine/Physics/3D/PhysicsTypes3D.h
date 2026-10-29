@@ -74,6 +74,9 @@ namespace Dingo
 		/// Coulomb friction coefficient, 0 for ice and 1 for rubber-like grip.
 		float Friction = 0.5f;
 		float Restitution = 0.0f;                           ///< Bounciness, [0,1].
+		/// Dynamic bodies: the mass in kg, the inertia scaled from the shape to match. 0 (the default),
+		/// a negative or a non-finite value takes the shape's own mass at 1000 kg per cubic metre.
+		float Mass = 0.0f;
 
 		/// Sweeps the body along its motion each step so it cannot pass through thin
 		/// geometry (a Mesh collider's triangles) when it moves further than its own radius

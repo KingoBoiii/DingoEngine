@@ -1511,6 +1511,67 @@ namespace Dingo::Internal
 			if (changed)
 				SD::WriteMotor(scene.Serial, s_SelectedEntity, motor);
 		}
+
+		if (s_Detail.Ragdoll.Present)
+		{
+			SD::RagdollView ragdoll = s_Detail.Ragdoll;
+			bool changed = false;
+			ImGui::PushID("##ragdoll");
+			if (ImGui::CollapsingHeader("Ragdoll (editable)", ImGuiTreeNodeFlags_DefaultOpen))
+			{
+				changed |= ImGui::SliderFloat("Blend", &ragdoll.Blend, 0.0f, 1.0f);
+				changed |= ImGui::SliderFloat("Strength", &ragdoll.Strength, 0.0f, 2.0f);
+				changed |= ImGui::Checkbox("Drive to animation", &ragdoll.DriveToAnimation);
+				ImGui::Text("Total mass %.1f kg, recipe %s, self-collision %s", ragdoll.TotalMass,
+					ragdoll.Recipe.empty() ? "(default)" : ragdoll.Recipe.c_str(), ragdoll.CollideWithinRagdoll ? "on" : "off");
+
+				if (!ragdoll.Live)
+					ImGui::TextDisabled("Not built: physics is not running, or the skeleton can't make a ragdoll.");
+				else
+				{
+					ImGui::Text("%zu bodies%s", ragdoll.Parts.size(), ragdoll.FollowsRoot ? ", the entity follows the root body" : "");
+					const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp;
+					if (ImGui::BeginTable("##parts", 5, flags))
+					{
+						ImGui::TableSetupColumn("Bone");
+						ImGui::TableSetupColumn("Joint");
+						ImGui::TableSetupColumn("Mass (kg)", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+						ImGui::TableSetupColumn("Speed (m/s)", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+						ImGui::TableSetupColumn("Motor torque (N*m)");
+						ImGui::TableHeadersRow();
+						for (const SD::RagdollView::Part& part : ragdoll.Parts)
+						{
+							ImGui::TableNextRow();
+							ImGui::TableSetColumnIndex(0);
+							ImGui::TextUnformatted(part.Bone.c_str());
+							ImGui::TableSetColumnIndex(1);
+							if (part.Parent.empty())
+								ImGui::TextDisabled("root");
+							else
+								ImGui::Text("%s to %s", part.Hinge ? "hinge" : "swing-twist", part.Parent.c_str());
+							ImGui::TableSetColumnIndex(2);
+							ImGui::Text("%.2f", part.Mass);
+							ImGui::TableSetColumnIndex(3);
+							ImGui::Text("%.2f", part.Speed);
+							ImGui::TableSetColumnIndex(4);
+							if (part.Parent.empty())
+								ImGui::TextDisabled(ragdoll.DriveToAnimation && ragdoll.Strength > 0.0f ? "velocity drive" : "free");
+							else
+							{
+								const float torque = (std::max)(part.Torque, part.TwistTorque);
+								const float fraction = part.MaxTorque > 0.0f ? (std::min)(torque / part.MaxTorque, 1.0f) : 0.0f;
+								const std::string text = part.MaxTorque > 0.0f ? std::format("{:.1f} / {:.1f}", torque, part.MaxTorque) : std::string("off");
+								ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f), text.c_str());
+							}
+						}
+						ImGui::EndTable();
+					}
+				}
+			}
+			ImGui::PopID();
+			if (changed)
+				SD::WriteRagdoll(scene.Serial, s_SelectedEntity, ragdoll);
+		}
 	}
 
 	void DingoUISection()

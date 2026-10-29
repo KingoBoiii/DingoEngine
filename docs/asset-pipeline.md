@@ -203,7 +203,7 @@ With `EnableHotReload` on, the manager polls the source files of every loaded
   involved. On a **compile error** the previous program keeps running and the
   error is logged; fix the file and save again.
 - **Models** (v0.8) reload into the *same* `Model`, and so does a save of the
-  model's `.events` file. See [Model hot-reload](#model-hot-reload-v08).
+  model's `.events` or `.ragdoll` file. See [Model hot-reload](#model-hot-reload-v08).
 
 While a texture re-decodes, its state is `Reloading` rather than `Loading`: the
 previously loaded object keeps serving, so `IsReady(handle)` stays **true** and
@@ -233,8 +233,8 @@ one would only throw away a decode that is about to publish the same file.
 
 ### Model hot-reload (v0.8)
 
-A model reloads on the main thread, in the frame its file (or its `.events` file)
-has settled. It reads the file into a new model and moves the result into the
+A model reloads on the main thread, in the frame its file (or its `.events` or
+`.ragdoll` file) has settled. It reads the file into a new model and moves the result into the
 existing one, so everything game code may hold keeps working:
 
 | Object | After a reload |
@@ -247,7 +247,9 @@ existing one, so everything game code may hold keeps working:
 | `AnimationClip*` | Same object per name, with the new keys and events, so an `Animator` playing it keeps playing at its time. A clip that disappeared becomes zero-length; a new one is added. |
 | `Skeleton*` | Same object while every joint keeps its name and parent: the rest pose updates and animators keep playing. If the joints changed, a new `Skeleton` replaces it, the old one stays alive (an `Animator` bound to it keeps working), and a `Scene`'s animators start over on the new one with their `DefaultClip`. |
 
-A save of the `.events` file alone only replaces the clips' events (`Model::ReloadEvents()`).
+A save of the `.events` file alone only replaces the clips' events (`Model::ReloadEvents()`),
+and a save of the `.ragdoll` file alone only the ragdoll recipes (`Model::ReloadRagdollRecipes()`,
+[Ragdoll recipes](animation.md#ragdoll-recipes)); the model's ragdolls rebuild.
 A file that no longer loads logs an error and leaves the model as it was. Events a
 game added with `AddEvent` are replaced by the file's and its `.events` file's, so add
 them again when `GetGeneration()` changes. A paused `AnimatorComponent` is posed
@@ -255,7 +257,7 @@ again so it shows the new keys. Physics bodies already built from a mesh keep th
 shape; a body made after the reload gets the new one, because Jolt's shape cache is
 keyed by `Mesh::GetId()`.
 
-Only the model file and its `.events` file are watched. A glTF's `.bin` buffer
+Only the model file and its `.events` and `.ragdoll` files are watched. A glTF's `.bin` buffer
 isn't, but exporters rewrite the `.gltf` with it. An unmanaged model reloads the
 same way with `Model::Reload()`.
 
@@ -326,7 +328,7 @@ live shader + texture editing.
 - The manager is main-thread-only (`GetPendingCount()` and `GetReloadingCount()` aside). Only
   textures and audio clips decode on the loader thread; shaders, models and fonts load on the main
   thread, one per frame when loaded asynchronously.
-- Hot-reload watches textures, shaders, and models with their `.events` files. Fonts and audio
+- Hot-reload watches textures, shaders, and models with their `.events` and `.ragdoll` files. Fonts and audio
   clips are not watched, `Reload` recreates them (invalidating borrowed pointers), a glTF's `.bin`
   is not watched, and a file read from a package never reloads.
 - Inline shaders (`Shader::CreateFromSource`) have no file to watch.

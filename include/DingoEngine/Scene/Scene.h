@@ -12,6 +12,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace Dingo
@@ -310,7 +311,7 @@ namespace Dingo
 
 		/// The underlying 3D physics world, for direct handle-based access (ray casts,
 		/// body control). Null until OnStart (and only if the scene has 3D
-		/// bodies or character controllers) and after OnStop. The Scene owns
+		/// bodies, character controllers or ragdolls) and after OnStop. The Scene owns
 		/// it - don't delete it.
 		Physics3D* GetPhysics3D() const;
 
@@ -327,13 +328,19 @@ namespace Dingo
 		/// The 3D counterpart of GetRuntimeBody2D; k_InvalidBody3D while the entity has no live
 		/// body.
 		PhysicsBodyId3D GetRuntimeBody3D(Entity entity) const;
-		/// The entity a live 3D body belongs to (a RayCastHit3D's Body), or a null Entity for a
-		/// body the scene didn't make or one already destroyed. The scene keeps the entity in the
+		/// The body a RagdollComponent built for the named skeleton joint, or for its nearest
+		/// simulated ancestor when the joint has none of its own (a finger finds its hand's body).
+		/// k_InvalidBody3D for an unknown joint, one above the ragdoll's root body, or while the
+		/// entity has no built ragdoll (before the first physics step after it was added).
+		PhysicsBodyId3D GetRagdollBody(Entity entity, std::string_view joint) const;
+		/// The entity a live 3D body belongs to (a RayCastHit3D's Body; a ragdoll's bodies all
+		/// belong to the entity with the RagdollComponent), or a null Entity for a body the scene
+		/// didn't make or one already destroyed. The scene keeps the entity in the
 		/// body's UserData: don't SetUserData on a scene's body.
 		Entity GetEntityFromBody3D(PhysicsBodyId3D body);
 		/// The entities inside a sensor entity's body (RigidBody3DComponent::IsSensor): those with
-		/// a body, then those with a character controller. `out` is cleared first; false when
-		/// empty.
+		/// a body, then those with a character controller, each once (a ragdoll's limbs count as its
+		/// entity). `out` is cleared first; false when empty.
 		bool GetSensorOverlaps(Entity sensor, std::vector<Entity>& out);
 
 		/// Instantiates a simulation body for a single entity created after
