@@ -175,6 +175,7 @@ namespace Dingo
 				bool Live = false;
 				float Blend = 1.0f;
 				float Strength = 1.0f;
+				float DriveFrequency = 3.0f;
 				bool DriveToAnimation = true;
 				float TotalMass = 0.0f;
 				bool CollideWithinRagdoll = false;
@@ -234,7 +235,7 @@ namespace Dingo
 			// the entity is gone or has no Hinge or SwingTwist constraint.
 			bool WriteMotor(uint64_t sceneSerial, UUID id, const MotorView& motor);
 
-			// Writes Blend, Strength and DriveToAnimation of the entity's RagdollComponent from `ragdoll`,
+			// Writes Blend, Strength, DriveFrequency and DriveToAnimation of the entity's RagdollComponent from `ragdoll`,
 			// under the scenes lock; the scene reads them at its next step and pose. False when the scene
 			// or the entity is gone or has no RagdollComponent.
 			bool WriteRagdoll(uint64_t sceneSerial, UUID id, const RagdollView& ragdoll);

@@ -530,6 +530,7 @@ namespace Dingo
 
 				settings->Blend = ragdoll.Blend;
 				settings->Strength = ragdoll.Strength;
+				settings->DriveFrequency = ragdoll.DriveFrequency;
 				settings->DriveToAnimation = ragdoll.DriveToAnimation;
 				return true;
 			}
@@ -912,6 +913,7 @@ namespace Dingo
 					view.Present = true;
 					view.Blend = settings->Blend;
 					view.Strength = settings->Strength;
+					view.DriveFrequency = settings->DriveFrequency;
 					view.DriveToAnimation = settings->DriveToAnimation;
 					view.TotalMass = settings->TotalMass;
 					view.CollideWithinRagdoll = settings->CollideWithinRagdoll;

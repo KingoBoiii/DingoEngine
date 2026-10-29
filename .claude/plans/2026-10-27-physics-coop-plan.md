@@ -97,7 +97,13 @@ As built:
   and ASan. A mesh collider added after `OnStart` needs `Scene::CreateRigidBody`.
 - **Motors are 3 Hz, not 6** (`k_DriveFrequency`): at 6 and 4 Hz the Fox's light tail and limb
   bodies gained energy in Jolt's solver and the driven pose swung by centimetres (it predated P3,
-  hidden by the old sampling); 3 and 2 Hz settle.
+  hidden by the old sampling); 3 and 2 Hz settle. *Follow-up (#307):* the cause was a 1 kg tail
+  root whose subtree holds 95× its own inertia, so the subtree-scaled spring rang that body alone
+  at ~58 Hz against a 60 Hz step. Each motor's stiffness is now capped at its own body's inertia
+  about the joint × (2π · 0.25 / dt)², and the frequency is `RagdollComponent::DriveFrequency`
+  (default 3 Hz, 0 limp, F9-editable). The cap binds at 3 Hz too wherever a subtree holds over 25× its
+  body's inertia (the tail root keeps ~26% of its old stiffness). The push check returns within 0.06 mm
+  at 3, 6 and 10 Hz.
 - **The root drive moves the whole ragdoll rigidly**: the correction (spring `min(ω, 1/dt)` plus the
   target's own velocity fed forward, skipped past a 0.5 m / 1 rad jump) is measured against the
   parts' mass-weighted mean velocity and added to every part. On the root alone the chain absorbed it

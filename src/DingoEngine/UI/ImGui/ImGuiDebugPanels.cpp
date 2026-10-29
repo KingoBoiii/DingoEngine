@@ -1521,6 +1521,7 @@ namespace Dingo::Internal
 			{
 				changed |= ImGui::SliderFloat("Blend", &ragdoll.Blend, 0.0f, 1.0f);
 				changed |= ImGui::SliderFloat("Strength", &ragdoll.Strength, 0.0f, 2.0f);
+				changed |= ImGui::SliderFloat("Drive frequency (Hz)", &ragdoll.DriveFrequency, 0.0f, 12.0f);
 				changed |= ImGui::Checkbox("Drive to animation", &ragdoll.DriveToAnimation);
 				ImGui::Text("Total mass %.1f kg, recipe %s, self-collision %s", ragdoll.TotalMass,
 					ragdoll.Recipe.empty() ? "(default)" : ragdoll.Recipe.c_str(), ragdoll.CollideWithinRagdoll ? "on" : "off");
@@ -1555,7 +1556,7 @@ namespace Dingo::Internal
 							ImGui::Text("%.2f", part.Speed);
 							ImGui::TableSetColumnIndex(4);
 							if (part.Parent.empty())
-								ImGui::TextDisabled(ragdoll.DriveToAnimation && ragdoll.Strength > 0.0f ? "velocity drive" : "free");
+								ImGui::TextDisabled(ragdoll.DriveToAnimation && ragdoll.Strength > 0.0f && ragdoll.DriveFrequency > 0.0f ? "velocity drive" : "free");
 							else
 							{
 								const float torque = (std::max)(part.Torque, part.TwistTorque);
