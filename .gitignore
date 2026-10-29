@@ -394,6 +394,7 @@ FodyWeavers.xsd
 
 # Claude (local)
 .claude/*.local.json
+CLAUDE.local.md
 # ImGui runtime layout state
 imgui.ini
 

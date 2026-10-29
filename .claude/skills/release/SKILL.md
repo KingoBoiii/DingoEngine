@@ -40,7 +40,7 @@ A release is a version branch merged into `master`, then a tag, a GitHub release
 ## 5. Assets
 
 - Always run `build-release.yml` yourself, straight after step 4, without asking: it is part of every release. It is `workflow_dispatch` only and uploads to an existing release, so it can't start earlier: `gh workflow run build-release.yml --ref vX.Y.Z`, then `gh run watch <id> --exit-status` in a background command. If a job fails, report it and re-run only the failed jobs (`gh run rerun <id> --failed`).
-- Expect **28 assets**: Windows 14 (DingoEngine Debug/Release/Distribution zips, the Distribution symbols zip + 10 example zips) and Linux 14 (3 engine `.tar.gz` + 10 examples + Dingo-TestFramework). A new example adds one per OS. Check with `gh release view vX.Y.Z --json assets --jq '.assets | length'`.
+- Expect **30 assets** (11 examples today): Windows 15 (DingoEngine Debug/Release/Distribution zips, the Distribution symbols zip + 11 example zips) and Linux 15 (3 engine `.tar.gz` + 11 examples + Dingo-TestFramework). Recompute from the workflow: Windows = 4 + the `example-game-*` jobs in `build-release.yml` (`grep -c '^  example-game-' .github/workflows/build-release.yml`); Linux = 3 + the directories in `examples/` (`scripts/package-linux-programs.sh` packs each) + 1. Check with `gh release view vX.Y.Z --json assets --jq '.assets | length'`.
 
 ## 6. Mark released
 
@@ -55,5 +55,5 @@ Delete the release branch locally and on origin (`git push origin --delete refs/
 - No version branch, PR or `VERSION` bump (steps 2 and 3.1 don't apply).
 - Tag the master merge commit to release from (for rc.1, the PR that finishes the milestone), after Build Windows and Build Linux pass there (step 3.2). Lightweight tag, full-ref push as in step 4.1.
 - Notes as in step 4.2, with `vX.Y.Z-rc.N` in the heading, the blob links and the compare link (the final tag doesn't exist yet). `gh release create vX.Y.Z-rc.N --verify-tag --prerelease --title vX.Y.Z-rc.N --notes-file <file>`, then check `gh release view vX.Y.Z-rc.N --json isPrerelease,isDraft` gives `true`/`false`; it must not show as Latest.
-- Step 5 as usual: `gh workflow run build-release.yml --ref vX.Y.Z-rc.N`, expect the usual **28 assets**. The workflow accepts only tags matching `^v\d+\.\d+\.\d+(-rc\.\d+)?$`.
+- Step 5 as usual: `gh workflow run build-release.yml --ref vX.Y.Z-rc.N`, expect the same count as step 5 (**30 assets** today). The workflow accepts only tags matching `^v\d+\.\d+\.\d+(-rc\.\d+)?$`.
 - Skip step 6 and step 7's branch deletion. Add an "RC tagged" line to the milestone plan (commit it straight to `master` like step 6), then reply as step 7 does: release URL, tag sha, asset count.
