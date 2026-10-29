@@ -44,7 +44,7 @@ A release is a version branch merged into `master`, then a tag, a GitHub release
 
 ## 6. Mark released
 
-Commit straight to `master` and push: `docs: mark vX.Y.Z released`. It updates the ROADMAP section with a `**Status**: released on <date> (PR #N → <sha>)` line and the project-history bullet with the same, plus anything else that still says "planned" or "in progress" for this version.
+Commit straight to `master` and push it with `DINGO_RELEASE_PUSH=1 git push origin master` (the `guard-git` hook blocks any other push to `master`): `docs: mark vX.Y.Z released`. It updates the ROADMAP section with a `**Status**: released on <date> (PR #N → <sha>)` line and the project-history bullet with the same, plus anything else that still says "planned" or "in progress" for this version.
 
 ## 7. Clean up
 
