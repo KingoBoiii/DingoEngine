@@ -47,33 +47,29 @@ Keep it to the smallest check that proves the change. CI (`build-linux.yml` with
 
 ## Sub-agent selection
 
-The main session runs Sonnet at medium effort (`.claude/settings.json`) and orchestrates. Each agent call sets `model` and `effort` from this table:
+The main session runs Sonnet at medium effort (`.claude/settings.json`) and orchestrates. Each role is a project agent in `.claude/agents/` that carries its model, effort, tools and the rules for that role; call it by name (`subagent_type`).
 
-| Need | Agent | Model | Effort |
-|---|---|---|---|
-| One known file, symbol or string | No agent: `Grep`/`Read` directly | | |
-| Find where something lives across many files (call sites, every reader of a component, every place a format is written) | `Explore` ("medium" or "very thorough") | `haiku` | `low` |
-| Run a build, a test case or any command and report the errors and `[FAIL]`/`VUID-`/`LOG ERROR` lines | `general-purpose` | `haiku` | `low` |
-| Mechanical sweeps: check docs against code, update every reference to a renamed API, fill a test case from a clear spec | `general-purpose` | `sonnet` | `medium` |
-| Implement a well-specified, contained change (one issue, one phase step, a test, an example's game code) | `general-purpose`, one per change, parallel with `isolation: "worktree"` when the files don't overlap | `sonnet` | `medium` |
-| Mockups, and Blender or art work | `general-purpose` | `sonnet` | `medium` |
-| Design a phase or a multi-file change | `Plan`, result recorded in the plan file with `file:line` anchors | `sonnet` | `medium` |
-| Design an engine-core change (render-thread or GPU synchronisation, NVRHI state and barriers, shader bindings, hierarchy and physics sync, animator internals, save formats, netcode) before writing it | `Plan`, result recorded in the plan file with `file:line` anchors | `opus` | `high` |
-| Implement an engine-core change from that design | `general-purpose`, the prompt carries the design | `sonnet` | `medium` |
-| Pre-push review of the whole diff | One fresh `general-purpose` agent with no context from the work (or the `code-review` skill) | `sonnet` | `medium` |
-| Pre-push review of a diff that touches engine internals (renderer, threading, GPU synchronisation, save formats, netcode) | Same, fresh agent | `opus` | `high` (`xhigh` for renderer, threading or synchronisation) |
-| Root-cause a bug in Vulkan/GPU work (device lost, validation error, a wrong frame), a Jolt NaN, netcode, a save format or an engine-internal race | `general-purpose` | `opus` | `xhigh` |
-| Root-cause any other bug | `general-purpose` | `sonnet` | `medium` |
-| Milestone review, or a bug Opus failed on twice | `general-purpose` | `fable` | `high`, only when the owner asks |
-| Questions about Claude Code, hooks, skills, the API | `claude-code-guide` | its default | |
+| Need | Agent |
+|---|---|
+| One known file, symbol or string | No agent: `Grep`/`Read` directly |
+| Find where something lives across many files | `code-explorer` (haiku, low, read-only) |
+| Run a build, a test case or any command and report the failures | `build-runner` (haiku, low, read-only plus Bash) |
+| Implement a contained change, a mechanical sweep, a test, mockups or art, or an engine-core change from a design | `implementer` (sonnet, medium), one per change, parallel with `isolation: "worktree"` when the files don't overlap |
+| Design a phase or a multi-file change | built-in `Plan` with `model: sonnet`, result recorded in the plan file with `file:line` anchors |
+| Design an engine-core change (render-thread or GPU synchronisation, NVRHI state and barriers, shader bindings, hierarchy and physics sync, animator internals, save formats, netcode) | `engine-designer` (opus, high), result recorded in the plan file |
+| Pre-push review of the whole diff | `fresh-reviewer` (sonnet, medium), or the `code-review` skill |
+| Pre-push review of a diff touching engine internals (renderer, threading, GPU synchronisation, save formats, netcode) | `engine-reviewer` (opus, xhigh; pass `effort: high` when it touches none of renderer, threading or synchronisation) |
+| Root-cause a bug in Vulkan/GPU work, a Jolt NaN, netcode, a save format or an engine-internal race | `gpu-bug-hunter` (opus, xhigh) |
+| Root-cause any other bug | `bug-hunter` (sonnet, medium) |
+| Milestone review, or a bug Opus failed on twice | `general-purpose` with `model: fable`, `effort: high`, only when the owner asks |
+| Questions about Claude Code, hooks, skills, the API | `claude-code-guide` |
 
-Why these picks: Haiku returns facts, not judgement, so it searches and runs commands but never edits engine code or reviews. Sonnet is the default for everyday work, the main session included. Opus is reserved for the engine-internals rows because a subtle mistake there only shows on a real GPU, so engine-core code gets an Opus design first and an Opus review after, with Sonnet writing it in between; Fable is the owner's call. For judgement work, lower Opus's effort before switching to a cheaper model. Judge cost per finished task: a cheaper agent whose work has to be redone isn't cheaper, and if a Sonnet agent's change fails review twice, redo it on Opus.
+Why these picks: Haiku returns facts, not judgement, so it searches and runs commands but never edits engine code or reviews. Sonnet is the default for everyday work, the main session included. Opus is reserved for engine internals because a subtle mistake there only shows on a real GPU, so engine-core code gets an Opus design first and an Opus review after, with Sonnet writing it in between; Fable is the owner's call. For judgement work, lower Opus's effort before switching to a cheaper model. Judge cost per finished task: a cheaper agent whose work has to be redone isn't cheaper, and if a Sonnet agent's change fails review twice, redo it on Opus.
 
-Rules for every agent:
-- Give it a self-contained prompt: the goal, the files involved, the rule that applies from this file or a reference file, and what to return (a conclusion and `file:line`s, not file dumps).
-- Run agents in parallel only when their work doesn't overlap. Never let two agents edit the same file.
-- Don't delegate and then search the same thing yourself, and don't spawn an agent for a one-step lookup.
-- An agent's report isn't shown to the owner; relay what matters. Check an agent's claims about code before acting on them, and review code a `sonnet` agent wrote before it is committed.
+Rules the agent files can't carry:
+- Give each agent a self-contained prompt: the goal, the files, the rule that applies, and what to return. Don't delegate and then search the same thing yourself.
+- Never let two agents edit the same file; run agents in parallel only when their work doesn't overlap.
+- An agent's report isn't shown to the owner: relay what matters. Check its claims about code before acting on them, and review code an `implementer` wrote before it is committed.
 
 ## Token budget
 
