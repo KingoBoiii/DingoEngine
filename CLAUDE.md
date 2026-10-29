@@ -5,7 +5,7 @@ DingoEngine is a C++20 game engine on NVRHI, targeting Vulkan (primary), DirectX
 ## How we work
 
 - **Roles.** The owner (KingoBoiii) sets direction, decides design, merges every PR and runs the GPU checks on Windows (RX 7900 XTX, VS 2026, Vulkan/DX11/DX12). Claude writes most code in Linux cloud sessions without a GPU (llvmpipe under Xvfb).
-- **Where work comes from.** Plans in `.claude/plans/YYYY-MM-DD-<topic>-plan.md` (a `**Status**:` first line, the owner's decisions on top, "As built" notes override the design; one phase per session), or GitHub issues by label (`bug`, `enhancement`; skip `wontfix` and `routine:skip`). The routine takes both through `routine-run`.
+- **Where work comes from.** Plans in `.claude/plans/YYYY-MM-DD-<topic>-plan.md` (a `**Status**:` first line, the owner's decisions on top, "As built" notes override the design; one phase per session), or GitHub issues by label (`bug`, `enhancement`; skip `wontfix`, `routine:skip` and anything needing hardware the session lacks). The routine takes both through `routine-run`.
 - **Branches.** `feat/<topic>`, `fix/bug-<topic>`, `feat/enhancement-<topic>`, `vX.Y.Z` for point releases; a cloud session pushes to its assigned `claude/…` branch unless the owner names one in the prompt. Bring master in with a merge commit; never rebase or force-push a branch someone else has. Stack a PR only when both rewrite the same code, and say so at its top.
 - **Commits.** Conventional, lowercase `type(scope): summary`, one per issue ending in `(#N)` (scopes: the `commit` skill).
 - **PRs.** Only when the owner asks or a routine runs. Body via `pr-writeup`; the owner adds GPU results via `pr-gpu-test`.
@@ -50,7 +50,8 @@ The main session (Sonnet, medium; `.claude/settings.json`) orchestrates. Roles a
 | Search many files | `code-explorer` (haiku, low) |
 | Run a build or test | `build-runner` (haiku, low) |
 | One contained change | `implementer` (sonnet, medium); parallel with `isolation: "worktree"` if files don't overlap |
-| Design a phase | built-in `Plan`, `model: sonnet`; result in the plan file with `file:line` anchors |
+| Mechanical sweep (docs against code, every reference to a rename, a test from a spec), mockups, Blender or art | `implementer` (sonnet, medium) |
+| Design a phase or a multi-file change | built-in `Plan`, `model: sonnet`; result in the plan file with `file:line` anchors |
 | Design an engine-core change | `engine-designer` (opus, high) |
 | Pre-push review | `fresh-reviewer` (sonnet, medium) or the `code-review` skill |
 | Review engine internals | `engine-reviewer` (opus, xhigh; `effort: high` without renderer, threading or synchronisation) |
@@ -73,7 +74,8 @@ Rules the agent files can't carry:
 
 ## Rules that break things if forgotten
 
-- Never modify `vendor/` (`.claude/settings.json` denies it). `.claude/hooks/guard-git.sh` blocks force pushes, pushes to `master` and rebases of a pushed branch.
+- Never modify `vendor/` (`.claude/settings.json` denies it). `.claude/hooks/guard-git.sh` blocks force pushes (`--force-with-lease` only on `claude/*` and `vX.Y.Z` branches), pushes to `master` and rebases of a pushed branch.
+- Never leave a `.dpak` in `build/bin/`: the engine mounts `<exe stem>.dpak` at start-up.
 
 The rest load from `.claude/rules/` when a matching file is touched: C++, public API, build and shipping, verification, rendering, shadows and post, animation, DingoUI, engine invariants.
 
@@ -85,7 +87,7 @@ The `///` documentation rule for `include/DingoEngine/` loads from `.claude/rule
 
 ## Reference — read when the task needs it
 
-Read the area's file before changing it. Each has one `##` heading per topic and an index on top: Grep the heading, Read that range.
+Read the area's file before changing it. Each has one `##` or `###` heading per topic and an index on top: Grep the heading, Read that range.
 
 | File | Contents |
 |---|---|

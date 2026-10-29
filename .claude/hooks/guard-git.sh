@@ -13,6 +13,7 @@ case "$cmd" in *git*) ;; *) exit 0 ;; esac
 block() { echo "guard-git: $1" >&2; exit 2; }
 
 current_branch() { git symbolic-ref --quiet --short HEAD 2>/dev/null; }
+cur=$(current_branch)
 
 segments=$(printf '%s' "$cmd" | sed 's/&&/;/g; s/||/;/g; s/|/;/g')
 segments=${segments//[\"\']/ }
@@ -37,6 +38,20 @@ for part in "${parts[@]}"; do
 	sub=${w[$i]}
 	args=("${w[@]:$((i + 1))}")
 
+	if [ "$sub" = checkout ] || [ "$sub" = switch ]; then
+		target= want=0
+		for a in "${args[@]}"; do
+			case "$a" in
+				--) break ;;
+				-b|-B|-c|-C|--orphan) want=1 ;;
+				-*) ;;
+				*) target=$a; [ $want -eq 1 ] && break ;;
+			esac
+		done
+		[ -n "$target" ] && [ "$target" != - ] && cur=$target
+		continue
+	fi
+
 	if [ "$sub" = push ]; then
 		force=0 lease=0 positional=()
 		for a in "${args[@]}"; do
@@ -51,10 +66,10 @@ for part in "${parts[@]}"; do
 			esac
 		done
 		refs=("${positional[@]:1}")
-		[ ${#refs[@]} -eq 0 ] && refs=("$(current_branch)")
+		[ ${#refs[@]} -eq 0 ] && refs=("$cur")
 		for ref in "${refs[@]}"; do
 			dst=${ref##*:}
-			[ "$dst" = HEAD ] && dst=$(current_branch)
+			[ "$dst" = HEAD ] && dst=$cur
 			dst=${dst#refs/heads/}
 			case "$dst" in
 				master|main)
@@ -63,8 +78,8 @@ for part in "${parts[@]}"; do
 			[ $force -eq 1 ] && block "force push to $dst; never rewrite a pushed branch (use a merge commit)"
 			if [ $lease -eq 1 ]; then
 				case "$dst" in
-					claude/*|v*) ;;
-					*) block "--force-with-lease is allowed only on claude/* and v* branches, not $dst" ;;
+					claude/*|v[0-9]*) ;;
+					*) block "--force-with-lease is allowed only on claude/* and vX.Y.Z branches, not $dst" ;;
 				esac
 			fi
 		done
@@ -78,7 +93,7 @@ for part in "${parts[@]}"; do
 			esac
 		done
 		[ $resume -eq 1 ] && continue
-		branch=${positional[1]:-$(current_branch)}
+		branch=${positional[1]:-$cur}
 		[ -n "$branch" ] && git show-ref --verify --quiet "refs/remotes/origin/$branch" &&
 			block "rebase of $branch, which exists on origin; merge the base branch in instead"
 	fi

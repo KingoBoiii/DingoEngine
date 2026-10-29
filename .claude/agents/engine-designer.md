@@ -1,6 +1,6 @@
 ---
 name: engine-designer
-description: "Designs a DingoEngine engine-core change before it is written: render-thread or GPU synchronisation, NVRHI state and barriers, shader bindings, hierarchy and physics sync, animator internals, save formats, netcode. The result goes into the plan file with `file:line` anchors."
+description: "Designs a DingoEngine engine-core change before it is written: render-thread or GPU synchronisation, NVRHI state and barriers, shader bindings, hierarchy and physics sync, animator internals, save formats, netcode. Returns the design with `file:line` anchors; the caller records it in the plan file."
 model: opus
 effort: high
 tools: Read, Grep, Glob, Bash
