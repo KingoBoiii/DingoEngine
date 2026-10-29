@@ -1,3 +1,5 @@
+**Status**: done (v0.9.1)
+
 # Asset packing for shipped games (`.dpak`)
 
 ## Context

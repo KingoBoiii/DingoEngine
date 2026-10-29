@@ -34,7 +34,7 @@ If the run was started with an argument (a PR number, an issue label, or issue n
 2. A PR is **workable** when it has an unfinished phase, isn't claimed or `routine:skip`, and neither its description nor its plan says the next step needs a GPU, a Windows machine, other hardware, or the owner. Record every PR you skip and why.
 3. Take the workable PR with the lowest number and claim it.
 4. `git fetch origin` and `git checkout -B <branch> origin/<branch>`. Init submodules only if you need them to build.
-5. Read the plan in full, including its "As built" notes (they override the design), plus the CLAUDE.md reference file and `docs/` page for the area you touch.
+5. Read only what the phase needs, by Grep and line range (`grep -n "^#" <plan>`, then Read those ranges): the decisions at the top, the next unfinished phase's section and the "As built" notes (they override the design). Plans with `**Status**: done` on their first line are finished; skip them. Then the `.claude/reference/` file and `docs/` page for the area you touch.
 6. Implement exactly the **next** unfinished phase, never more than one, in full, as code. Only if it truly can't fit in this run, stop at a coherent sub-step, commit it as `<type>(<scope>): <phase> part 1 — …`, and leave the box unticked with a note of what remains.
 7. Verify (section 5), then commit and push (section 6).
 8. Tick the phase's box in the PR description with the short commit hash (add "*not yet built or run*" if it wasn't), and update the plan's "As built" notes in the same commit when the plan uses them.

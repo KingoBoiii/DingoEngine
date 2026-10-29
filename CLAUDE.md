@@ -6,7 +6,7 @@ DingoEngine is a C++20 game engine on NVRHI, targeting Vulkan (primary), DirectX
 
 - **Roles.** The owner (KingoBoiii) sets direction, decides design questions, merges every PR and runs the GPU checks on Windows (RX 7900 XTX, VS 2026, Vulkan/DX11/DX12). Claude writes most of the code, mostly in cloud sessions on Linux with no GPU (Mesa llvmpipe under Xvfb).
 - **Where work comes from.** Either a milestone plan or a group of GitHub issues:
-  - **Plans**: `.claude/plans/YYYY-MM-DD-<topic>-plan.md`, with the owner's decisions at the top and phases (P1, P2… or A, B…). Each phase appends "As built" notes to the plan, and those override the design. The PR body carries a phases checklist; a later run continues from the first unchecked phase. One phase per session (see Token budget).
+  - **Plans**: `.claude/plans/YYYY-MM-DD-<topic>-plan.md`, with a `**Status**: open` or `**Status**: done (vX.Y.Z)` first line, the owner's decisions at the top and phases (P1, P2… or A, B…). Each phase appends "As built" notes to the plan, and those override the design. The PR body carries a phases checklist; a later run continues from the first unchecked phase. One phase per session (see Token budget).
   - **Issues**: defects are labelled `bug`, limitations and requests `enhancement`. A run takes one label's group. Leave issues labelled `wontfix` or `routine:skip` alone, and anything that needs hardware the session lacks (multi-GPU, a gamepad).
   - **The scheduled routine** works both through the `routine-run` skill: one PR phase (Mode A) or one issue group (Mode B) per run, claimed with the `routine:claimed` label.
 - **Branches.** `feat/<topic>`, `fix/bug-<topic>`, `feat/enhancement-<topic>`, `vX.Y.Z` for point releases. A cloud session's assigned `claude/…` branch overrides these. Bring master in with a merge commit; never rebase or force-push a branch someone else has. Stack a PR on another only when both rewrite the same code, and say so at the top of the PR.
@@ -118,7 +118,7 @@ Rendering, shadows-and-post, animation, DingoUI and engine-invariant rules load 
 
 Do not write code comments unless absolutely necessary. A comment must earn its place by stating a load-bearing "why" — a constraint, invariant, or non-obvious consequence the code cannot express itself. Never narrate what the next line does, never leave change-tracking or review commentary ("added X", "fixed Y"), and apply the same restraint to scripts, YAML, shaders, and example code. When in doubt, leave it out.
 
-The exception is `include/DingoEngine/`: every public declaration gets a `///` line saying what it promises (decision D7 in [the v1.0 plan](.claude/plans/2026-10-08-v1.0-plan.md), line 817; `docs/conventions.md` "Documentation"). The `API reference` workflow fails a PR that leaves one out.
+The exception is `include/DingoEngine/`: every public declaration gets a `///` line saying what it promises (decision D7 in [the v1.0 plan](.claude/plans/2026-10-08-v1.0-plan.md), line 819; `docs/conventions.md` "Documentation"). The `API reference` workflow fails a PR that leaves one out.
 
 ## Reference — read when the task needs it
 

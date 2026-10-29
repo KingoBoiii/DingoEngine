@@ -1,3 +1,5 @@
+**Status**: done (v0.7.0)
+
 # P8 — *Candlewick*: example-game plan
 
 Drafted 2026-10-01 on branch `claude/v0-7-lighting-planning-cad5a1` @ `1ac5ee3` (v0.7 P0–P7 done).
