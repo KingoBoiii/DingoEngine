@@ -50,6 +50,10 @@ namespace Dingo
 			constexpr float k_MaxDriveFrequency = 1000.0f;
 			constexpr float k_MaxTargetStep = 0.5f;
 			constexpr float k_MaxTargetTurn = 1.0f;
+			constexpr float k_GroundProbe = 100.0f;
+			constexpr float k_SeatSpeed = 2.0f;
+			constexpr float k_SoftStrength = 0.25f;
+			constexpr float k_SoftSeconds = 1.0f;
 			constexpr float k_FoldRatio = 0.3f;
 			constexpr float k_HingeMaxBend = glm::radians(150.0f);
 			constexpr float k_HingeOverextension = glm::radians(5.0f);
@@ -153,12 +157,13 @@ namespace Dingo
 				return glm::pi<float>() * radius * radius * (2.0f * halfHeight + 4.0f / 3.0f * radius);
 			}
 
-			// Per part, the median distance from its bone of the rest-pose vertices whose heaviest joint
+			// Per part, the 85th-percentile distance from its bone of the rest-pose vertices whose heaviest joint
 			// rides on it, as a fraction of the bone's rest length; 0 where too few vertices say.
 			std::vector<float> MeasureRadii(const Model& model, const Skeleton& skeleton, const RagdollRuntime& runtime,
 				const std::vector<int32_t>& mainChild, const std::vector<glm::vec3>& restPositions)
 			{
 				constexpr size_t k_MinSamples = 8;
+				constexpr float k_RadiusPercentile = 0.85f;
 				std::vector<std::vector<float>> distances(runtime.Parts.size());
 				const uint32_t jointCount = skeleton.GetJointCount();
 				for (const SubMesh& submesh : model.GetSubMeshes())
@@ -203,7 +208,7 @@ namespace Dingo
 					std::vector<float>& samples = distances[p];
 					if (samples.size() < k_MinSamples)
 						continue;
-					auto middle = samples.begin() + static_cast<std::ptrdiff_t>(samples.size() / 2);
+					auto middle = samples.begin() + static_cast<std::ptrdiff_t>(static_cast<float>(samples.size() - 1) * k_RadiusPercentile);
 					std::nth_element(samples.begin(), middle, samples.end());
 					radii[p] = *middle;
 				}
@@ -225,6 +230,18 @@ namespace Dingo
 			bool Driven(const RagdollComponent& settings)
 			{
 				return settings.DriveToAnimation && settings.Strength > 0.0f && settings.DriveFrequency > 0.0f;
+			}
+
+			bool GroundUnderRoot(const Physics3D& physics, const RagdollRuntime& runtime, float& groundY)
+			{
+				QueryFilter3D filter;
+				for (const RagdollRuntime::Part& part : runtime.Parts)
+					filter.Ignore(part.Body);
+				RayCastHit3D hit;
+				if (!physics.RayCast(Ray(physics.GetPosition(runtime.Parts.front().Body), glm::vec3(0.0f, -1.0f, 0.0f)), k_GroundProbe, hit, filter))
+					return false;
+				groundY = hit.Point.y;
+				return true;
 			}
 
 			bool Finite(const glm::vec3& v)
@@ -727,13 +744,42 @@ namespace Dingo
 			if (!settings || !skeleton)
 				return;
 
+			RagdollRuntime& runtime = registry.get<RagdollRuntime>(handle);
 			const bool driven = Driven(*settings);
+			runtime.DrivenFor = driven ? runtime.DrivenFor + deltaTime : 0.0f;
 			glm::mat4 entityWorld;
 			if (driven && !AnimatedJointWorlds(registry, handle, *skeleton, entityWorld))
 				return;
 
-			RagdollRuntime& runtime = registry.get<RagdollRuntime>(handle);
-			const float strength = std::isfinite(settings->Strength) ? settings->Strength : 0.0f;
+			Transform3DComponent* transform = registry.try_get<Transform3DComponent>(handle);
+			float groundY = 0.0f;
+			if (driven && runtime.Carried)
+			{
+				runtime.Carried = false;
+				runtime.Seating = transform && runtime.HasGroundHeight && GroundUnderRoot(physics, runtime, groundY);
+				if (runtime.Seating)
+					runtime.SeatHeight = groundY + runtime.GroundHeight;
+			}
+			if (driven && runtime.Seating && transform)
+			{
+				glm::vec3 seated(entityWorld[3]);
+				const float step = k_SeatSpeed * deltaTime;
+				const float remaining = runtime.SeatHeight - seated.y;
+				if (std::abs(remaining) <= step)
+				{
+					seated.y = runtime.SeatHeight;
+					runtime.Seating = false;
+				}
+				else
+					seated.y += remaining > 0.0f ? step : -step;
+				HierarchySystem::SetWorldPosition(registry, handle, *transform, seated);
+				if (!AnimatedJointWorlds(registry, handle, *skeleton, entityWorld))
+					return;
+			}
+			if (!driven)
+				runtime.Seating = false;
+
+			const float strength = (std::isfinite(settings->Strength) ? settings->Strength : 0.0f) * (runtime.DrivenFor < k_SoftSeconds ? k_SoftStrength : 1.0f);
 			const float frequency = (std::min)(settings->DriveFrequency, k_MaxDriveFrequency);
 			const float omega = glm::two_pi<float>() * frequency;
 			const float maxBodyOmega = deltaTime > 0.0f ? glm::two_pi<float>() * k_MaxBodyFrequencyPerStep / deltaTime : omega;
@@ -864,11 +910,19 @@ namespace Dingo
 				if (settings && skeleton && transform && skeleton->GetId() == runtime.SkeletonId)
 				{
 					const float blend = std::isfinite(settings->Blend) ? std::clamp(settings->Blend, 0.0f, 1.0f) : 0.0f;
+					const bool wasFollowing = runtime.FollowsRoot;
 					runtime.FollowsRoot = blend > 0.0f && !Driven(*settings)
 						&& !registry.any_of<RigidBody3DComponent, CharacterController3DComponent>(handle);
 					glm::mat4 entityWorld;
 					if (runtime.FollowsRoot && AnimatedJointWorlds(registry, handle, *skeleton, entityWorld))
 					{
+						if (!wasFollowing)
+						{
+							float groundY = 0.0f;
+							runtime.HasGroundHeight = GroundUnderRoot(physics, runtime, groundY);
+							runtime.GroundHeight = runtime.HasGroundHeight ? entityWorld[3].y - groundY : 0.0f;
+						}
+						runtime.Carried = true;
 						const RagdollRuntime::Part& root = runtime.Parts.front();
 						const glm::quat rotation = glm::normalize(physics.GetRotation(root.Body) * glm::inverse(root.OffsetRotation));
 						const glm::vec3 simulated = physics.GetPosition(root.Body) - rotation * root.OffsetPosition;

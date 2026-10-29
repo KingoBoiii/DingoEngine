@@ -73,7 +73,7 @@ As built:
   length. Hinge limits are degrees from the bone lying straight, re-centred on the build pose's bend.
   Mass shares are exact when they leave room; the rest is split by size, and shares of 1 or more are
   scaled with the others (warned).
-- Measured radius: the median distance of the rest vertices each part moves most, from its bone,
+- Measured radius: the 85th-percentile distance (first built as the median, which left the skin clipping into the floor) of the rest vertices each part moves most, from its bone,
   clamped to 0.08–0.6 × length, at least 8 samples, else the P1 rule. **Mass still splits by the P1
   automatic capsule volume**, not the measured collider: with measured volumes the Fox's fluffy tail
   tip weighed 12 kg on a 0.4 kg base and the torso outweighed the hips 5:1, and the driven hip drifted
@@ -114,3 +114,8 @@ As built:
   drawn bones, so joint reads and sockets on ragdoll bones lag up to a tick under `FixedTick`.
 - F9: `SceneDebug::RagdollView`/`WriteRagdoll` and an inspector section; `Blend`, `Strength` and
   `DriveToAnimation` are editable, each body shows joint type, mass, speed and motor torque / limit.
+- Recovery (found on the GPU run): a limp ragdoll carries its entity down (y -0.415 for the Fox), so
+  `Strength` back to 1 aimed the pose into the floor and the hip stalled at 0.16 m. The runtime now keeps
+  the entity's height above the ground under the hips when it goes limp (`HasGroundHeight`, `GroundHeight`)
+  and `Drive` puts the entity back that high above the ground below the hips when it is driven again
+  (`Carried`). `Ragdoll Test` +2 checks (38): hip 0.799 m standing, 0.082 m limp, 0.797 m after.

@@ -35,6 +35,7 @@ namespace Dingo
 		void RunSceneChecks();
 		void RunRecipeChecks();
 		void RunPushChecks();
+		void RunRecoverChecks();
 		void RunStairChecks();
 		void RunCrowdChecks();
 		void RunFixedTickChecks();

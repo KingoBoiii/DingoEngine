@@ -1094,7 +1094,7 @@ than 20 bodies, or a skeleton without a branching joint, logs an error once and 
 Fox in `test/assets/models/Fox` gets 16: hips, two spine bones, neck (the head rides on it), two
 bones per arm, two per hind leg plus the foot, and two tail bones.
 
-**Size and mass.** A capsule's radius is the median distance from its bone of the rest-pose vertices
+**Size and mass.** A capsule's radius is the 85th-percentile distance from its bone of the rest-pose vertices
 that bone (or a joint folded into it) moves most, between 0.08 and 0.6 times the bone's length. A bone
 with fewer than 8 such vertices falls back to its length and how far its other children sit off it.
 Mass follows the bone's size rather than the measured skin: a skinny bone under a lot of fur (the
@@ -1124,7 +1124,10 @@ the whole ragdoll across to the new place over a fraction of a second.
 entity's position moves with the hips body every physics step, so its children, sockets and a following
 camera go where the body went, and clip root motion is ignored. An entity with its own
 `RigidBody3DComponent` or `CharacterController3DComponent` never follows: switch the controller off
-(or remove it) before letting the body fall.
+(or remove it) before letting the body fall. When the ragdoll is driven again (`Strength` back above 0 with
+`DriveToAnimation` on), the entity is put back at the height above the ground it had when it went limp,
+measured by a ray down from the hips: the pose then stands up from the ground the body lies on, not from
+where the fall left the entity. The height is eased in at 2 m/s rather than snapped, and the first second after a limp spell runs at a quarter of `Strength`: full strength straight out of limp leaves the tail ringing. The entity stays where it fell sideways. With no ground under the hips it stays where it is.
 
 **Bodies.** `Scene::GetRagdollBody(entity, "jointName")` returns a bone's body, or its nearest
 simulated ancestor's (a hand finds its forearm's), for impulses, ray-cast filters or sensors.
