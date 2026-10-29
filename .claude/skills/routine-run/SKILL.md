@@ -53,17 +53,19 @@ If the run was started with an argument (a PR number, an issue label, or issue n
 
 ## 5. Verification
 
-Follow CLAUDE.md "Verifying changes": build Debug on Linux for the projects you touched, run the affected test cases under Xvfb, and the `--check` of any example you changed. CI runs the full smoke test only after the merge, on master.
+Follow CLAUDE.md "Verifying changes" (and "Build and run", Cloud sessions, for the toolchain). Routine-specific:
 
-- The SessionStart hook has already set the toolchain up (CLAUDE.md "Build and run", Cloud sessions): start at `./Generate-Linux.sh`. Only if the hook reported a failure, run `scripts/build-linux-toolchain.sh` yourself.
+- Only if the SessionStart hook reported a failure, run `scripts/build-linux-toolchain.sh` yourself.
 - If the branch can't build on Linux, review the code very carefully for compile errors on MSVC and GCC, and say plainly in the commit body and the run log: "not yet built or run".
-- Before committing, a **fresh sub-agent** (not the one that wrote the code; model and effort from CLAUDE.md "Sub-agent selection": Sonnet medium for ordinary diffs, Opus high or xhigh for engine-internals diffs) reviews the diff for correctness. Fix every High and Medium it finds; fix or explain each Low in the run log.
+- Before committing, follow the Review bullet of CLAUDE.md "How we work" with the agent CLAUDE.md "Sub-agent selection" names for the diff. Fix every High and Medium it finds; fix or explain each Low in the run log.
 
 ## 6. Commits, pushes and hard rules
 
-- Exactly one commit per phase (Mode A) or per issue (Mode B); an extra commit only to fix build or CI breakage of that same work, named as such. Conventional format `<type>(<scope>): <description>`, present tense, concise. Never mention Claude or AI in the subject or body text; the session's attribution trailers still go at the end.
-- Never force-push, never rebase published history, never push to `master`, never merge a PR.
-- Never modify anything under `vendor/`. Never merge, close or delete PRs, issues or branches. Never change repository settings, secrets or labels other than adding and removing `routine:claimed`; never touch `routine:skip`.
+Follow the Branches and Commits bullets of CLAUDE.md "How we work", and its "Rules that break things if forgotten". Routine-specific:
+
+- Exactly one commit per phase (Mode A) or per issue (Mode B); an extra commit only to fix build or CI breakage of that same work, named as such. Never mention Claude or AI in the subject or body text; the session's attribution trailers still go at the end.
+- Never push to `master`, never merge a PR.
+- Never merge, close or delete PRs, issues or branches. Never change repository settings, secrets or labels other than adding and removing `routine:claimed`; never touch `routine:skip`.
 - Session title, if you have a tool to set it: `Routine: PR #<n> <phase>` or `Routine: <group> issues → PR #<n>`.
 - If nothing is workable in either mode, change nothing and write only the run log as the session's final message.
 

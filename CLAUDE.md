@@ -130,6 +130,7 @@ Read the relevant file before changing that area. They hold the detail that used
 | [.claude/reference/scenes-ecs-physics.md](.claude/reference/scenes-ecs-physics.md) | Scene lifecycle, scripts, components, lights and fog, the transform hierarchy and sockets, character controllers, runtime handles, physics stepping and queries |
 | [.claude/reference/rendering.md](.claude/reference/rendering.md) | Shaders and their cache, Renderer2D/3D, translucency, lighting, lit materials, skinning, the animator, events, root motion, model reload, render targets, post chain, shadows, compute, particles, and the Vulkan/NVRHI rules |
 | [.claude/reference/build-details.md](.claude/reference/build-details.md) | Linux build and packaging, the new-executable checklist, profiling, Debug-ASan, versioning, devices without a GPU |
+| `.claude/skills/session-meter/`, `.claude/skills/usage-meter/` | Mods, not skills: terminal bands for context and cache fill, and rate-limit usage. They load only when the session starts at the repo root; each README says how to test it |
 | [.claude/reference/project-history.md](.claude/reference/project-history.md) | The full source tree with every example, where issues and reviews live, and what each release shipped |
 | [ROADMAP.md](ROADMAP.md) | The plan, v0.1 → v1.0, and the out-of-band modules |
 | [LINUX-SUPPORT.md](LINUX-SUPPORT.md) | Linux status and Appendix A (why the toolchain is built from source; `scripts/build-linux-toolchain.sh` does it) |

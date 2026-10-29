@@ -1,6 +1,6 @@
 ---
 name: release
-description: Cut a DingoEngine vX.Y.Z release end to end — the version branch and PR (VERSION bump plus release notes in ROADMAP, README and project history), the merge, the Build Windows + Build Linux gate on the merge commit, the lightweight tag, the GitHub release with its notes, the build-release workflow and its asset count, and the "docs: mark released" commit. Use when the owner says "make a release", "release vX.Y.Z", "cut v0.9.1", "tag it", "make the gh release", "tag the RC", "cut v1.0.0-rc.1", or asks what a release still needs. Also covers release candidates (vX.Y.Z-rc.N), which skip the version branch.
+description: "Cut a DingoEngine vX.Y.Z release end to end — the version branch and PR (VERSION bump plus release notes in ROADMAP, README and project history), the merge, the Build Windows + Build Linux gate on the merge commit, the lightweight tag, the GitHub release with its notes, the build-release workflow and its asset count, and the \"docs: mark released\" commit. Use when the owner says \"make a release\", \"release vX.Y.Z\", \"cut v0.9.1\", \"tag it\", \"make the gh release\", \"tag the RC\", \"cut v1.0.0-rc.1\", or asks what a release still needs. Also covers release candidates (vX.Y.Z-rc.N), which skip the version branch."
 ---
 
 # Release
