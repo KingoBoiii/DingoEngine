@@ -61,7 +61,7 @@ The main session runs Sonnet at medium effort (`.claude/settings.json`) and orch
 | Pre-push review of a diff touching engine internals (renderer, threading, GPU synchronisation, save formats, netcode) | `engine-reviewer` (opus, xhigh; pass `effort: high` when it touches none of renderer, threading or synchronisation) |
 | Root-cause a bug in Vulkan/GPU work, a Jolt NaN, netcode, a save format or an engine-internal race | `gpu-bug-hunter` (opus, xhigh) |
 | Root-cause any other bug | `bug-hunter` (sonnet, medium) |
-| Milestone review, or a bug Opus failed on twice | `general-purpose` with `model: fable`, `effort: high`, only when the owner asks |
+| Milestone review, a bug Opus failed on twice, or a cross-cutting design call | `fable-advisor` (fable, high, read-only), only when the owner asks |
 | Questions about Claude Code, hooks, skills, the API | `claude-code-guide` |
 
 Why these picks: Haiku returns facts, not judgement, so it searches and runs commands but never edits engine code or reviews. Sonnet is the default for everyday work, the main session included. Opus is reserved for engine internals because a subtle mistake there only shows on a real GPU, so engine-core code gets an Opus design first and an Opus review after, with Sonnet writing it in between; Fable is the owner's call. For judgement work, lower Opus's effort before switching to a cheaper model. Judge cost per finished task: a cheaper agent whose work has to be redone isn't cheaper, and if a Sonnet agent's change fails review twice, redo it on Opus.
