@@ -64,6 +64,32 @@ namespace Dingo
 		}
 	};
 
+	/// Opt-in crash and error reports to a Sentry-compatible server (Sentry or a self-hosted
+	/// GlitchTip), compiled in only with premake `--crash-reporting`. Error and Fatal log lines
+	/// become events (each distinct message once per run, 25 at most), lower levels become their
+	/// breadcrumbs, and a crash the engine's crash handler logged is sent on the next launch. Nothing
+	/// identifies the player: no user, IP or host name is sent, and the home folder is replaced by
+	/// `~` in every text sent.
+	struct CrashReportingParams
+	{
+		/// The project's DSN from the server (`https://<key>@<host>/<project id>`). Empty = off.
+		std::string Dsn;
+		/// Send from the start. Off by default, so players opt in: a game turns it on from its own
+		/// saved setting here or later with Application::SetCrashReportingEnabled.
+		bool Enabled = false;
+		/// The environment the reports are filed under, e.g. "production" or "playtest". Empty =
+		/// "development" in Debug builds and "production" otherwise.
+		std::string Environment;
+		/// The release the reports are filed under. Empty = `<Name>@<engine major.minor.patch>`,
+		/// with `+<build>` when the build number isn't 0.
+		std::string Release;
+		/// Also attach the crashed run's log and, on Windows, its minidump to a crash report. Off
+		/// by default and only useful with a server that stores attachments (Sentry): GlitchTip
+		/// discards them. The report always carries the crash lines and the log's last lines as
+		/// text, and the dumps stay on disk either way.
+		bool SendAttachments = false;
+	};
+
 	/// Everything the Application is created with; build one in CreateApplication and pass it to
 	/// your Application subclass. An aggregate whose members are append-only, so designated
 	/// initializers (.Name = ..., .Window = {...}) are safe across minor releases.
@@ -117,6 +143,10 @@ namespace Dingo
 
 		/// Parameters for the game UI (DingoUI); on by default, never created headless.
 		DingoUIParams DingoUI;
+
+		/// Opt-in crash and error reports; off unless built with `--crash-reporting`, given a
+		/// Dsn and enabled.
+		CrashReportingParams CrashReporting;
 	};
 
 	class ImGuiLayer;
@@ -258,6 +288,17 @@ namespace Dingo
 		const std::string& GetName() const { return m_Params.Name; }
 		/// ApplicationParams::SaveDirectory resolved; created by the first save.
 		const std::filesystem::path& GetSaveDirectory() const { return m_Params.SaveDirectory; }
+
+		/// True when the engine was built with premake `--crash-reporting`; otherwise the crash
+		/// reporting calls below do nothing.
+		static bool IsCrashReportingAvailable();
+		/// Starts or stops sending crash and error reports, for a game's privacy setting; main
+		/// thread only. Turning it on needs ApplicationParams::CrashReporting::Dsn and a log
+		/// directory, and returns false without them (or when unavailable). Turning it off sends what
+		/// is already queued (up to 2 s) and sends nothing more. A RequestRestart keeps the choice.
+		bool SetCrashReportingEnabled(bool enabled);
+		/// True while crash and error reports are being sent.
+		static bool IsCrashReportingEnabled();
 
 	protected:
 		/// For a subclass to call with the params CreateApplication built. Opens the log file,

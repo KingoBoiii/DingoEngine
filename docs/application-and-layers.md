@@ -107,6 +107,51 @@ builds a failed `DE_VERIFY` / `DE_CORE_VERIFY` ends there too, rather than break
 debugger that isn't there. The test app's `--crash=segv|thread|engine-thread|engine-throw|engine-stack|prepared-throw|prepared-stack|render-throw|render-stack|asset-throw|physics-stack|threads|segv-after-info|abort|terminate|throw|stack|verify|fatal`
 crashes on purpose, which is how CI checks all of this.
 
+### Crash and error reports
+
+An engine built with premake's `--crash-reporting` can send crash and error reports to a
+Sentry-compatible server (Sentry, or a self-hosted [GlitchTip](https://glitchtip.com)) through
+[sentry-native](https://github.com/getsentry/sentry-native). Without the flag nothing of it is
+compiled in, and the calls below do nothing.
+
+```cpp
+params.CrashReporting = {
+    .Dsn = "https://<key>@glitchtip.example.com/<project id>",
+    .Enabled = settings.Game["crash_reports"].AsBool(),   // the player's choice; off by default
+    .Environment = "playtest",                            // empty = development (Debug) or production
+};
+// later, from the game's privacy setting:
+Application::Get().SetCrashReportingEnabled(true);
+```
+
+- **Errors.** Every `Error` or `Fatal` log line becomes an event. Each distinct message is sent
+  once per run, and 25 at most, so an error logged every frame costs one event. Lower levels become
+  the breadcrumbs sent with the next event (the last 100). `FatalError` waits up to 2 s for its
+  event to be uploaded before the process exits.
+- **Crashes.** The engine's own crash handler stays in charge: sentry runs with no crash handler
+  of its own, and nothing is uploaded from a crashed process. On the next launch, each earlier
+  run's log that ends in a crash report is sent as a fatal event carrying the report and the 100
+  lines before it, but only if reports were on when that run crashed: turning them on never
+  uploads an older crash. `Dingo-reported-crashes.txt` beside the logs remembers which crashes
+  were handled, and a report that can't be sent (offline) is retried on a later launch.
+  `SendAttachments = true` also attaches that log and, on Windows, its minidump (as
+  `event.minidump`). It is off by default and only useful with a server that stores attachments,
+  such as Sentry: GlitchTip accepts the report but discards its attachments, and some GlitchTip
+  versions reject a report that carries a binary one. The report's text extras arrive either way,
+  and the dumps stay on disk, to open in Visual Studio with the build's PDBs.
+- **Privacy.** Reports are off until the game enables them, so players opt in. No user, user id,
+  IP address or host name is sent, and the module list (install paths) is dropped. The player's
+  home folder becomes `~` in every message, breadcrumb and attached log, and its user name is
+  masked in an attached minidump. This is best effort: a short (8.3) form of the path isn't
+  caught. The server still sees the connection's IP address.
+- **Release.** Reports are filed under `<Name>@<engine major.minor.patch>` (plus `+<build>`), or
+  under `CrashReporting.Release`. sentry keeps its queue in `crash-reports/` beside the log.
+
+The Flappy Bird example shows both paths. Run it with `--sentry-dsn=<dsn>` (or `DE_SENTRY_DSN`)
+and `--crash-demo`: F10 logs an error, F11 calls `FatalError` and F12 crashes, which is reported
+on the next launch. `--crash-demo=error|fatal|crash` does one of them on the first frame, and
+`--sentry-attachments` turns on `SendAttachments`.
+
 ### Window modes
 
 `WindowParams::Mode` sets the start mode, and the window switches at runtime between three:

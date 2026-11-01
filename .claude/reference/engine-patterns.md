@@ -3,7 +3,7 @@
 Read on demand from CLAUDE.md. Core application, input, assets, audio and API patterns, plus failure contracts, the vendor list and the full text of the header and text conventions. Keep it in step when a public API changes.
 
 Sections (Grep `## <name>`):
-- Entry point and layers · DingoUI · Headless · Logs and crashes · Crash handler · FatalError
+- Entry point and layers · DingoUI · Headless · Logs and crashes · Crash handler · FatalError · Crash reporting
 - Teardown · Debug window · Background updates · Input · Input consume mask · Gamepad rumble and simulation
 - Saves and settings · Window modes · VSync · Standard launch flags · Params/builder · Lifetime
 - Assets and hot-reload · Asset packages · Audio · Audio buses · Audio streams · Audio capture
@@ -56,6 +56,16 @@ Sections (Grep `## <name>`):
 ## FatalError
 
 - `FatalError(message)` (public, `Core/FatalError.h`, `std::source_location` default argument) waits for a report another thread is writing, then logs through `Internal::TryLogFatal` (a 200 ms try-lock on the sinks, every sink but the console, then the file flushed) and writes the console copy straight to stderr, never stdout's `FILE` lock, shows the box on Windows Distribution and `std::_Exit(1)`s; Distribution's `DE_VERIFY`/`DE_CORE_VERIFY` call it instead of `DE_DEBUG_BREAK`.
+
+## Crash reporting
+
+- docs/application-and-layers.md "Crash and error reports". Compiled in only with premake `--crash-reporting` (`DE_CRASH_REPORTING`, workspace-wide); without it `Internal::CrashReporter` (`Core/CrashReporter.h`) is inline no-ops and `CrashReporter.cpp` is empty.
+- sentry-native runs with backend `none`: no Crashpad/Breakpad/inproc handler, so `CrashHandler` stays the only one and nothing is uploaded from a crashed process. The `sentry` project (`scripts/premake/sentry-native.lua`) mirrors its CMake build: WinHTTP / system libcurl transport, no unwinder, no screenshots, no WER, `SENTRY_THREAD_STACK_GUARANTEE_AUTO_INIT` off (`PrepareThread` owns stack guarantees). `sentry.lib` joins the merged `DingoEngine.lib`/`libDingoEngine.a`; Linux executables also link `curl`.
+- The `Application` constructor calls `Configure` (first call wins, so a `RequestRestart` keeps the config and the runtime on/off choice) after `CrashHandler::Install`, then `SetEnabled(true)` if `CrashReportingParams::Enabled`. `Internal::Main` calls `CrashReporter::Shutdown` before `ShutdownLog`.
+- A `ReportSink` added to `LogSinks` through `Internal::AddLogSink` only copies the line into a bounded queue (1024; Error/Fatal get 64 more) under its own `timed_mutex`: it never calls sentry, never logs, and is safe in `TryLogFatal`. One worker thread (`CrashHandler::RunThread`) is the only caller of sentry: Error/Fatal → `sentry_capture_event` (each distinct message once, 25 a run: `CrashReportText::EventLimiter`), every line → a breadcrumb (100 kept). The worker never logs.
+- `FatalError` calls `FlushBeforeFatal` after its line: it bumps an atomic, try-locks the queue for at most 200 ms to notify, and polls for the worker's `sentry_flush` (1.5 s) for at most 2 s; the fatal thread never enters sentry. The worker waits with a 100 ms timeout because that notify can be missed.
+- Before it drains any line, the worker sends each earlier run's log (`Dingo.N.log`, `Dingo-*.log`, not this run's) whose tail holds a finished `*** <app> crashed: ` report (`CrashReportText::FindCrash`; finished = its `*** Minidump:`/`*** No minidump`/`*** End of backtrace` line is there, else it's left for a later launch) as a fatal event with `crash_report`/`log_tail` extras, keyed by `CrashKey` (FNV-1a of header, report and tail) in `Dingo-reported-crashes.txt`. Only a report with the `*** Crash reporting: on` line, which the crash handler writes when reporting was on, is sent (consent); others are keyed and skipped. Once a report starts, `MuteForCrash` stops the sink queueing, so a dying process sends nothing. `http_retry` keeps an unsent envelope in `crash-reports/` for the next launch. `SendAttachments` adds the log (`event.attachment`) and the `*** Minidump: ` dump (`event.minidump`); off by default, since GlitchTip accepts the envelope but stores no attachments, `event.minidump` included (checked 2026-11-01 against the self-hosted instance) and some versions 400 a binary one.
+- Privacy: `BeforeSend` drops `debug_meta` (install paths) and `user` (sentry's installation id); sessions are off; `HomeScrubber` turns `%USERPROFILE%`/`$HOME` into `~` in all text and masks the user name in dump bytes (same length, UTF-8 and UTF-16). sentry's database is `<log dir>/crash-reports`; with no log file reporting can't start.
 
 ## Teardown
 
@@ -240,6 +250,7 @@ Sections (Grep `## <name>`):
 | entt / box2d / JoltPhysics | ECS / 2D physics / 3D physics backends (all hidden) |
 | miniaudio | Audio backend (hidden behind the `Audio` interface; v0.5) |
 | tracy | CPU zones and GPU plots, compiled in only with premake `--profile` (v0.9; hidden behind `Core/Profiler.h`) |
+| sentry-native | Crash and error reports, compiled in only with premake `--crash-reporting` (fork `KingoBoiii/sentry-native` at upstream 0.17.4; built by `scripts/premake/sentry-native.lua`; only `Core/CrashReporter.cpp` includes it) |
 | doctest | `Dingo-UnitTests` only (v1.0 P7); never linked into the engine |
 | nlohmann/json | v3.11.3 (`vendor/json`, header-only): `SaveData`'s JSON (v1.0 P8), included only by `SaveData.cpp` |
 
