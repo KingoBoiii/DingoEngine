@@ -6,7 +6,7 @@
 # directory, then the test app headless with DISPLAY unset (--graphics=headless), then the test
 # app's deliberate crashes (--crash=), which must leave their report in the log, then Marionette's
 # --check and Candlewick packed (a copy of the executable beside its .dpak, started from
-# elsewhere). A hung app's thread stacks are dumped with gdb before it is killed. Apps that don't
+# elsewhere). A hung app's per-thread CPU use and thread stacks are recorded before it is killed. Apps that don't
 # exit by themselves are closed after SMOKE_SECONDS (default 20) through WM_DELETE_WINDOW, so
 # teardown runs too. A run fails on an unexpected exit code, a hang, a [FAIL] self-check, a Vulkan
 # validation error, an AddressSanitizer or LeakSanitizer report or an spdlog LOG ERROR.
@@ -41,7 +41,24 @@ dump_threads() {
 	exe=$(readlink "/proc/$1/exe") || return 0
 	local gdb=(gdb)
 	sudo -n true 2> /dev/null && gdb=(sudo -n gdb)
-	timeout -k 10 120 "${gdb[@]}" -p "$1" "$exe" -batch -nx -ex 'set pagination off' -ex 'thread apply all -ascending bt' 2>&1 | grep -vE '^\[New LWP|^\[Thread debugging' | head -400
+	timeout -k 10 120 "${gdb[@]}" -p "$1" "$exe" -batch -nx -ex 'set pagination off' -ex 'thread apply all -ascending bt' 2>&1 | grep -vE '^\[New LWP|^\[Thread debugging' | head -2000
+}
+
+thread_cpu() {
+	local stat
+	for stat in /proc/$1/task/*/stat; do
+		sed -E 's/^([0-9]+) \((.*)\) (.*)$/\1\t\2\t\3/' "$stat" 2> /dev/null
+	done | awk -F'\t' '{ split($3, f, " "); printf "%s\t%s\t%s\t%d\n", $1, $2, f[1], f[12] + f[13] }'
+}
+
+# A deadlocked app's threads use no CPU between two samples; a slow one's render or llvmpipe threads do.
+thread_activity() {
+	local before after
+	before=$(thread_cpu "$1")
+	sleep 5
+	after=$(thread_cpu "$1")
+	echo "tid	name	state	cpu ticks in 5 s"
+	awk -F'\t' 'NF < 4 { next } NR == FNR { b[$1] = $4; next } { printf "%s\t%s\t%s\t%s\n", $1, $2, $3, ($1 in b) ? $4 - b[$1] : "new" }' <(echo "$before") <(echo "$after")
 }
 
 # RUN_SECONDS, EXPECT_EXIT (default 0), EXPECT_LOG (a pattern that must be in EXPECT_LOG_FILE,
@@ -66,6 +83,7 @@ run() {
 			sleep 1
 		done
 		if kill -0 $pid 2>/dev/null; then
+			thread_activity $pid > "$log.activity"
 			dump_threads $pid > "$log.threads"
 			kill -9 $pid 2>/dev/null
 			problems+=" hung"
@@ -95,8 +113,12 @@ run() {
 		if [[ $problems == *hung* ]]; then
 			echo "---- the last lines it logged ----"
 			tail -25 "$log"
+			grep -q 'Window close requested' "$log" && echo "---- it logged the close request ----" \
+				|| echo "---- it never logged the close request (or the log was still buffered) ----"
+			echo "---- CPU per thread over 5 s ----"
+			cat "$log.activity"
 			echo "---- its threads ----"
-			grep -E '^Thread|^#' "$log.threads" | head -150
+			grep -E '^Thread|^#' "$log.threads" | head -1000
 		fi
 	else
 		echo "ok    $name ($passed passed)"
