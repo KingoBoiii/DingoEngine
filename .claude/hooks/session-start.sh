@@ -18,7 +18,7 @@ fail() {
 }
 
 packages=(build-essential cmake ninja-build python3 zlib1g-dev libx11-dev libxrandr-dev libxinerama-dev
-	libxcursor-dev libxi-dev xvfb xauth mesa-vulkan-drivers python3-xlib vulkan-validationlayers)
+	libxcursor-dev libxi-dev libcurl4-openssl-dev xvfb xauth mesa-vulkan-drivers python3-xlib vulkan-validationlayers)
 missing=()
 for package in "${packages[@]}"; do
 	dpkg -s "$package" >/dev/null 2>&1 || missing+=("$package")
