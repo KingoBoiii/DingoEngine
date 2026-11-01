@@ -138,7 +138,9 @@ Application::Get().SetCrashReportingEnabled(true);
   `event.minidump`). It is off by default and only useful with a server that stores attachments,
   such as Sentry: GlitchTip accepts the report but discards its attachments, and some GlitchTip
   versions reject a report that carries a binary one. The report's text extras arrive either way,
-  and the dumps stay on disk, to open in Visual Studio with the build's PDBs.
+  and the dumps stay on disk, to open in Visual Studio with the build's PDBs. With attachments on,
+  closing the game waits up to 10 s (not 2 s) for an upload in progress, since a minidump is several
+  megabytes; one still unfinished is sent again on the next launch.
 - **Privacy.** Reports are off until the game enables them, so players opt in. No user, user id,
   IP address or host name is sent, and the module list (install paths) is dropped. The player's
   home folder becomes `~` in every message, breadcrumb and attached log, and its user name is

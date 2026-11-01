@@ -86,7 +86,8 @@ namespace Dingo
 		/// Also attach the crashed run's log and, on Windows, its minidump to a crash report. Off
 		/// by default and only useful with a server that stores attachments (Sentry): GlitchTip
 		/// discards them. The report always carries the crash lines and the log's last lines as
-		/// text, and the dumps stay on disk either way.
+		/// text, and the dumps stay on disk either way. With it on, exit waits up to 10 s (not 2 s)
+		/// for an upload in progress; one still unfinished is sent again on the next launch.
 		bool SendAttachments = false;
 	};
 
@@ -295,7 +296,8 @@ namespace Dingo
 		/// Starts or stops sending crash and error reports, for a game's privacy setting; main
 		/// thread only. Turning it on needs ApplicationParams::CrashReporting::Dsn and a log
 		/// directory, and returns false without them (or when unavailable). Turning it off sends what
-		/// is already queued (up to 2 s) and sends nothing more. A RequestRestart keeps the choice.
+		/// is already queued (up to 2 s, or 10 s with CrashReportingParams::SendAttachments) and
+		/// sends nothing more. A RequestRestart keeps the choice.
 		bool SetCrashReportingEnabled(bool enabled);
 		/// True while crash and error reports are being sent.
 		static bool IsCrashReportingEnabled();

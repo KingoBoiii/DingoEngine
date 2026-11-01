@@ -36,6 +36,8 @@ namespace Dingo::Internal::CrashReporter
 		constexpr size_t k_MaxQueued = 1024;
 		constexpr size_t k_MaxMessageBytes = 8 * 1024;
 		constexpr uint64_t k_FlushTimeoutMs = 1500;
+		constexpr uint64_t k_ShutdownTimeoutMs = 2000;
+		constexpr uint64_t k_AttachmentShutdownTimeoutMs = 10000;
 		constexpr auto k_FatalWait = std::chrono::milliseconds(2000);
 		constexpr uintmax_t k_MaxLogReadBytes = 512 * 1024;
 		constexpr uintmax_t k_MaxAttachedLogBytes = 4 * 1024 * 1024;
@@ -382,7 +384,8 @@ namespace Dingo::Internal::CrashReporter
 			sentry_options_set_logger(options, IgnoreSentryLog, nullptr);
 			sentry_options_set_max_breadcrumbs(options, 100);
 			sentry_options_set_before_send(options, BeforeSend, nullptr);
-			sentry_options_set_shutdown_timeout(options, 2000);
+			// A minidump upload takes seconds; one cut off at exit is only retried on the next launch.
+			sentry_options_set_shutdown_timeout(options, s_Config.SendAttachments ? k_AttachmentShutdownTimeoutMs : k_ShutdownTimeoutMs);
 			// A report that can't go out (offline) stays in the database and is retried next launch.
 			sentry_options_set_http_retry(options, 1);
 			if (sentry_init(options) != 0)

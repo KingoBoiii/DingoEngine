@@ -39,7 +39,7 @@ namespace Dingo::Internal::CrashReporter
 	// process, since the next launch sends the report.
 	void MuteForCrash();
 
-	// Sends what is queued (up to about 2 s) and closes sentry; Internal::Main, before ShutdownLog.
+	// Sends what is queued (up to about 2 s, or 10 s with Config::SendAttachments) and closes sentry; Internal::Main, before ShutdownLog.
 	void Shutdown();
 
 	// FatalError, after its line is logged: has the worker send the queue and wait for the upload,
