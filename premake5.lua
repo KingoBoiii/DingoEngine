@@ -28,6 +28,11 @@ end
 WriteBuildInfo()
 
 newoption {
+    trigger = "keep-symbols",
+    description = "Keep the symbol table in Linux Release and Distribution executables, so gdb names the frames of a hung smoke-test run"
+}
+
+newoption {
     trigger = "lint",
     description = "Syntax-only compiles with extra warnings and no PCH, for scripts/ci/lint-changed.sh"
 }
@@ -194,6 +199,11 @@ function distributionSymbols()
     filter { "system:windows", "configurations:Distribution" }
         symbols "On"
         linkoptions { "/PDBALTPATH:%_PDB%" }
+
+    if _OPTIONS["keep-symbols"] then
+        filter { "system:linux", "configurations:Release or configurations:Distribution" }
+            symbols "On"
+    end
 
     filter {}
 end
