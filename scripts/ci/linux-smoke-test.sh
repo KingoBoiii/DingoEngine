@@ -51,7 +51,8 @@ run() {
 	local log=$LOGS/$name.log status problems=""
 	local seconds=${RUN_SECONDS:-$SECONDS_PER_RUN} expected=${EXPECT_EXIT:-0}
 
-	(cd "$cwd" && { [[ -z ${NO_DISPLAY:-} ]] || unset DISPLAY WAYLAND_DISPLAY; } && LD_PRELOAD=$APP_PRELOAD exec "$exe" "$@") > "$log" 2>&1 &
+	# Line-buffered, so a hung run's log tail is what it last logged: spdlog flushes only warnings.
+	(cd "$cwd" && { [[ -z ${NO_DISPLAY:-} ]] || unset DISPLAY WAYLAND_DISPLAY; } && LD_PRELOAD=$APP_PRELOAD exec stdbuf -oL "$exe" "$@") > "$log" 2>&1 &
 	local pid=$!
 	for ((i = 0; i < seconds; i++)); do
 		kill -0 $pid 2>/dev/null || break

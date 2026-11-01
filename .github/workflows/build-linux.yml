@@ -30,7 +30,7 @@ jobs:
       run: scripts/gather-notices.sh --check
 
     - name: Premake
-      run: premake5 gmake
+      run: premake5 gmake --keep-symbols
 
     - name: Build
       run: make -j"$(nproc)" config="$(echo '${{ matrix.build-configuration }}' | tr '[:upper:]' '[:lower:]')"
