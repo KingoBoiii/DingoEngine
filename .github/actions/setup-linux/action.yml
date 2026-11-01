@@ -30,7 +30,10 @@ runs:
   - name: Get Vulkan SDK version
     id: vulkan
     shell: bash
-    run: echo "version=$(curl -sSfL https://vulkan.lunarg.com/sdk/latest/linux.txt | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+    run: |
+      version=$(curl -sSfL --retry 3 --retry-all-errors https://vulkan.lunarg.com/sdk/latest/linux.txt | tr -d '[:space:]')
+      [[ "$version" =~ ^[0-9]+(\.[0-9]+)+$ ]] || { echo "::error::Vulkan SDK version lookup failed: got '$version'"; exit 1; }
+      echo "version=$version" >> "$GITHUB_OUTPUT"
 
   - name: Cache Vulkan SDK
     id: cache-vulkan
