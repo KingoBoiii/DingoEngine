@@ -135,14 +135,15 @@ run() {
 	if kill -0 $pid 2>/dev/null; then
 		# A WM_DELETE_WINDOW can be read off the X connection and never reach GLFW (#186), so
 		# it is sent again every 5 s until the app logs it, then SIGTERM ends the run through
-		# Close() instead. Either is reported as a warning, not a failure.
+		# Close() instead. Either is reported as a warning, not a failure. Only a run whose
+		# window took a close gets the SIGTERM, so a headless run that wedges still fails.
 		for ((i = 0; i < 60; i++)); do
 			kill -0 $pid 2>/dev/null || break
 			if ! grep -q 'Window close requested' "$log"; then
 				if (( i < 30 && i % 5 == 0 )); then
 					closes=$((closes + 1))
 					$CLOSE $pid && delivered=$((delivered + 1))
-				elif (( i == 30 )); then
+				elif (( i == 30 && delivered > 0 )); then
 					termed=1
 					kill -TERM $pid 2>/dev/null
 				fi
@@ -166,8 +167,8 @@ run() {
 	status=$?
 
 	if [[ $problems != *hung* ]] && ((termed || closes > 1)); then
-		local how="the close sent $closes times ($delivered delivered)"
-		((termed)) && how+=" was never handled; SIGTERM ended it"
+		local how="the close needed $closes sends ($delivered delivered)"
+		((termed)) && how="the close was sent $closes times ($delivered delivered) and never handled; SIGTERM ended it"
 		echo "::warning title=Smoke test $name ($CONFIG)::$how (#186)"
 		echo "note  $name: $how"
 	fi

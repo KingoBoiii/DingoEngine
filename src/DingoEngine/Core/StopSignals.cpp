@@ -84,14 +84,11 @@ namespace Dingo::Internal
 
 	StopSignalGuard::StopSignalGuard()
 	{
+		// s_Caught is never cleared: a stop caught in the frame that asked for a restart has to
+		// stop the restarted run too.
 #ifdef DE_PLATFORM_WINDOWS
-		// A close caught by the run before a restart still ends the process when its handler
-		// wakes, so the restarted run has to stop too.
-		if (!IsClosing(s_Caught.load()))
-			s_Caught.store(0);
 		s_Installed = SetConsoleCtrlHandler(OnConsoleControl, TRUE) != 0;
 #else
-		s_Caught.store(0);
 		for (size_t i = 0; i < 2; ++i)
 		{
 			struct sigaction action = {};
