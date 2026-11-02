@@ -96,3 +96,34 @@ jobs:
         name: smoke-test-logs-linux-${{ matrix.build-configuration }}
         path: build/smoke/
         if-no-files-found: ignore
+
+  crash-reporting-linux:
+    runs-on: ubuntu-24.04
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: recursive
+        lfs: true
+
+    - uses: ./.github/actions/setup-linux
+      with:
+        runtime: true
+
+    - name: Premake
+      run: premake5 gmake --crash-reporting
+
+    - name: Build
+      run: make -j"$(nproc)" config=debug FlappyBird Dingo-UnitTests
+
+    - name: Unit tests
+      run: build/bin/Debug-linux-x86_64/Dingo-UnitTests/Dingo-UnitTests
+
+    - name: Crash reporting check
+      run: xvfb-run -a -s "-screen 0 1920x1080x24" scripts/ci/crash-reporting-check.sh Debug
+
+    - name: Upload crash reporting logs
+      if: failure()
+      uses: actions/upload-artifact@v4
+      with:
+        name: crash-reporting-logs-linux
+        path: build/crash-reporting/

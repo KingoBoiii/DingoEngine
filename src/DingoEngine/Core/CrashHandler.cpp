@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Core/CrashHandler.h"
 #include "DingoEngine/Core/FatalError.h"
+#include "DingoEngine/Core/CrashReporter.h"
 
 #include <algorithm>
 #include <atomic>
@@ -326,6 +327,7 @@ namespace Dingo
 		{
 			if (!BeginReport())
 				return;
+			Internal::CrashReporter::MuteForCrash();
 
 			FlushLogIfSafe();
 
@@ -336,6 +338,8 @@ namespace Dingo
 			const bool written = WriteDumpFromThread(exception);
 
 			LineBuilder footer;
+			if (Internal::CrashReporter::IsEnabled())
+				footer << "*** Crash reporting: on\n";
 			if (written)
 				footer << "*** Minidump: " << s_DumpPathUtf8 << "\n";
 			else
@@ -604,6 +608,7 @@ namespace Dingo
 				RaiseDefault(signal);
 				return;
 			}
+			Internal::CrashReporter::MuteForCrash();
 
 			FlushLogIfSafe();
 
@@ -624,6 +629,8 @@ namespace Dingo
 			backtrace_symbols_fd(frames, count, STDERR_FILENO);
 
 			LineBuilder footer;
+			if (Internal::CrashReporter::IsEnabled())
+				footer << "*** Crash reporting: on\n";
 			footer << "*** End of backtrace\n";
 			WriteBoth(footer);
 
@@ -725,6 +732,7 @@ namespace Dingo
 				}
 			}
 
+			Internal::CrashReporter::MuteForCrash();
 			ReportFatal(std::format("std::terminate called {}", reason));
 			CrashOnTerminate();
 		}
@@ -782,6 +790,7 @@ namespace Dingo
 		const std::string_view file = location.file_name();
 		const std::string where = std::format("{}:{}", file.substr(file.find_last_of("/\\") + 1), location.line());
 		ReportFatal(std::format("Fatal error: {} ({})", message, where));
+		Internal::CrashReporter::FlushBeforeFatal();
 
 		const std::filesystem::path& logFile = Log::GetFilePath();
 		const std::string text = logFile.empty()

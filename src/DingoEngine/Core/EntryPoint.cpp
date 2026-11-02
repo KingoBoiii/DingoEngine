@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Core/Application.h"
 #include "DingoEngine/Core/LogLifecycle.h"
+#include "DingoEngine/Core/CrashReporter.h"
 
 namespace Dingo::Internal
 {
@@ -22,6 +23,7 @@ namespace Dingo::Internal
 				break;
 		}
 
+		CrashReporter::Shutdown();
 		ShutdownLog();
 		return EXIT_SUCCESS;
 	}
