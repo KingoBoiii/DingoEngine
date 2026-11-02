@@ -6,7 +6,8 @@
 # directory, then the test app headless with DISPLAY unset (--graphics=headless), then the test
 # app's deliberate crashes (--crash=), which must leave their report in the log, then Marionette's
 # --check and Candlewick packed (a copy of the executable beside its .dpak, started from
-# elsewhere). A hung app's per-thread CPU use, the X server's CPU use and wait channel, both ends of the
+# elsewhere). A hung app's frame index (twice, 5 s apart), whether it and GLFW saw the close,
+# its per-thread CPU use, the X server's CPU use and wait channel, both ends of the
 # app's sockets' queues and its thread stacks are recorded before it is killed. Apps that don't
 # exit by themselves are closed after SMOKE_SECONDS (default 20) through WM_DELETE_WINDOW, so
 # teardown runs too. A run fails on an unexpected exit code, a hang, a [FAIL] self-check, a Vulkan
@@ -43,6 +44,24 @@ dump_threads() {
 	local gdb=(gdb)
 	sudo -n true 2> /dev/null && gdb=(sudo -n gdb)
 	timeout -k 10 120 "${gdb[@]}" -p "$1" "$exe" -batch -nx -ex 'set pagination off' -ex 'thread apply all -ascending bt' 2>&1 | grep -vE '^\[New LWP|^\[Thread debugging' | head -2000
+}
+
+# Frames that still advance with the close unseen by GLFW mean the request was lost on the way;
+# a frame index that stands still means the frame loop itself stalled. Needs the engine's
+# symbols (Debug, or --keep-symbols); GLFW's line also needs its debug info.
+app_state() {
+	command -v gdb > /dev/null || return 0
+	local exe
+	exe=$(readlink "/proc/$1/exe") || return 0
+	local gdb=(gdb)
+	sudo -n true 2> /dev/null && gdb=(sudo -n gdb)
+	timeout -k 10 60 "${gdb[@]}" -p "$1" "$exe" -batch -nx \
+		-ex "printf \"frame index %lu\\n\", (unsigned long) 'Dingo::Renderer::GetFrameIndex'()" \
+		-ex "printf \"application running %d\\n\", (int) 'Dingo::Application::s_Instance'->m_IsRunning" \
+		-ex 'printf "glfw should close %d\n", (int) _glfw.windowListHead->shouldClose' 2>&1 \
+		| grep -E '^(frame index|application running|glfw should close) |^No symbol|^Cannot access|unknown (return )?type|ptrace|Could not attach' \
+		|| echo "(no state: gdb was denied, timed out or found no symbols)"
+	return 0
 }
 
 thread_cpu() {
@@ -122,6 +141,8 @@ run() {
 			x_server_activity $pid > "$log.x11" &
 			thread_activity $pid > "$log.activity"
 			wait $!
+			# After the samples above: the attach and the inferior call interrupt the app's waits.
+			{ app_state $pid; sleep 5; echo "-- 5 s later --"; app_state $pid; } > "$log.state"
 			dump_threads $pid > "$log.threads"
 			kill -9 $pid 2>/dev/null
 			problems+=" hung"
@@ -153,6 +174,8 @@ run() {
 			tail -25 "$log"
 			grep -q 'Window close requested' "$log" && echo "---- it logged the close request ----" \
 				|| echo "---- it never logged the close request (or the log was still buffered) ----"
+			echo "---- frame loop and close state, 5 s apart ----"
+			cat "$log.state"
 			echo "---- CPU per thread over 5 s ----"
 			cat "$log.activity"
 			echo "---- the X server and the app's sockets over the same 5 s ----"
