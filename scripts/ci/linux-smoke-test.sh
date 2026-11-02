@@ -6,7 +6,8 @@
 # directory, then the test app headless with DISPLAY unset (--graphics=headless), then the test
 # app's deliberate crashes (--crash=), which must leave their report in the log, then Marionette's
 # --check and Candlewick packed (a copy of the executable beside its .dpak, started from
-# elsewhere). A hung app's per-thread CPU use and thread stacks are recorded before it is killed. Apps that don't
+# elsewhere). A hung app's per-thread CPU use, the X server's CPU use and wait channel, both ends of the
+# app's sockets' queues and its thread stacks are recorded before it is killed. Apps that don't
 # exit by themselves are closed after SMOKE_SECONDS (default 20) through WM_DELETE_WINDOW, so
 # teardown runs too. A run fails on an unexpected exit code, a hang, a [FAIL] self-check, a Vulkan
 # validation error, an AddressSanitizer or LeakSanitizer report or an spdlog LOG ERROR.
@@ -61,6 +62,41 @@ thread_activity() {
 	awk -F'\t' 'NF < 4 { next } NR == FNR { b[$1] = $4; next } { printf "%s\t%s\t%s\t%s\n", $1, $2, $3, ($1 in b) ? $4 - b[$1] : "new" }' <(echo "$before") <(echo "$after")
 }
 
+x_server_pid() {
+	[[ -n ${DISPLAY:-} ]] || return 1
+	pgrep -n -f "^Xvfb ${DISPLAY%.*}( |\$)" || pgrep -n -x Xvfb
+}
+
+app_sockets() {
+	command -v ss > /dev/null || { echo "(ss is not installed)"; return 0; }
+	ss -xpn 2> /dev/null | awk -v app="pid=$1," 'NR == 1 { print; next } { row[NR] = $0; own[NR] = $6; peer[NR] = $8 } index($0, app) { mine[$6] = 1 }
+		END { for (i = 2; i <= NR; i++) if ((own[i] in mine) || (peer[i] in mine)) print row[i] }'
+}
+
+x_server_ticks() {
+	sed -E 's/^.*\) //' "/proc/$1/stat" 2> /dev/null | awk '{ print $12 + $13 }'
+}
+
+# The main thread and Mesa's WSI thread can both block on the X socket (#186); whether the X server
+# still runs and which end's queue stays full shows who stopped reading.
+x_server_activity() {
+	local xpid before after
+	xpid=$(x_server_pid) || { echo "no X server found for DISPLAY=${DISPLAY:-}"; return 0; }
+	echo "X server $xpid: $({ tr '\0' ' ' < "/proc/$xpid/cmdline"; } 2> /dev/null)"
+	before=$(x_server_ticks "$xpid")
+	echo "-- before --"
+	app_sockets "$1"
+	sleep 5
+	after=$(x_server_ticks "$xpid")
+	echo "-- 5 s later --"
+	app_sockets "$1"
+	if [[ -n $before && -n $after ]]; then
+		echo "X server: state $(awk '{ print $3 }' "/proc/$xpid/stat" 2> /dev/null), wchan $(cat "/proc/$xpid/wchan" 2> /dev/null), cpu ticks in 5 s $((after - before))"
+	else
+		echo "X server: gone"
+	fi
+}
+
 # RUN_SECONDS, EXPECT_EXIT (default 0), EXPECT_LOG (a pattern that must be in EXPECT_LOG_FILE,
 # default the run's output) and NO_DISPLAY=1 (DISPLAY and WAYLAND_DISPLAY unset) apply to one call.
 run() {
@@ -83,7 +119,9 @@ run() {
 			sleep 1
 		done
 		if kill -0 $pid 2>/dev/null; then
+			x_server_activity $pid > "$log.x11" &
 			thread_activity $pid > "$log.activity"
+			wait $!
 			dump_threads $pid > "$log.threads"
 			kill -9 $pid 2>/dev/null
 			problems+=" hung"
@@ -117,6 +155,8 @@ run() {
 				|| echo "---- it never logged the close request (or the log was still buffered) ----"
 			echo "---- CPU per thread over 5 s ----"
 			cat "$log.activity"
+			echo "---- the X server and the app's sockets over the same 5 s ----"
+			cat "$log.x11"
 			echo "---- its threads ----"
 			grep -E '^Thread|^#' "$log.threads" | head -1000
 		fi
