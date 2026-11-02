@@ -9,8 +9,9 @@
 # elsewhere). A hung app's frame index (twice, 5 s apart), whether it and GLFW saw the close,
 # its per-thread CPU use, the X server's CPU use and wait channel, both ends of the
 # app's sockets' queues and its thread stacks are recorded before it is killed. Apps that don't
-# exit by themselves are closed after SMOKE_SECONDS (default 20) through WM_DELETE_WINDOW, so
-# teardown runs too. A run fails on an unexpected exit code, a hang, a [FAIL] self-check, a Vulkan
+# exit by themselves are closed after SMOKE_SECONDS (default 20) through WM_DELETE_WINDOW, sent
+# again every 5 s while the app hasn't logged it, then after 30 s through SIGTERM, so teardown runs
+# too; a run that needed either passes with a warning. A run fails on an unexpected exit code, a hang, a [FAIL] self-check, a Vulkan
 # validation error, an AddressSanitizer or LeakSanitizer report or an spdlog LOG ERROR.
 # SMOKE_TOURNAMENT=1 adds Marionette's tournament (about 5 minutes in Release). Needs an X display
 # (DISPLAY) and python3-xlib; logs go to build/smoke/<config>/.
@@ -130,11 +131,23 @@ run() {
 		kill -0 $pid 2>/dev/null || break
 		sleep 1
 	done
+	local closes=0 delivered=0 termed=0
 	if kill -0 $pid 2>/dev/null; then
-		local delivered=1
-		$CLOSE $pid || delivered=0
+		# A WM_DELETE_WINDOW can be read off the X connection and never reach GLFW (#186), so
+		# it is sent again every 5 s until the app logs it, then SIGTERM ends the run through
+		# Close() instead. Either is reported as a warning, not a failure. Only a run whose
+		# window took a close gets the SIGTERM, so a headless run that wedges still fails.
 		for ((i = 0; i < 60; i++)); do
 			kill -0 $pid 2>/dev/null || break
+			if ! grep -q 'Window close requested' "$log"; then
+				if (( i < 30 && i % 5 == 0 )); then
+					closes=$((closes + 1))
+					$CLOSE $pid && delivered=$((delivered + 1))
+				elif (( i == 30 && delivered > 0 )); then
+					termed=1
+					kill -TERM $pid 2>/dev/null
+				fi
+			fi
 			sleep 1
 		done
 		if kill -0 $pid 2>/dev/null; then
@@ -147,10 +160,18 @@ run() {
 			kill -9 $pid 2>/dev/null
 			problems+=" hung"
 			((delivered)) || problems+=" close-not-delivered"
+			((termed)) && problems+=" sigterm-ignored"
 		fi
 	fi
 	wait $pid
 	status=$?
+
+	if [[ $problems != *hung* ]] && ((termed || closes > 1)); then
+		local how="the close needed $closes sends ($delivered delivered)"
+		((termed)) && how="the close was sent $closes times ($delivered delivered) and never handled; SIGTERM ended it"
+		echo "::warning title=Smoke test $name ($CONFIG)::$how (#186)"
+		echo "note  $name: $how"
+	fi
 
 	[[ $status -ne $expected ]] && problems+=" exit=$status"
 	if [[ -n ${EXPECT_LOG:-} ]] && ! grep -qE "$EXPECT_LOG" "${EXPECT_LOG_FILE:-$log}" 2>/dev/null; then

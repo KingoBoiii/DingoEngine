@@ -9,7 +9,7 @@
 #include "DingoEngine/Core/CrashHandler.h"
 #include "DingoEngine/Core/CrashReporter.h"
 #include "DingoEngine/Core/CrashReportText.h"
-#include "DingoEngine/Core/HeadlessSignals.h"
+#include "DingoEngine/Core/StopSignals.h"
 #include "DingoEngine/Core/Platform.h"
 #include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Core/LaunchFlags.h"
@@ -414,7 +414,7 @@ namespace Dingo
 	{
 		Timer timer;
 		auto next = std::chrono::steady_clock::now();
-		const Internal::HeadlessSignalGuard signals;
+		const Internal::StopSignalGuard signals;
 
 		DE_PROFILE_THREAD("Main");
 
@@ -481,10 +481,19 @@ namespace Dingo
 			return (!renderedOnce && !m_Minimized) || m_Params.UpdateInBackground || (!m_Minimized && m_Focused);
 		};
 
+		const Internal::StopSignalGuard signals;
+
 		DE_PROFILE_THREAD("Main");
 
 		while (m_IsRunning)
 		{
+			if (const char* stop = signals.StopRequest())
+			{
+				DE_CORE_INFO("Stop requested by {}; closing.", stop);
+				Close();
+				break;
+			}
+
 			DE_PROFILE_FRAME();
 			DE_PROFILE_SCOPE("Application::Run");
 
