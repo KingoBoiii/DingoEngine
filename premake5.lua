@@ -5,6 +5,11 @@ newoption {
     description = "Compile the Tracy profiler into the engine (DE_PROFILE_* zones, GPU pass plots)"
 }
 
+newoption {
+    trigger = "crash-reporting",
+    description = "Compile sentry-native into the engine for opt-in crash and error reports (DE_CRASH_REPORTING)"
+}
+
 -- major.minor.patch from VERSION (DE_VERSION overrides it: a release tag); DE_BUILD_NUMBER is the build.
 local EngineVersion = {}
 local function WriteBuildInfo()
@@ -62,6 +67,10 @@ workspace "DingoEngine"
     -- Workspace-wide so a game's own DE_PROFILE_* zones compile in too; Tracy itself is engine-only.
     if _OPTIONS["profile"] then
         defines { "DE_PROFILE" }
+    end
+
+    if _OPTIONS["crash-reporting"] then
+        defines { "DE_CRASH_REPORTING" }
     end
 
     -- No PCH: a syntax-only compile never writes the .pch/.gch the other files would read.
@@ -136,6 +145,10 @@ BundledVendorLibs = table.concat({
     vendorLib("JoltPhysics", "Jolt"),
 }, " ")
 
+if _OPTIONS["crash-reporting"] then
+    BundledVendorLibs = BundledVendorLibs .. ' "$(ProjectDir)build/bin/' .. outputdir .. '/sentry/sentry.lib"'
+end
+
 -- The same set for the Linux libDingoEngine.a, with the static assimp as well (Windows links
 -- assimp's import library and ships its DLLs).
 local function linuxVendorLib(rel, name)
@@ -155,6 +168,10 @@ LinuxBundledVendorLibs = table.concat({
     linuxVendorLib("JoltPhysics", "Jolt"),
     '"' .. path.join(_MAIN_SCRIPT_DIR, "vendor/assimp/lib/linux-x86_64/libassimp.a") .. '"',
 }, " ")
+
+if _OPTIONS["crash-reporting"] then
+    LinuxBundledVendorLibs = LinuxBundledVendorLibs .. ' "' .. path.join(_MAIN_SCRIPT_DIR, "build/bin") .. '/' .. outputdir .. '/sentry/libsentry.a"'
+end
 
 -- On Windows, every exe that links the engine also loads Assimp's DLLs (and their
 -- zlib / pugixml / poly2tri deps) at startup — plus, in Debug-ASan, the ASan runtime —
@@ -187,6 +204,11 @@ function copyAssimpRuntime()
             "shaderc_combined", "spirv-cross-hlsl", "spirv-cross-glsl", "spirv-cross-core",
             "assimp", "z", "dl", "pthread"
         }
+
+    if _OPTIONS["crash-reporting"] then
+        filter { "system:linux", "kind:ConsoleApp or WindowedApp" }
+            links { "sentry", "curl" }
+    end
 
     filter {}
 end
@@ -391,6 +413,7 @@ IncludeDir['box2d'] = "%{wks.location}/vendor/box2d/include";
 IncludeDir['jolt'] = "%{wks.location}/vendor/JoltPhysics";
 IncludeDir['miniaudio'] = "%{wks.location}/vendor/miniaudio"; -- header-only (miniaudio.h + stb_vorbis.c), engine-only
 IncludeDir['json'] = "%{wks.location}/vendor/json/single_include"; -- header-only nlohmann/json, engine-only (SaveData.cpp)
+IncludeDir['sentry'] = "%{wks.location}/vendor/sentry-native/include"; -- engine-only (CrashReporter.cpp), with --crash-reporting
 
 LibraryDir = {}
 LibraryDir['vulkan'] = "%{VULKAN_SDK}/lib";
@@ -437,6 +460,10 @@ Library["D3D11"] = "d3d11.lib"
 Library["DXGI"] = "dxgi.lib"
 Library["DXGUID"] = "dxguid.lib"
 Library["D3DCompiler"] = "d3dcompiler.lib"
+Library["WinHTTP"] = "winhttp.lib"
+Library["DbgHelp"] = "dbghelp.lib"
+Library["ShLwApi"] = "shlwapi.lib"
+Library["Synchronization"] = "synchronization.lib"
 
 
 group "Dependencies"
@@ -447,6 +474,9 @@ group "Dependencies"
 	include "vendor/msdf-atlas-gen"
 	include "vendor/box2d"
 	include "vendor/JoltPhysics"
+	if _OPTIONS["crash-reporting"] then
+		include "scripts/premake/sentry-native.lua"
+	end
 
 	-- Linux additions to the forks' own scripts, made here so vendor/ stays untouched.
 	project "GLFW"
@@ -549,6 +579,16 @@ group "Engine"
 			"SPDLOG_COMPILED_LIB",
 			"SPDLOG_USE_STD_FORMAT"
 		}
+
+		if _OPTIONS["crash-reporting"] then
+			includedirs { "%{IncludeDir.sentry}" }
+			links { "sentry" }
+			defines { "SENTRY_BUILD_STATIC" }
+
+			filter "system:windows"
+				links { "%{Library.WinHTTP}", "%{Library.DbgHelp}", "%{Library.ShLwApi}", "%{Library.Synchronization}" }
+			filter {}
+		end
 
 		if _OPTIONS["profile"] then
 			files { "vendor/tracy/public/TracyClient.cpp" }

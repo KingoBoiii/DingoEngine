@@ -4,6 +4,8 @@
 
 #include <cmath> // For std::fmod
 #include <format>
+#include <optional>
+#include <utility>
 
 #define DEFAULT_FONT_SIZE 0.5f
 #define DEFAULT_TITLE_FONT_SIZE 0.9f
@@ -83,12 +85,40 @@ namespace Dingo
 		DestroyAndDelete(m_BackgroundTexture);
 	}
 
+	// --crash-demo: F10 logs an error (a crash report event), F11 ends in FatalError and F12 crashes,
+	// so the report arrives on the next launch. --crash-demo=error|fatal|crash does one of them on the
+	// first frame (error then closes the game), for a run without a keyboard.
+	void GameLayer::UpdateCrashDemo()
+	{
+		static const std::optional<std::string_view> mode = Application::Get().GetCommandLineArgs().Get("crash-demo");
+		static bool firstFrame = true;
+		if (!mode)
+			return;
+		const bool first = std::exchange(firstFrame, false);
+
+		if (Input::IsKeyPressed(Key::F10) || (first && *mode == "error"))
+		{
+			DE_ERROR("[CrashDemo] Test error from Flappy Bird (score {})", m_Score);
+			if (first)
+				Application::Get().Close();
+		}
+		if (Input::IsKeyPressed(Key::F11) || (first && *mode == "fatal"))
+			FatalError("Test fatal error from Flappy Bird");
+		if (Input::IsKeyPressed(Key::F12) || (first && *mode == "crash"))
+		{
+			DE_WARN("[CrashDemo] Crashing on purpose");
+			*static_cast<volatile int*>(nullptr) = 0;
+		}
+	}
+
 	void GameLayer::OnUpdate(float deltaTime)
 	{
 		if (Input::IsKeyPressed(Key::Escape))
 		{
 			Application::Get().Close();
 		}
+
+		UpdateCrashDemo();
 
 		Renderer2D& renderer = Application::Get().GetRenderer2D();
 

@@ -513,6 +513,20 @@ namespace Dingo
 		return true;
 	}
 
+	void Internal::AddLogSink(const spdlog::sink_ptr& sink)
+	{
+		LoggingScope scope;
+		if (s_Sinks && sink)
+			s_Sinks->add_sink(sink);
+	}
+
+	void Internal::RemoveLogSink(const spdlog::sink_ptr& sink)
+	{
+		LoggingScope scope;
+		if (s_Sinks && sink)
+			s_Sinks->remove_sink(sink);
+	}
+
 	const std::filesystem::path& Log::GetFilePath()
 	{
 		return s_FilePath;
