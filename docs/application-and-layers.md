@@ -613,7 +613,8 @@ bool OnKeyPressed(KeyPressedEvent& e)
 `WindowResizeEvent`, `WindowFocusEvent` (v0.6.2), `KeyPressedEvent`,
 `KeyReleasedEvent`, `MouseButtonPressedEvent`, and `MouseButtonReleasedEvent`. The application
 handles `WindowCloseEvent` itself (it stops the loop) and marks it handled, so layers never see it;
-finish up in `OnDetach`.
+finish up in `OnDetach`. Ctrl+C in the terminal, `SIGTERM` (Linux) and a console close (Windows)
+stop a windowed app the same way, through `Close()`, as they do a [headless](#headless) one.
 
 `WindowFocusEvent::IsFocused()` tells you whether the window gained or lost focus, which
 is the natural place to auto-pause and release a locked cursor. To poll instead, use

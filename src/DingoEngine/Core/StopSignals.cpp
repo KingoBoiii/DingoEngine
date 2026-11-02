@@ -1,5 +1,5 @@
 #include "depch.h"
-#include "DingoEngine/Core/HeadlessSignals.h"
+#include "DingoEngine/Core/StopSignals.h"
 
 #include <atomic>
 
@@ -82,7 +82,7 @@ namespace Dingo::Internal
 #endif
 	}
 
-	HeadlessSignalGuard::HeadlessSignalGuard()
+	StopSignalGuard::StopSignalGuard()
 	{
 #ifdef DE_PLATFORM_WINDOWS
 		// A close caught by the run before a restart still ends the process when its handler
@@ -106,7 +106,7 @@ namespace Dingo::Internal
 #endif
 	}
 
-	HeadlessSignalGuard::~HeadlessSignalGuard()
+	StopSignalGuard::~StopSignalGuard()
 	{
 #ifdef DE_PLATFORM_WINDOWS
 		// After a close, logoff or shutdown the handler is still in its grace sleep. Removing it
@@ -124,7 +124,7 @@ namespace Dingo::Internal
 #endif
 	}
 
-	const char* HeadlessSignalGuard::StopRequest() const
+	const char* StopSignalGuard::StopRequest() const
 	{
 		const int caught = s_Caught.load();
 		return caught == 0 ? nullptr : Describe(caught);
