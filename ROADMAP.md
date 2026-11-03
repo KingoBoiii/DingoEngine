@@ -615,7 +615,7 @@ Smoothness at 144 Hz, the microphone level following a voice and dragging the pa
 only in part by hand. Linux has not run on real hardware.
 
 ## v1.2.0 — Crash Reporting
-**Status**: planned.
+**Status**: released on 2026-11-03 (PR #322 → `0f418603`).
 
 A minor release: it adds API, so a game built against 1.1 compiles unchanged. The headline is opt-in
 crash and error reporting, compiled into every Release and Distribution build, so the released engine
