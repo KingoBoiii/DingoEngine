@@ -65,9 +65,9 @@ namespace Dingo
 	};
 
 	/// Opt-in crash and error reports to a Sentry-compatible server (Sentry or a self-hosted
-	/// GlitchTip), compiled in only with premake `--crash-reporting`. Error and Fatal log lines
-	/// become events (each distinct message once per run, 25 at most), lower levels become their
-	/// breadcrumbs, and a crash the engine's crash handler logged is sent on the next launch. Nothing
+	/// GlitchTip), compiled into Release and Distribution, and into Debug with premake
+	/// `--crash-reporting`. Error and Fatal log lines become events (each distinct message once
+	/// per run, 25 at most), lower levels become their breadcrumbs, and a crash the engine's crash handler logged is sent on the next launch. Nothing
 	/// identifies the player: no user, IP or host name is sent, and the home folder is replaced by
 	/// `~` in every text sent.
 	struct CrashReportingParams
@@ -145,8 +145,8 @@ namespace Dingo
 		/// Parameters for the game UI (DingoUI); on by default, never created headless.
 		DingoUIParams DingoUI;
 
-		/// Opt-in crash and error reports; off unless built with `--crash-reporting`, given a
-		/// Dsn and enabled.
+		/// Opt-in crash and error reports; off unless compiled in (see CrashReportingParams), given
+		/// a Dsn and enabled.
 		CrashReportingParams CrashReporting;
 	};
 
@@ -290,8 +290,8 @@ namespace Dingo
 		/// ApplicationParams::SaveDirectory resolved; created by the first save.
 		const std::filesystem::path& GetSaveDirectory() const { return m_Params.SaveDirectory; }
 
-		/// True when the engine was built with premake `--crash-reporting`; otherwise the crash
-		/// reporting calls below do nothing.
+		/// True in Release and Distribution, and in a Debug build made with premake
+		/// `--crash-reporting`; otherwise the crash reporting calls below do nothing.
 		static bool IsCrashReportingAvailable();
 		/// Starts or stops sending crash and error reports, for a game's privacy setting; main
 		/// thread only. Turning it on needs ApplicationParams::CrashReporting::Dsn and a log

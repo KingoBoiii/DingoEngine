@@ -27,10 +27,10 @@ edit `scripts/notices/components.txt`, not this file.
 | [stb_vorbis](https://github.com/nothings/stb) | MIT or public domain | Ogg Vorbis decoding |
 | [nlohmann/json](https://github.com/nlohmann/json) | MIT | save data |
 | [Tracy](https://github.com/wolfpld/tracy) | BSD-3-Clause | profiler (profiling builds only) |
-| [sentry-native](https://github.com/getsentry/sentry-native) | MIT | crash and error reports (--crash-reporting builds only) |
-| [MPack (in sentry-native)](https://github.com/ludocode/mpack) | MIT | crash and error reports (--crash-reporting builds only) |
-| [jsmn (in sentry-native)](https://github.com/zserge/jsmn) | MIT | crash and error reports (--crash-reporting builds only) |
-| [stb_sprintf (in sentry-native)](https://github.com/nothings/stb) | MIT or public domain | crash and error reports (--crash-reporting builds on Linux only) |
+| [sentry-native](https://github.com/getsentry/sentry-native) | MIT | crash and error reports (Release and Distribution builds, and Debug with --crash-reporting) |
+| [MPack (in sentry-native)](https://github.com/ludocode/mpack) | MIT | crash and error reports (Release and Distribution builds, and Debug with --crash-reporting) |
+| [jsmn (in sentry-native)](https://github.com/zserge/jsmn) | MIT | crash and error reports (Release and Distribution builds, and Debug with --crash-reporting) |
+| [stb_sprintf (in sentry-native)](https://github.com/nothings/stb) | MIT or public domain | crash and error reports (the same builds, on Linux only) |
 | [Inter](https://rsms.me/inter) | OFL-1.1 | on-screen text in the examples and the test app |
 | [Fredoka](https://github.com/hafontia/Fredoka-One) | OFL-1.1 | Hearthvale's heading font |
 | [shaderc](https://github.com/google/shaderc) | Apache-2.0 | shader compilation |

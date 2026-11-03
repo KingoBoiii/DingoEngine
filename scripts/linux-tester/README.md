@@ -17,9 +17,9 @@ It takes about 10 minutes for the automatic part (step 2) and as long as you lik
 
   | Distro | Command |
   |---|---|
-  | Ubuntu, Mint, Pop!_OS, Debian | `sudo apt install libvulkan1 mesa-vulkan-drivers vulkan-tools python3-xlib` |
-  | Fedora | `sudo dnf install vulkan-loader mesa-vulkan-drivers vulkan-tools python3-xlib` |
-  | Arch, Manjaro | `sudo pacman -S vulkan-icd-loader vulkan-tools python-xlib` plus your GPU's driver: `vulkan-radeon`, `vulkan-intel` or `nvidia-utils` |
+  | Ubuntu, Mint, Pop!_OS, Debian | `sudo apt install libvulkan1 mesa-vulkan-drivers vulkan-tools python3-xlib libcurl4t64` |
+  | Fedora | `sudo dnf install vulkan-loader mesa-vulkan-drivers vulkan-tools python3-xlib libcurl` |
+  | Arch, Manjaro | `sudo pacman -S vulkan-icd-loader vulkan-tools python-xlib curl` plus your GPU's driver: `vulkan-radeon`, `vulkan-intel` or `nvidia-utils` |
 
   On NVIDIA's own driver the Vulkan part comes with the driver, so you don't need
   `mesa-vulkan-drivers` there. `vulkaninfo --summary` should list your GPU.

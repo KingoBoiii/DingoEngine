@@ -121,7 +121,8 @@ MyGame/
 The script loops over `examples/*/`, so a game kept elsewhere repeats its steps: copy the
 executable, pack the assets, copy the licence files, `THIRD-PARTY-NOTICES.md` and what
 `exeMetadata()` generated under `build/generated/<Project>/`, and `tar` the folder. assimp is
-linked statically, so the game needs only `libvulkan1` and a Vulkan driver on the player's machine.
+linked statically, so the game needs only `libvulkan1`, a Vulkan driver and `libcurl.so.4` (crash
+reports; installed on mainstream distros) on the player's machine.
 
 The first run compiles shaders and font atlases into a `.cache/` folder beside the executable (see
 [Where the game writes](#where-the-game-writes)). Don't put a `.cache/` in the folder you ship.

@@ -161,7 +161,7 @@ namespace Dingo
 		}
 #ifndef DE_CRASH_REPORTING
 		if (m_Params.CrashReporting.Enabled)
-			DE_CORE_WARN("Crash reporting: enabled, but the engine was built without premake --crash-reporting");
+			DE_CORE_WARN("Crash reporting: enabled, but this Debug build has none (premake --crash-reporting adds it)");
 #endif
 
 		if (!m_Params.SettingsSlot.empty() && SaveSlots::Exists(m_Params.SettingsSlot))
