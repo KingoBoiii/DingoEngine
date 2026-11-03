@@ -104,8 +104,57 @@ A crash leaves its report there too:
 can't go on from: it logs the message with the file and line it was called from, flushes the
 log, shows a message box (Windows Distribution builds) and exits with code 1. In Distribution
 builds a failed `DE_VERIFY` / `DE_CORE_VERIFY` ends there too, rather than breaking into a
-debugger that isn't there. The test app's `--crash=segv|thread|engine-thread|engine-throw|engine-stack|prepared-throw|prepared-stack|threads|segv-after-info|abort|terminate|throw|stack|verify|fatal`
+debugger that isn't there. The test app's `--crash=segv|thread|engine-thread|engine-throw|engine-stack|prepared-throw|prepared-stack|render-throw|render-stack|asset-throw|physics-stack|threads|segv-after-info|abort|terminate|throw|stack|verify|fatal`
 crashes on purpose, which is how CI checks all of this.
+
+### Crash and error reports
+
+The engine can send crash and error reports to a Sentry-compatible server (Sentry, or a
+self-hosted [GlitchTip](https://glitchtip.com)) through
+[sentry-native](https://github.com/getsentry/sentry-native). It is compiled into every Release and
+Distribution build, and into Debug and Debug-ASan only with premake's `--crash-reporting`; where it
+isn't compiled in, the calls below do nothing. Compiled in, it still stays off until the game gives
+it a DSN and the player opts in. On Linux those builds link the system `libcurl`.
+
+```cpp
+params.CrashReporting = {
+    .Dsn = "https://<key>@glitchtip.example.com/<project id>",
+    .Enabled = settings.Game["crash_reports"].AsBool(),   // the player's choice; off by default
+    .Environment = "playtest",                            // empty = development (Debug) or production
+};
+// later, from the game's privacy setting:
+Application::Get().SetCrashReportingEnabled(true);
+```
+
+- **Errors.** Every `Error` or `Fatal` log line becomes an event. Each distinct message is sent
+  once per run, and 25 at most, so an error logged every frame costs one event. Lower levels become
+  the breadcrumbs sent with the next event (the last 100). `FatalError` waits up to 2 s for its
+  event to be uploaded before the process exits.
+- **Crashes.** The engine's own crash handler stays in charge: sentry runs with no crash handler
+  of its own, and nothing is uploaded from a crashed process. On the next launch, each earlier
+  run's log that ends in a crash report is sent as a fatal event carrying the report and the 100
+  lines before it, but only if reports were on when that run crashed: turning them on never
+  uploads an older crash. `Dingo-reported-crashes.txt` beside the logs remembers which crashes
+  were handled, and a report that can't be sent (offline) is retried on a later launch.
+  `SendAttachments = true` also attaches that log and, on Windows, its minidump (as
+  `event.minidump`). It is off by default and only useful with a server that stores attachments,
+  such as Sentry: GlitchTip accepts the report but discards its attachments, and some GlitchTip
+  versions reject a report that carries a binary one. The report's text extras arrive either way,
+  and the dumps stay on disk, to open in Visual Studio with the build's PDBs. With attachments on,
+  closing the game waits up to 10 s (not 2 s) for an upload in progress, since a minidump is several
+  megabytes; one still unfinished is sent again on the next launch.
+- **Privacy.** Reports are off until the game enables them, so players opt in. No user, user id,
+  IP address or host name is sent, and the module list (install paths) is dropped. The player's
+  home folder becomes `~` in every message, breadcrumb and attached log, and its user name is
+  masked in an attached minidump. This is best effort: a short (8.3) form of the path isn't
+  caught. The server still sees the connection's IP address.
+- **Release.** Reports are filed under `<Name>@<engine major.minor.patch>` (plus `+<build>`), or
+  under `CrashReporting.Release`. sentry keeps its queue in `crash-reports/` beside the log.
+
+The Flappy Bird example shows both paths. Run it with `--sentry-dsn=<dsn>` (or `DE_SENTRY_DSN`)
+and `--crash-demo`: F10 logs an error, F11 calls `FatalError` and F12 crashes, which is reported
+on the next launch. `--crash-demo=error|fatal|crash` does one of them on the first frame, and
+`--sentry-attachments` turns on `SendAttachments`.
 
 ### Window modes
 
@@ -509,6 +558,26 @@ void Player::OnHit()
 }
 ```
 
+**Simulated pads.** For tests and demos, `Input::SetGamepadSimulated(slot, true)`
+makes a slot a pad you feed from code: it reads connected at once ("Simulated Gamepad", type
+`Unknown`, everything up), and a real pad in that slot is ignored until you turn it off again: it sends
+no events and gets no rumble (the
+slot is then polled from the device from the next frame; no connect or disconnect event is sent either
+way). `Input::SetSimulatedGamepadButton` and `SetSimulatedGamepadAxis` set what the pad reports. They
+take effect at the next frame's input snapshot, like a real pad being polled: a press set in `OnUpdate`
+of frame N reads as `IsGamepadButtonPressed` in frame N + 1, DingoUI's navigation sees it too, and the
+value stays until it is set again. `IsGamepadSimulated(slot)` says whether a slot is simulated. It
+needs a window: a [headless](#headless) app takes no input snapshot, so the setters never reach it. A
+graphics-API restart turns simulation off.
+
+```cpp
+Input::SetGamepadSimulated(0, true);
+Input::SetSimulatedGamepadButton(GamepadButton::A, true);        // pressed edge next frame
+Input::SetSimulatedGamepadAxis(GamepadAxis::LeftX, 1.0f);        // raw; the deadzone applies in the getters
+// ... later, to hand the slot back to the device:
+Input::SetGamepadSimulated(0, false);
+```
+
 GLFW's gamepad API is input only, so rumble goes through XInput: Xbox-compatible pads on Windows.
 On any other pad, or platform, it does nothing and returns false;
 `Input::IsGamepadRumbleSupported(gamepad)` says which, e.g. to hide a VIBRATION setting. The F5
@@ -546,7 +615,8 @@ bool OnKeyPressed(KeyPressedEvent& e)
 `WindowResizeEvent`, `WindowFocusEvent` (v0.6.2), `KeyPressedEvent`,
 `KeyReleasedEvent`, `MouseButtonPressedEvent`, and `MouseButtonReleasedEvent`. The application
 handles `WindowCloseEvent` itself (it stops the loop) and marks it handled, so layers never see it;
-finish up in `OnDetach`.
+finish up in `OnDetach`. Ctrl+C in the terminal, `SIGTERM` (Linux) and a console close (Windows)
+stop a windowed app the same way, through `Close()`, as they do a [headless](#headless) one.
 
 `WindowFocusEvent::IsFocused()` tells you whether the window gained or lost focus, which
 is the natural place to auto-pause and release a locked cursor. To poll instead, use

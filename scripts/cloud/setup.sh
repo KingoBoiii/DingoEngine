@@ -9,7 +9,7 @@ SUDO=$([ "$(id -u)" -eq 0 ] || echo sudo)
 export DEBIAN_FRONTEND=noninteractive
 $SUDO apt-get update -q
 $SUDO apt-get install -y -q build-essential cmake ninja-build python3 zlib1g-dev \
-  libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev \
+  libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libcurl4-openssl-dev \
   xvfb xauth mesa-vulkan-drivers python3-xlib curl xz-utils git
 
 if [ ! -x "$SDK_ROOT/current/x86_64/bin/glslc" ]; then

@@ -1,3 +1,5 @@
+**Status**: done (v0.9.0)
+
 # P15 — *Marionette* on v0.9: VFX from the clips, impacts, moonlit shadows
 
 Drafted 2026-10-08 on branch `claude/dingo-v0-9-0-planning-ee00a9` @ `719df64` (v0.9 P1–P14 built,

@@ -444,7 +444,7 @@ namespace Dingo
 			else if (event == GLFW_DISCONNECTED)
 				Input::OnJoystickDisconnected(static_cast<uint32_t>(jid));
 
-			if (!s_JoystickEventCallback || !(*s_JoystickEventCallback))
+			if (!s_JoystickEventCallback || !(*s_JoystickEventCallback) || Input::IsGamepadSimulated(static_cast<uint32_t>(jid)))
 				return;
 
 			if (event == GLFW_CONNECTED && glfwJoystickIsGamepad(jid))

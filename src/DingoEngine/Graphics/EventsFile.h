@@ -5,6 +5,7 @@
 
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace Dingo::Internal
 {
@@ -30,6 +31,10 @@ namespace Dingo::Internal
 		float End = 0.0f;       // Begin for an instant
 		bool Range = false;
 	};
+
+	// Splits a sidecar line (`.events`, `.ragdoll`) on whitespace up to a `#`; a double-quoted token, or
+	// a quoted part of one (key="a b"), may hold spaces. False on an unclosed quote.
+	bool TokenizeSidecarLine(std::string_view line, std::vector<std::string>& tokens);
 
 	// `<clip> <seconds> <event> [payload...]` or `<clip> <a>..<b> <event> [payload...]`, `#` starting
 	// a comment; a double-quoted token (or part of one: key="a b") may hold spaces.

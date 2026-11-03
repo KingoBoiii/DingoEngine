@@ -139,7 +139,7 @@ namespace Dingo
 			public:
 				void Begin(const entt::registry& registry);
 
-				bool HasParent(entt::entity handle) const;
+				bool HasParent(entt::entity handle) const { return ParentOf(handle) != entt::null; }
 				std::uint32_t Depth(entt::entity handle) const;
 
 				glm::mat4 Transform(entt::entity handle, const Transform3DComponent& local); // WorldTransform; `local` is the entity's own
@@ -175,7 +175,10 @@ namespace Dingo
 					std::uint32_t Pass = 0;
 				};
 
-				entt::entity ParentOf(entt::entity handle) const;
+				entt::entity ParentOf(entt::entity handle) const
+				{
+					return m_Links && m_Links->contains(handle) ? m_Links->get(handle).Parent : entt::null;
+				}
 				std::size_t Slot(entt::entity handle);
 				glm::mat4 LocalOf(entt::entity handle) const;
 				glm::mat4 LinkOf(entt::entity handle, const glm::mat4& local) const;

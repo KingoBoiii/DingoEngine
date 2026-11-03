@@ -7,7 +7,9 @@
 #include "DingoEngine/Core/CacheManager.h"
 #include "DingoEngine/Core/LogLifecycle.h"
 #include "DingoEngine/Core/CrashHandler.h"
-#include "DingoEngine/Core/HeadlessSignals.h"
+#include "DingoEngine/Core/CrashReporter.h"
+#include "DingoEngine/Core/CrashReportText.h"
+#include "DingoEngine/Core/StopSignals.h"
 #include "DingoEngine/Core/Platform.h"
 #include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Core/LaunchFlags.h"
@@ -137,6 +139,30 @@ namespace Dingo
 
 		Internal::OpenLogFile(logDirectory);
 		Internal::CrashHandler::Install(Log::GetFilePath(), logDirectory, m_Params.Name);
+
+		if (!Internal::CrashReporter::IsConfigured())
+		{
+			const CrashReportingParams& reporting = m_Params.CrashReporting;
+			Internal::CrashReporter::Configure({
+				.Dsn = reporting.Dsn,
+				.Release = !reporting.Release.empty() ? reporting.Release
+					: Internal::CrashReportText::MakeRelease(m_Params.Name, DE_ENGINE_VERSION_MAJOR, DE_ENGINE_VERSION_MINOR, DE_ENGINE_VERSION_PATCH, DE_ENGINE_VERSION_BUILD),
+#ifdef DE_DEBUG
+				.Environment = !reporting.Environment.empty() ? reporting.Environment : "development",
+#else
+				.Environment = !reporting.Environment.empty() ? reporting.Environment : "production",
+#endif
+				.SendAttachments = reporting.SendAttachments,
+				.LogDirectory = Log::GetFilePath().empty() ? std::filesystem::path() : logDirectory,
+				.LogFile = Log::GetFilePath(),
+			});
+			if (reporting.Enabled)
+				SetCrashReportingEnabled(true);
+		}
+#ifndef DE_CRASH_REPORTING
+		if (m_Params.CrashReporting.Enabled)
+			DE_CORE_WARN("Crash reporting: enabled, but this Debug build has none (premake --crash-reporting adds it)");
+#endif
 
 		if (!m_Params.SettingsSlot.empty() && SaveSlots::Exists(m_Params.SettingsSlot))
 		{
@@ -388,7 +414,7 @@ namespace Dingo
 	{
 		Timer timer;
 		auto next = std::chrono::steady_clock::now();
-		const Internal::HeadlessSignalGuard signals;
+		const Internal::StopSignalGuard signals;
 
 		DE_PROFILE_THREAD("Main");
 
@@ -455,10 +481,19 @@ namespace Dingo
 			return (!renderedOnce && !m_Minimized) || m_Params.UpdateInBackground || (!m_Minimized && m_Focused);
 		};
 
+		const Internal::StopSignalGuard signals;
+
 		DE_PROFILE_THREAD("Main");
 
 		while (m_IsRunning)
 		{
+			if (const char* stop = signals.StopRequest())
+			{
+				DE_CORE_INFO("Stop requested by {}; closing.", stop);
+				Close();
+				break;
+			}
+
 			DE_PROFILE_FRAME();
 			DE_PROFILE_SCOPE("Application::Run");
 
@@ -698,6 +733,25 @@ namespace Dingo
 	{
 		m_LayerStack.PushOverlay(overlay);
 		overlay->OnAttach();
+	}
+
+	bool Application::IsCrashReportingAvailable()
+	{
+#ifdef DE_CRASH_REPORTING
+		return true;
+#else
+		return false;
+#endif
+	}
+
+	bool Application::SetCrashReportingEnabled(bool enabled)
+	{
+		return Internal::CrashReporter::SetEnabled(enabled);
+	}
+
+	bool Application::IsCrashReportingEnabled()
+	{
+		return Internal::CrashReporter::IsEnabled();
 	}
 
 	void Application::Close()

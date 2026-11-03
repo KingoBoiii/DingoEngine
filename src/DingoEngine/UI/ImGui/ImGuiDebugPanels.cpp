@@ -525,6 +525,45 @@ namespace Dingo::Internal
 		FpsLine();
 	}
 
+	// Enumerating asks the OS, so the list is read when the node opens or on Refresh.
+	void CaptureSection()
+	{
+		AudioEngine& audio = Application::Get().GetAudioEngine();
+		const AudioCaptureState state = audio.GetCaptureState();
+		const char* stateName = state == AudioCaptureState::Running ? "Running" : state == AudioCaptureState::Lost ? "Lost" : "Stopped";
+		ImGui::Text("Capture       : %s", stateName);
+		if (state == AudioCaptureState::Stopped)
+			return;
+
+		ImGui::Text("Queued frames : %u (overruns %llu)", audio.GetCapturedFrames(), static_cast<unsigned long long>(audio.GetCaptureOverruns()));
+		ImGui::ProgressBar(audio.GetCaptureLevel(), ImVec2(-FLT_MIN, 0.0f), audio.IsCaptureGateOpen() ? "gate open" : "gate closed");
+
+		static std::vector<AudioCaptureDevice> s_Devices;
+		static bool s_Listed = false;
+		const bool open = ImGui::TreeNode("Capture devices");
+		if (!open)
+		{
+			s_Devices.clear();
+			s_Listed = false;
+			return;
+		}
+		if (!s_Listed || ImGui::SmallButton("Refresh"))
+		{
+			s_Devices = audio.EnumerateCaptureDevices();
+			s_Listed = true;
+		}
+		const std::string current = audio.GetCaptureDeviceId();
+		for (const AudioCaptureDevice& device : s_Devices)
+		{
+			ImGui::PushID(device.Id.c_str());
+			const std::string label = device.IsDefault ? device.Name + " (default)" : device.Name;
+			if (ImGui::Selectable(label.c_str(), device.Id == current) && device.Id != current)
+				audio.SetCaptureDevice(device.Id);
+			ImGui::PopID();
+		}
+		ImGui::TreePop();
+	}
+
 	void AudioStatsSection()
 	{
 		const AudioEngine& audio = Application::Get().GetAudioEngine();
@@ -535,6 +574,7 @@ namespace Dingo::Internal
 		ImGui::Text("Master volume : %.2f", audio.GetMasterVolume());
 		ImGui::Text("Active sounds : %u", audio.GetActiveSoundCount());
 		ImGui::Text("Buses         : %u", audio.GetBusCount());
+		CaptureSection();
 	}
 
 	void EngineStatsWindow(bool* open)
@@ -1260,6 +1300,13 @@ namespace Dingo::Internal
 		if (scene.Has3DWorld)
 			ImGui::Text("Physics 3D: %u bodies (%u sensors), %u controllers, gravity (%.2f, %.2f, %.2f)", scene.Bodies3D, scene.Sensors3D,
 				scene.Controllers, scene.Gravity3D.x, scene.Gravity3D.y, scene.Gravity3D.z);
+		if (scene.FixedTick)
+			ImGui::Text("Fixed tick: on, step %.4f s, tick %llu, alpha %.2f, %u this update, %llu dropped, interpolation %s", scene.FixedStep,
+				static_cast<unsigned long long>(scene.Tick), scene.FixedAlpha, scene.FixedStepsLastUpdate,
+				static_cast<unsigned long long>(scene.DroppedFixedSteps), scene.InterpolatePhysics ? "on" : "off");
+		else
+			ImGui::Text("Fixed tick: off (physics steps per update), fixed step %.4f s, %u this update, %llu dropped", scene.FixedStep,
+				scene.FixedStepsLastUpdate, static_cast<unsigned long long>(scene.DroppedFixedSteps));
 
 		SD::CollectEntities(scene.Serial, s_Entities);
 
@@ -1409,6 +1456,122 @@ namespace Dingo::Internal
 				ImGui::EndTable();
 			}
 			ImGui::PopID();
+		}
+
+		if (s_Detail.Motor.Present)
+		{
+			SD::MotorView motor = s_Detail.Motor;
+			bool changed = false;
+			ImGui::PushID("##motor");
+			if (ImGui::CollapsingHeader("Constraint motor (editable)", ImGuiTreeNodeFlags_DefaultOpen))
+			{
+				const char* modes[] = { "Off", "Velocity", "Position" };
+				int mode = static_cast<int>(motor.Mode);
+				ImGui::SetNextItemWidth(160.0f);
+				if (ImGui::Combo("Mode", &mode, modes, 3))
+				{
+					motor.Mode = static_cast<MotorMode3D>(mode);
+					changed = true;
+				}
+
+				auto params = [&](const char* label, MotorParams3D& value)
+				{
+					ImGui::PushID(label);
+					ImGui::TextUnformatted(label);
+					changed |= ImGui::SliderFloat("Stiffness (N*m/rad)", &value.Stiffness, 0.0f, 100000.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+					changed |= ImGui::SliderFloat("Damping (N*m per rad/s)", &value.Damping, 0.0f, 10000.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+					changed |= ImGui::SliderFloat("MaxTorque (N*m)", &value.MaxTorque, 0.0f, 20000.0f, "%.1f", ImGuiSliderFlags_Logarithmic);
+					ImGui::PopID();
+				};
+				params(motor.SwingTwist ? "Swing motor" : "Hinge motor", motor.Motor);
+				if (motor.SwingTwist)
+					params("Twist motor", motor.TwistMotor);
+
+				changed |= ImGui::SliderAngle("Target angle", &motor.TargetAngle, -180.0f, 180.0f);
+				changed |= ImGui::SliderFloat("Target velocity (rad/s)", &motor.TargetVelocity, -20.0f, 20.0f);
+
+				if (!motor.Live)
+					ImGui::TextDisabled("No built joint: physics is not running or the bodies are missing.");
+				else
+				{
+					if (!motor.SwingTwist)
+						ImGui::Text("Current angle: %.1f deg", glm::degrees(motor.Angle));
+					auto bar = [](const char* label, float torque, float maxTorque)
+					{
+						const float fraction = maxTorque > 0.0f ? (std::min)(torque / maxTorque, 1.0f) : 0.0f;
+						const std::string text = std::format("{}: {:.1f} / {:.1f} N*m", label, torque, maxTorque);
+						ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f), text.c_str());
+					};
+					bar(motor.SwingTwist ? "Swing torque" : "Torque", motor.Torque, motor.Motor.MaxTorque);
+					if (motor.SwingTwist)
+						bar("Twist torque", motor.TwistTorque, motor.TwistMotor.MaxTorque);
+				}
+			}
+			ImGui::PopID();
+			if (changed)
+				SD::WriteMotor(scene.Serial, s_SelectedEntity, motor);
+		}
+
+		if (s_Detail.Ragdoll.Present)
+		{
+			SD::RagdollView ragdoll = s_Detail.Ragdoll;
+			bool changed = false;
+			ImGui::PushID("##ragdoll");
+			if (ImGui::CollapsingHeader("Ragdoll (editable)", ImGuiTreeNodeFlags_DefaultOpen))
+			{
+				changed |= ImGui::SliderFloat("Blend", &ragdoll.Blend, 0.0f, 1.0f);
+				changed |= ImGui::SliderFloat("Strength", &ragdoll.Strength, 0.0f, 2.0f);
+				changed |= ImGui::SliderFloat("Drive frequency (Hz)", &ragdoll.DriveFrequency, 0.0f, 12.0f);
+				changed |= ImGui::Checkbox("Drive to animation", &ragdoll.DriveToAnimation);
+				ImGui::Text("Total mass %.1f kg, recipe %s, self-collision %s", ragdoll.TotalMass,
+					ragdoll.Recipe.empty() ? "(default)" : ragdoll.Recipe.c_str(), ragdoll.CollideWithinRagdoll ? "on" : "off");
+
+				if (!ragdoll.Live)
+					ImGui::TextDisabled("Not built: physics is not running, or the skeleton can't make a ragdoll.");
+				else
+				{
+					ImGui::Text("%zu bodies%s", ragdoll.Parts.size(), ragdoll.FollowsRoot ? ", the entity follows the root body" : "");
+					const ImGuiTableFlags flags = ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_SizingStretchProp;
+					if (ImGui::BeginTable("##parts", 5, flags))
+					{
+						ImGui::TableSetupColumn("Bone");
+						ImGui::TableSetupColumn("Joint");
+						ImGui::TableSetupColumn("Mass (kg)", ImGuiTableColumnFlags_WidthFixed, 70.0f);
+						ImGui::TableSetupColumn("Speed (m/s)", ImGuiTableColumnFlags_WidthFixed, 80.0f);
+						ImGui::TableSetupColumn("Motor torque (N*m)");
+						ImGui::TableHeadersRow();
+						for (const SD::RagdollView::Part& part : ragdoll.Parts)
+						{
+							ImGui::TableNextRow();
+							ImGui::TableSetColumnIndex(0);
+							ImGui::TextUnformatted(part.Bone.c_str());
+							ImGui::TableSetColumnIndex(1);
+							if (part.Parent.empty())
+								ImGui::TextDisabled("root");
+							else
+								ImGui::Text("%s to %s", part.Hinge ? "hinge" : "swing-twist", part.Parent.c_str());
+							ImGui::TableSetColumnIndex(2);
+							ImGui::Text("%.2f", part.Mass);
+							ImGui::TableSetColumnIndex(3);
+							ImGui::Text("%.2f", part.Speed);
+							ImGui::TableSetColumnIndex(4);
+							if (part.Parent.empty())
+								ImGui::TextDisabled(ragdoll.DriveToAnimation && ragdoll.Strength > 0.0f && ragdoll.DriveFrequency > 0.0f ? "velocity drive" : "free");
+							else
+							{
+								const float torque = (std::max)(part.Torque, part.TwistTorque);
+								const float fraction = part.MaxTorque > 0.0f ? (std::min)(torque / part.MaxTorque, 1.0f) : 0.0f;
+								const std::string text = part.MaxTorque > 0.0f ? std::format("{:.1f} / {:.1f}", torque, part.MaxTorque) : std::string("off");
+								ImGui::ProgressBar(fraction, ImVec2(-1.0f, 0.0f), text.c_str());
+							}
+						}
+						ImGui::EndTable();
+					}
+				}
+			}
+			ImGui::PopID();
+			if (changed)
+				SD::WriteRagdoll(scene.Serial, s_SelectedEntity, ragdoll);
 		}
 	}
 

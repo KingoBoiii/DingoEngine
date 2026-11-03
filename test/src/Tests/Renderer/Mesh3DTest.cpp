@@ -34,6 +34,31 @@ namespace
 		return inward;
 	}
 
+	// Triangles whose UVs wind against their positions, so a texture on them shows mirrored. Images load
+	// bottom row first, so v points up the image and a front face's UVs wind counter-clockwise like it.
+	uint32_t CountMirroredUVTriangles(const Dingo::Mesh& mesh)
+	{
+		const auto& vertices = mesh.GetVertices();
+		const auto& indices  = mesh.GetIndices();
+
+		uint32_t mirrored = 0;
+		for (size_t i = 0; i + 2 < indices.size(); i += 3)
+		{
+			const Dingo::MeshVertex& a = vertices[indices[i + 0]];
+			const Dingo::MeshVertex& b = vertices[indices[i + 1]];
+			const Dingo::MeshVertex& c = vertices[indices[i + 2]];
+
+			const glm::vec3 normal = glm::cross(b.Position - a.Position, c.Position - a.Position);
+			if (glm::dot(normal, normal) < 1e-12f)
+				continue;
+			const glm::vec2 ab = b.TexCoord - a.TexCoord;
+			const glm::vec2 ac = c.TexCoord - a.TexCoord;
+			if (ab.x * ac.y - ab.y * ac.x <= 0.0f)
+				++mirrored;
+		}
+		return mirrored;
+	}
+
 	constexpr uint32_t k_CheckTargetSize = 16;
 	constexpr float k_CheckTolerance = 0.02f;
 	// Lit by the test shader's light from straight on (1) or straight behind (its 0.3 ambient).
@@ -262,6 +287,24 @@ namespace Dingo
 			std::unique_ptr<Mesh> sphere(Mesh::CreateSphere(0.5f, detail.x, detail.y));
 			const uint32_t inward = CountInwardTriangles(*sphere);
 			Check(inward == 0, std::format("CreateSphere({}, {}) winds every triangle outward ({} inward)", detail.x, detail.y, inward));
+		}
+
+		const uint32_t boxMirrored = CountMirroredUVTriangles(*m_BoxMesh);
+		Check(boxMirrored == 0, std::format("CreateBox maps a texture unmirrored on every face ({} mirrored triangles)", boxMirrored));
+
+		{
+			std::unique_ptr<Mesh> sphere(Mesh::CreateSphere(0.5f, 6, 8));
+			const uint32_t mirrored = CountMirroredUVTriangles(*sphere);
+			bool polesUpright = true;
+			for (const MeshVertex& vertex : sphere->GetVertices())
+			{
+				if (vertex.Position.y > 0.4999f)
+					polesUpright &= vertex.TexCoord.y == 1.0f;
+				else if (vertex.Position.y < -0.4999f)
+					polesUpright &= vertex.TexCoord.y == 0.0f;
+			}
+			Check(polesUpright, "CreateSphere maps a texture upright (v = 1 at the +Y pole, 0 at the -Y pole)");
+			Check(mirrored == 0, std::format("CreateSphere maps a texture unmirrored ({} mirrored triangles)", mirrored));
 		}
 
 		std::unique_ptr<Mesh> flatSphere(Mesh::CreateSphere(0.5f, 0, 0));

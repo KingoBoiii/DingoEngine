@@ -193,7 +193,7 @@ namespace Dingo
 		/// size 0 zeroes it all. A draw pushes the bytes as they are when it is recorded: at the
 		/// Renderer::Draw/DrawIndexed call, or at Renderer3D::EndScene for every mesh of that scene.
 		/// Logs an error, changes nothing and returns false when the shader declares no push-constant
-		/// block, when its block is DE_SkinDraw (the renderer's), or when size is larger than the block
+		/// block, when its block is DE_SkinDraw or DE_InstanceDraw (the renderer's), or when size is larger than the block
 		/// (Shader::GetPushConstantBlockSize).
 		bool SetPushConstants(const void* data, uint32_t size);
 
@@ -220,7 +220,8 @@ namespace Dingo
 		static constexpr const char* k_ObjectDataBlockName = "DE_ObjectData";
 		/// Name of the storage block holding Renderer3D's instance records (Instancing.glsl).
 		static constexpr const char* k_InstanceDataBlockName = "DE_InstanceData";
-		/// Name of the uniform block holding an instanced draw's base index (Instancing.glsl).
+		/// Name of the block holding an instanced draw's base index (Instancing.glsl): a uniform
+		/// block, or a push-constant block the renderer owns with DE_INSTANCE_DRAW_PUSH.
 		static constexpr const char* k_InstanceDrawBlockName = "DE_InstanceDraw";
 		/// Name of the uniform block Renderer3D fills with the shadow data (Shadows.glsl).
 		static constexpr const char* k_ShadowDataBlockName = "ShadowData";
@@ -281,7 +282,7 @@ namespace Dingo
 		// the cached passes' binding sets. A draw's base goes in its draw constants.
 		void SetSkinPaletteBuffer(GraphicsBuffer* palette);
 
-		// Pushed with each draw of this material to the shader's push-constant block (DE_SkinDraw);
+		// Pushed with each draw of this material to the shader's push-constant block (DE_SkinDraw or DE_InstanceDraw);
 		// Renderer3D sets them just before the draw.
 		void SetDrawConstants(const glm::uvec4& constants);
 		const uint8_t* GetPushConstantData() const { return m_PushConstants; }
@@ -296,7 +297,7 @@ namespace Dingo
 		void SetObjectBuffer(GraphicsBuffer* buffer);
 
 		// Binds Renderer3D's instance records to the shader's DE_InstanceData storage block and its
-		// per-draw base to the DE_InstanceDraw uniform block (Instancing.glsl).
+		// per-draw base to the DE_InstanceDraw block when it is a uniform block (Instancing.glsl).
 		void SetInstanceBuffers(GraphicsBuffer* records, GraphicsBuffer* draw);
 
 		GraphicsBuffer*             GetUniformBuffer()                       const { return m_UniformBuffer; }

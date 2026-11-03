@@ -138,6 +138,27 @@ namespace Dingo
 		/// True for a connected XInput pad on Windows, the only kind SetGamepadRumble can drive.
 		static bool IsGamepadRumbleSupported(uint32_t gamepad = 0);
 
+		/// Feeds slot `gamepad` from code instead of a device, for tests and demos; it needs a window,
+		/// since a headless app takes no input snapshot. On: the slot reads connected at once, named
+		/// "Simulated Gamepad", type Unknown, with every button up and every axis 0, and a real pad in
+		/// that slot is ignored until it is turned off: no events from it, no rumble. A graphics-API
+		/// restart turns it off. Off: the slot is dropped at once (no release edges) and polled from the device again
+		/// at the next frame. No GamepadConnected or GamepadDisconnected event is sent. An
+		/// out-of-range slot is ignored.
+		static void SetGamepadSimulated(uint32_t gamepad, bool simulated);
+		/// True while SetGamepadSimulated has the slot on; false for an out-of-range slot.
+		static bool IsGamepadSimulated(uint32_t gamepad = 0);
+		/// Presses or releases a button of a simulated pad. It takes effect at the next frame's input
+		/// snapshot, as a real pad does: a press set during frame N reads as IsGamepadButtonPressed
+		/// in frame N + 1 (DingoUI's navigation sees it too) and stays down until set again. Ignored
+		/// when the slot is not simulated. Meant for tests.
+		static void SetSimulatedGamepadButton(GamepadButton button, bool pressed, uint32_t gamepad = 0);
+		/// Sets a raw axis of a simulated pad, clamped to [-1, 1]; the deadzone applies through
+		/// GetGamepadAxis and the stick getters. It takes effect at the next frame's input snapshot
+		/// and stays until set again; a NaN or infinite value reads as 0. Ignored when the slot is not
+		/// simulated. Meant for tests.
+		static void SetSimulatedGamepadAxis(GamepadAxis axis, float value, uint32_t gamepad = 0);
+
 		/**************************************************
 		***		ANY										***
 		**************************************************/
@@ -183,8 +204,8 @@ namespace Dingo
 		static void ConsumeScroll();
 		static void ConsumeGamepadButton(GamepadButton button, uint32_t gamepad);
 		static void ClearConsumed();
-		// The test app's pad: a simulated slot is connected and ignored by polling, so what is set
-		// stays until it is set again.
+		// The test app's pad: like SetGamepadSimulated and its setters, but taking effect at once,
+		// so what is set stays until it is set again.
 		static void SimulateGamepadConnected(uint32_t gamepad, bool connected);
 		static void SimulateGamepadButton(GamepadButton button, bool pressed, uint32_t gamepad);
 		static void SimulateGamepadAxis(GamepadAxis axis, float value, uint32_t gamepad);

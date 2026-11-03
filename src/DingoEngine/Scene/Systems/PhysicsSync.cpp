@@ -21,6 +21,21 @@ namespace Dingo
 				return (static_cast<std::uint64_t>(first) << 32) | second;
 			}
 
+			void WriteMotors(Physics3D& physics, ConstraintId3D constraint, const Constraint3DComponent& settings)
+			{
+				if (settings.Type == ConstraintType3D::Hinge)
+					physics.SetMotor(constraint, MotorAxis3D::Hinge, settings.MotorMode, settings.Motor);
+				else if (settings.Type == ConstraintType3D::SwingTwist)
+				{
+					physics.SetMotor(constraint, MotorAxis3D::Swing, settings.MotorMode, settings.Motor);
+					physics.SetMotor(constraint, MotorAxis3D::Twist, settings.MotorMode, settings.TwistMotor);
+				}
+				else
+					return;
+				physics.SetMotorTargetRotation(constraint, settings.TargetRotation);
+				physics.SetMotorTargetVelocity(constraint, settings.TargetAngularVelocity);
+			}
+
 			// Withdraws every pair in `applied` that `wanted` no longer has, then (re)applies all of
 			// `wanted`, which becomes the new `applied`. apply(first, second, ignore) must be a no-op
 			// for a pair that is already in that state.
@@ -62,7 +77,8 @@ namespace Dingo
 
 			auto rb3dView = registry.view<RigidBody3DComponent>();
 			auto cc3dView = registry.view<CharacterController3DComponent>();
-			const bool needs3D = rb3dView.begin() != rb3dView.end() || cc3dView.begin() != cc3dView.end();
+			auto ragdollView = registry.view<RagdollComponent>();
+			const bool needs3D = rb3dView.begin() != rb3dView.end() || cc3dView.begin() != cc3dView.end() || ragdollView.begin() != ragdollView.end();
 			if ((!m_Physics3D || !m_Physics3D->IsValid()) && needs3D)
 			{
 				Physics3DParams params;
@@ -75,11 +91,21 @@ namespace Dingo
 
 				for (entt::entity handle : cc3dView)
 					CreateController(registry, handle, &m_Memo);
+
+				SyncConstraints(registry);
+				m_Ragdolls.Sync(registry, *m_Physics3D, 0.0f);
 			}
+		}
+
+		void PhysicsSync::TakeBrokenConstraints(std::vector<BrokenConstraint>& out)
+		{
+			out.insert(out.end(), m_Broken.begin(), m_Broken.end());
+			m_Broken.clear();
 		}
 
 		void PhysicsSync::Stop(entt::registry& registry)
 		{
+			m_Broken.clear();
 			if (m_Physics2D && m_Physics2D->IsValid())
 			{
 				m_Physics2D->Shutdown(); // also destroys all bodies + shapes
@@ -92,6 +118,10 @@ namespace Dingo
 				// Character controllers hold the world, so tear them down BEFORE the Physics3D.
 				m_Controllers.clear();
 				registry.clear<CharacterController3DRuntime>();
+				registry.clear<Constraint3DRuntime>();
+				m_Ragdolls.Clear(registry);
+				m_ConstraintReported.clear();
+				m_ConstraintRejected.clear();
 
 				m_Physics3D->Shutdown(); // destroys all 3D bodies
 				m_Physics3D.reset();
@@ -144,13 +174,16 @@ namespace Dingo
 
 			// One collision step per 1/60 s, as Jolt recommends: a single step over a 30 fps frame
 			// lets a falling body cross a mesh collider's zero-thickness triangles. The 0.1
-			// tolerance keeps 60 Hz frame jitter at one step. Scene::OnUpdate caps the delta at
-			// k_MaxStepTime, so a stall never stretches a step past 1/60 s.
-			const int collisionSteps = std::clamp(static_cast<int>(std::ceil(deltaTime * 60.0f - 0.1f)), 1, k_MaxCollisionSteps);
+			// tolerance keeps 60 Hz frame jitter at one step. The per-frame delta is capped at
+			// k_MaxStepTime; a long fixed tick (SceneParams::FixedTick) gets as many steps as it needs.
+			const int collisionSteps = (std::max)(static_cast<int>(std::ceil(deltaTime * 60.0f - 0.1f)), 1);
 
+			SyncConstraints(registry);
+			m_Ragdolls.Sync(registry, *m_Physics3D, deltaTime);
 			SyncAncestorFilters(registry);
 			DriveKinematicChildren(registry, deltaTime);
 			m_Physics3D->Step(deltaTime, collisionSteps);
+			DrainBrokenConstraints(registry);
 
 			m_ChildWriteBacks.clear();
 
@@ -197,6 +230,143 @@ namespace Dingo
 			}
 
 			WriteBackChildren(registry);
+			m_Ragdolls.AfterStep(registry, *m_Physics3D);
+		}
+
+		void PhysicsSync::SyncConstraints(entt::registry& registry)
+		{
+			if (!m_Physics3D || !m_Physics3D->IsValid())
+				return;
+
+			m_ConstraintScratch.clear();
+			auto built = registry.view<Constraint3DRuntime>();
+			for (entt::entity handle : built)
+			{
+				if (!m_Physics3D->IsConstraintValid(built.get<Constraint3DRuntime>(handle).Constraint))
+					m_ConstraintScratch.push_back(handle);
+			}
+			for (entt::entity handle : m_ConstraintScratch)
+			{
+				registry.remove<Constraint3DRuntime>(handle);
+				const Constraint3DComponent* settings = registry.try_get<Constraint3DComponent>(handle);
+				if (settings && settings->Other && m_EntityMap)
+				{
+					const auto found = m_EntityMap->find(settings->Other);
+					if (found == m_EntityMap->end() || !registry.valid(found->second))
+						m_ConstraintReported.insert(handle);
+				}
+			}
+
+			for (auto [handle, runtime, settings] : registry.view<Constraint3DRuntime, Constraint3DComponent>().each())
+				WriteMotors(*m_Physics3D, runtime.Constraint, settings);
+
+			m_ConstraintScratch.clear();
+			auto pending = registry.view<Constraint3DComponent>(entt::exclude<Constraint3DRuntime, InactiveComponent>);
+			for (entt::entity handle : pending)
+				m_ConstraintScratch.push_back(handle);
+			for (entt::entity handle : m_ConstraintScratch)
+				BuildConstraint(registry, handle);
+		}
+
+		void PhysicsSync::DrainBrokenConstraints(entt::registry& registry)
+		{
+			m_BreakScratch.clear();
+			m_Physics3D->ConsumeBrokenConstraints(m_BreakScratch);
+			for (const ConstraintBreak3D& info : m_BreakScratch)
+			{
+				const entt::entity handle = static_cast<entt::entity>(info.UserData);
+				if (!registry.valid(handle))
+					continue;
+				const Constraint3DRuntime* runtime = registry.try_get<Constraint3DRuntime>(handle);
+				if (!runtime || runtime->Constraint != info.Constraint)
+					continue;
+
+				m_Broken.push_back({ handle, runtime->Other, info });
+				registry.remove<Constraint3DComponent>(handle);
+			}
+		}
+
+		void PhysicsSync::BuildConstraint(entt::registry& registry, entt::entity handle)
+		{
+			if (m_ConstraintRejected.contains(handle))
+				return;
+
+			const std::string name = registry.all_of<TagComponent>(handle) ? registry.get<TagComponent>(handle).Tag : std::string();
+			auto reportOnce = [&](const char* reason)
+			{
+				if (m_ConstraintReported.insert(handle).second)
+					DE_CORE_WARN("Constraint3DComponent on '{}': {}; no constraint built", name, reason);
+			};
+
+			const RigidBody3DRuntime* own = registry.try_get<RigidBody3DRuntime>(handle);
+			if (!own)
+			{
+				if (!registry.all_of<RigidBody3DComponent>(handle))
+					reportOnce("the entity has no RigidBody3DComponent");
+				return;
+			}
+
+			const Constraint3DComponent& settings = registry.get<Constraint3DComponent>(handle);
+			entt::entity other = entt::null;
+			PhysicsBodyId3D otherBody = k_InvalidBody3D;
+			if (settings.Other)
+			{
+				if (m_EntityMap)
+				{
+					const auto found = m_EntityMap->find(settings.Other);
+					if (found != m_EntityMap->end() && registry.valid(found->second))
+						other = found->second;
+				}
+				if (other == entt::null)
+				{
+					reportOnce("Other names no entity");
+					return;
+				}
+				if (!registry.all_of<RigidBody3DComponent>(other))
+				{
+					reportOnce("Other has no RigidBody3DComponent");
+					return;
+				}
+
+				const RigidBody3DRuntime* otherRuntime = registry.try_get<RigidBody3DRuntime>(other);
+				if (!otherRuntime)
+					return;
+				otherBody = otherRuntime->Body;
+			}
+
+			glm::vec3 position, scale(1.0f);
+			glm::quat rotation;
+			if (const Transform3DComponent* transform = registry.try_get<Transform3DComponent>(handle))
+				HierarchySystem::WorldPose(registry, handle, *transform, position, rotation, scale);
+
+			ConstraintParams3D params(settings.Type, own->Body, otherBody);
+			params.AnchorA = scale * settings.AnchorA;
+			params.AnchorB = settings.AnchorB;
+			params.AxisA = settings.AxisA;
+			params.AxisB = settings.AxisB;
+			params.NormalAxisA = settings.NormalAxisA;
+			params.NormalAxisB = settings.NormalAxisB;
+			params.MinLimit = settings.MinLimit;
+			params.MaxLimit = settings.MaxLimit;
+			params.SwingLimitY = settings.SwingLimitY;
+			params.SwingLimitZ = settings.SwingLimitZ;
+			params.TwistMin = settings.TwistMin;
+			params.TwistMax = settings.TwistMax;
+			params.CollideConnected = settings.CollideConnected;
+			params.BreakForce = settings.BreakForce;
+			params.BreakTorque = settings.BreakTorque;
+			params.UserData = static_cast<std::uint32_t>(handle);
+
+			const ConstraintId3D constraint = m_Physics3D->CreateConstraint(params);
+			if (constraint == k_InvalidConstraint3D)
+			{
+				m_ConstraintRejected.insert(handle);
+				return;
+			}
+
+			m_ConstraintReported.erase(handle);
+			WriteMotors(*m_Physics3D, constraint, settings);
+			registry.emplace<Constraint3DRuntime>(handle) = { constraint, other };
 		}
 
 		void PhysicsSync::SyncAncestorFilters(entt::registry& registry)
@@ -218,6 +388,26 @@ namespace Dingo
 						m_WantedPairs.push_back(PackPair(body, runtime->Body));
 					if (const CharacterController3DRuntime* slot = registry.try_get<CharacterController3DRuntime>(ancestor))
 						m_WantedControllerBodies.push_back(PackPair(slot->Index, body));
+					if (const RagdollRuntime* ragdoll = registry.try_get<RagdollRuntime>(ancestor))
+					{
+						for (const RagdollRuntime::Part& part : ragdoll->Parts)
+							m_WantedPairs.push_back(PackPair(body, part.Body));
+					}
+				}
+			}
+
+			// A ragdoll's limbs sit inside its entity's own body or controller capsule.
+			auto ragdolls = registry.view<RagdollRuntime>();
+			for (entt::entity handle : ragdolls)
+			{
+				const RigidBody3DRuntime* own = registry.try_get<RigidBody3DRuntime>(handle);
+				const CharacterController3DRuntime* slot = registry.try_get<CharacterController3DRuntime>(handle);
+				for (const RagdollRuntime::Part& part : ragdolls.get<RagdollRuntime>(handle).Parts)
+				{
+					if (own)
+						m_WantedPairs.push_back(PackPair(part.Body, own->Body));
+					if (slot)
+						m_WantedControllerBodies.push_back(PackPair(slot->Index, part.Body));
 				}
 			}
 
@@ -487,16 +677,26 @@ namespace Dingo
 			CreateController(registry, handle);
 		}
 
-		void PhysicsSync::Connect(entt::registry& registry)
+		void PhysicsSync::Connect(entt::registry& registry, const std::unordered_map<UUID, entt::entity>& entityMap)
 		{
+			m_EntityMap = &entityMap;
 			// The hooks run while destroy and clear walk the registry's pools, where creating a
 			// runtime pool on first use would invalidate that walk.
 			registry.storage<RigidBody2DRuntime>();
 			registry.storage<RigidBody3DRuntime>();
 			registry.storage<CharacterController3DRuntime>();
+			registry.storage<Constraint3DRuntime>();
+			registry.storage<RagdollRuntime>();
 			registry.on_destroy<RigidBody2DComponent>().connect<&PhysicsSync::DropBody2D>(*this);
 			registry.on_destroy<RigidBody3DComponent>().connect<&PhysicsSync::DropBody3D>(*this);
 			registry.on_destroy<CharacterController3DComponent>().connect<&PhysicsSync::DropController>(*this);
+			registry.on_destroy<Constraint3DComponent>().connect<&PhysicsSync::DropConstraint>(*this);
+			registry.on_destroy<RagdollComponent>().connect<&PhysicsSync::DropRagdoll>(*this);
+		}
+
+		void PhysicsSync::DropRagdoll(entt::registry& registry, entt::entity handle)
+		{
+			m_Ragdolls.Drop(registry, m_Physics3D.get(), handle);
 		}
 
 		void PhysicsSync::DropBody2D(entt::registry& registry, entt::entity handle)
@@ -508,8 +708,21 @@ namespace Dingo
 			}
 		}
 
+		void PhysicsSync::DropConstraint(entt::registry& registry, entt::entity handle)
+		{
+			m_ConstraintReported.erase(handle);
+			m_ConstraintRejected.erase(handle);
+			if (const Constraint3DRuntime* runtime = registry.try_get<Constraint3DRuntime>(handle))
+			{
+				if (m_Physics3D)
+					m_Physics3D->DestroyConstraint(runtime->Constraint);
+				registry.remove<Constraint3DRuntime>(handle);
+			}
+		}
+
 		void PhysicsSync::DropBody3D(entt::registry& registry, entt::entity handle)
 		{
+			DropConstraint(registry, handle);
 			if (const RigidBody3DRuntime* runtime = registry.try_get<RigidBody3DRuntime>(handle))
 			{
 				m_Physics3D->DestroyBody(runtime->Body);
@@ -529,9 +742,11 @@ namespace Dingo
 
 		void PhysicsSync::DestroyBodiesForEntity(entt::registry& registry, entt::entity handle)
 		{
+			DropConstraint(registry, handle);
 			DropBody2D(registry, handle);
 			DropBody3D(registry, handle);
 			DropController(registry, handle);
+			DropRagdoll(registry, handle);
 		}
 
 		bool PhysicsSync::IsRunning() const
@@ -585,7 +800,25 @@ namespace Dingo
 				return entt::null;
 
 			const entt::entity handle = static_cast<entt::entity>(m_Physics3D->GetUserData(body));
-			return RuntimeBody3D(registry, handle) == body ? handle : entt::null;
+			if (!registry.valid(handle))
+				return entt::null;
+			return RuntimeBody3D(registry, handle) == body || m_Ragdolls.OwnsBody(registry, handle, body) ? handle : entt::null;
+		}
+
+		void PhysicsSync::PoseRagdolls(entt::registry& registry, float alpha)
+		{
+			if (m_Physics3D && m_Physics3D->IsValid())
+				m_Ragdolls.Pose(registry, *m_Physics3D, alpha);
+		}
+
+		bool PhysicsSync::HasRagdolls(const entt::registry& registry) const
+		{
+			return registry.view<const RagdollRuntime>().size() != 0;
+		}
+
+		PhysicsBodyId3D PhysicsSync::RagdollBody(const entt::registry& registry, entt::entity handle, std::string_view joint) const
+		{
+			return m_Ragdolls.Body(registry, handle, joint);
 		}
 
 		void PhysicsSync::SensorOverlaps3D(const entt::registry& registry, entt::entity sensor, std::vector<entt::entity>& out) const
@@ -597,10 +830,12 @@ namespace Dingo
 
 			std::vector<PhysicsBodyId3D> bodies;
 			m_Physics3D->GetSensorOverlaps(sensorBody, bodies);
+			// A ragdoll's limbs all map to its entity, which is reported once.
+			auto seen = [&out](entt::entity handle) { return std::find(out.begin(), out.end(), handle) != out.end(); };
 			for (const PhysicsBodyId3D body : bodies)
 			{
 				const entt::entity handle = EntityOfBody3D(registry, body);
-				if (handle != entt::null)
+				if (handle != entt::null && !seen(handle))
 					out.push_back(handle);
 			}
 
@@ -611,7 +846,7 @@ namespace Dingo
 			for (const entt::entity handle : view)
 			{
 				const CharacterController3D* controller = m_Controllers[view.get<CharacterController3DRuntime>(handle).Index].get();
-				if (controller && controller->IsOverlapping(sensorBody))
+				if (controller && controller->IsOverlapping(sensorBody) && !seen(handle))
 					out.push_back(handle);
 			}
 		}
@@ -712,6 +947,8 @@ namespace Dingo
 			params.ContinuousCollision = rigidBody.ContinuousCollision;
 			params.IsSensor = rigidBody.IsSensor;
 			params.QueryLayers = rigidBody.QueryLayers;
+			params.CollisionGroup = rigidBody.CollisionGroup;
+			params.CollideWithinGroup = rigidBody.CollideWithinGroup;
 			params.UserData = static_cast<std::uint32_t>(handle);
 
 			// The collider shape is baked into the body at creation. Collider sizes are

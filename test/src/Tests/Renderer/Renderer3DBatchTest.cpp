@@ -3,9 +3,12 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <imgui.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <format>
 #include <numeric>
+#include <optional>
+#include <vector>
 
 namespace
 {
@@ -562,6 +565,12 @@ namespace Dingo
 			return;
 		m_InstancedMaterial = Material::Create(MaterialParams().SetDebugName("BatchTest_Instanced").SetShader(m_InstancedShader).SetInstancing(true));
 		m_BlocklessMaterial = Material::Create(MaterialParams().SetDebugName("BatchTest_Blockless").SetShader(m_BlocklessShader).SetInstancing(true));
+		m_PushedInstanceShader = Shader::Create(ShaderParams().SetName("BatchTestInstancedPush").SetSourceCode(k_InstancedShader).AddDefine("DE_INSTANCE_DRAW_PUSH"));
+		const bool pushes = m_PushedInstanceShader && m_PushedInstanceShader->IsValid() &&
+			m_PushedInstanceShader->FindPushConstantBlockSize(Material::k_InstanceDrawBlockName) == sizeof(glm::uvec4);
+		Check(pushes, "with DE_INSTANCE_DRAW_PUSH a custom instanced shader declares DE_InstanceDraw as a 16-byte push-constant block");
+		if (pushes)
+			m_PushedInstanceMaterial = Material::Create(MaterialParams().SetDebugName("BatchTest_InstancedPush").SetShader(m_PushedInstanceShader).SetInstancing(true));
 
 		// Back to front, so the readback sees the last copy, and after as many boxes hidden behind them,
 		// so the quads' records start past the boxes': a wrong instance index or base reads another colour.
@@ -599,6 +608,15 @@ namespace Dingo
 			const Renderer3D::Statistics forced = RenderCheck(CreateCheckTarget(k_CheckTargetSize), CheckViewProjection(), [&](Renderer3D& renderer) { quads(renderer, 3, red, m_InstancedMaterial); });
 			m_CheckRenderer->SetInstancingEnabled(true);
 			Check(forced.InstancedDraws == 2, std::format("a material with Instancing draws instanced with instancing off too ({} instanced draws)", forced.InstancedDraws));
+
+			if (!m_PushedInstanceMaterial)
+				return;
+			Framebuffer* pushedTarget = CreateCheckTarget(k_CheckTargetSize);
+			const Renderer3D::Statistics pushed = RenderCheck(pushedTarget, CheckViewProjection(), [&](Renderer3D& renderer) { quads(renderer, 3, red, m_PushedInstanceMaterial); });
+			Check(pushed.DrawCalls == 2 && pushed.InstancedDraws == 2 && pushed.InstancedMeshes == 6 && pushed.VertexCount == 0,
+				std::format("a material whose shader pushes DE_InstanceDraw draws three quads and three boxes in one instanced draw each ({} draws, {} instanced, {} meshes)",
+					pushed.DrawCalls, pushed.InstancedDraws, pushed.InstancedMeshes));
+			ReadCheck(pushedTarget, glm::vec3(0.5f, 0.0f, 0.0f), "a custom instanced shader that pushes DE_InstanceDraw places each copy from its record");
 		});
 
 		m_CheckSteps.push_back([this, quads]
@@ -865,6 +883,11 @@ namespace Dingo
 			Check(bakedStats.CulledMeshes >= k_StaticCasterCount,
 				std::format("the box beside the view and the pillar behind the camera are culled by the camera ({} culled, {} culled from the shadows)", bakedStats.CulledMeshes, bakedStats.CulledCasters));
 			Check(updatedStats.StaticCellsBaked == 1, std::format("changing one mesh's colour rebakes its cell alone ({} baked)", updatedStats.StaticCellsBaked));
+			const std::optional<glm::ivec3> recolouredCell = m_StaticBatch->GetMeshCell(m_StaticIds[5]);
+			Check(m_StaticBatch->GetLastBakedCells().size() == 1 && recolouredCell && m_StaticBatch->GetLastBakedCells()[0] == *recolouredCell,
+				std::format("the one cell a changed mesh rebaked is the cell the batch reports for it ({} baked cells listed)", m_StaticBatch->GetLastBakedCells().size()));
+			Check(m_StaticBatch->GetCellSize() == k_CellSize && m_CheckRenderer->CreateStaticBatch(StaticBatchParams().SetCellSize(-1.0f))->GetCellSize() == 32.0f,
+				"a batch reports its cell size, and 32 for a bad one");
 			ReadAll({ direct, baked, updated, withoutCasters, sideOnly, pillarOnly }, [this](const std::vector<TexturePixels>& images)
 			{
 				float worst = 0.0f;
@@ -894,8 +917,10 @@ namespace Dingo
 			});
 			Check(again.StaticCellsBaked == 0 && again.StaticMeshes == k_StaticMeshCount && again.VertexCount == 0,
 				std::format("a batch submitted again unchanged bakes nothing and transforms no vertex ({} baked, {} static, {} vertices)", again.StaticCellsBaked, again.StaticMeshes, again.VertexCount));
+			Check(m_StaticBatch->GetLastBakedCells().empty(), std::format("an unchanged submission leaves no baked cells listed ({} listed)", m_StaticBatch->GetLastBakedCells().size()));
 
 			m_StaticBatch->Remove(m_StaticIds[0]);
+			Check(!m_StaticBatch->GetMeshCell(m_StaticIds[0]) && !m_StaticBatch->GetMeshCell(k_InvalidStaticMesh), "a removed or invalid id has no cell");
 			const StaticMeshId distant = m_StaticBatch->Add(StaticMesh().SetMesh(m_CheckRenderer->GetBoxMesh()).SetTransform(glm::translate(glm::mat4(1.0f), { 200.0f, 0.0f, -7.0f })));
 			const StaticMeshId glass = m_StaticBatch->Add(StaticMesh().SetMesh(m_Quad).SetTransform(WallAt(-5.5f)).SetColor(k_HalfGreen).SetMaterial(m_TranslucentA));
 			const Renderer3D::Statistics changed = RenderCheck(CreateCheckTarget(k_StaticTargetSize), CheckViewProjection(), [&](Renderer3D& renderer)
@@ -906,6 +931,10 @@ namespace Dingo
 			Check(changed.StaticMeshes == k_StaticMeshCount && changed.StaticCellsBaked == 2 && changed.CulledMeshes >= k_StaticCasterCount + 1,
 				std::format("removing a mesh and adding one far off screen rebakes two cells, and the far one is culled ({} static, {} baked, {} culled)",
 					changed.StaticMeshes, changed.StaticCellsBaked, changed.CulledMeshes));
+			const std::optional<glm::ivec3> distantCell = m_StaticBatch->GetMeshCell(distant);
+			const std::vector<glm::ivec3>& lastBaked = m_StaticBatch->GetLastBakedCells();
+			Check(distantCell && *distantCell == glm::ivec3(100, 0, -4) && lastBaked.size() == 2 && std::find(lastBaked.begin(), lastBaked.end(), *distantCell) != lastBaked.end() && !m_StaticBatch->GetMeshCell(glass),
+				std::format("the far mesh's cell is among the two rebaked, and the translucent mesh drawn loose has no cell ({} listed)", lastBaked.size()));
 			Check(changed.TranslucentMeshes == 1 && changed.SubmittedMeshes == k_StaticMeshCount + 1,
 				std::format("a translucent mesh in a static batch draws in the translucent pass ({} translucent, {} submitted)", changed.TranslucentMeshes, changed.SubmittedMeshes));
 			m_StaticBatch->Remove(distant);
@@ -1100,8 +1129,10 @@ namespace Dingo
 			m_SurfaceMaterials.clear();
 			DestroyAndDelete(m_InstancedMaterial);
 			DestroyAndDelete(m_BlocklessMaterial);
+			DestroyAndDelete(m_PushedInstanceMaterial);
 			DestroyAndDelete(m_InstancedShader);
 			DestroyAndDelete(m_BlocklessShader);
+			DestroyAndDelete(m_PushedInstanceShader);
 			m_CheckRenderer->Shutdown();
 			delete m_CheckRenderer;
 			m_CheckRenderer = nullptr;

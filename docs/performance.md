@@ -209,6 +209,25 @@ rebuilt with `Update`. `StaticBatchParams::CellSize` is the grid's side, 32 by d
 cell culls finer and makes more draws. Ids are reused after `Remove` and `Clear`. A batch may
 outlive its renderer, drawing nothing. `GetMeshCount()` and `GetCellCount()` tell you what it holds.
 
+To check that a change rebaked only the cells you expect, read the cell coordinates after the
+submission. A coordinate is `floor(centre / GetCellSize())` per axis, centre being the middle of a
+mesh's world bounds.
+
+```cpp
+level->Update(ids[3], StaticMesh(*level->Get(ids[3])).SetColor(red));
+renderer.BeginScene(camera);
+renderer.SubmitStaticBatch(*level);
+renderer.EndScene();
+
+const std::vector<glm::ivec3>& rebaked = level->GetLastBakedCells();   // one entry: ids[3]'s cell
+bool expected = rebaked.size() == 1 && level->GetMeshCell(ids[3]) == rebaked[0];
+```
+
+`GetLastBakedCells()` lists the cells the latest submission baked, cells it emptied included, and is
+empty when nothing changed. `GetMeshCell(id)` is empty for an id the batch doesn't hold, a mesh
+changed since the last submission, and a mesh drawn loose (translucent, non-affine, oversized or
+with no geometry).
+
 ## GPU instancing
 
 A mesh drawn many times in one scene (trees, crates, rubble, coins) is drawn **instanced**: every
@@ -345,10 +364,13 @@ An instance past the budget is dropped **whole**, with a warning
 (`Statistics::DroppedSkinnedDraws`), so a character never loses parts. Raise it only when F4's
 *Instances* bar is full or something is dropped. A custom skinned shader with the older `SkinData`
 block keeps working, but through the old path: at most 256 instances a frame, an upload before each
-draw, and on Vulkan every upload ends the render pass. Instanced static draws still upload between
-draws, with the same cost. On Vulkan the `SkinData` buffer also takes about 16.5 MiB of
-host-visible memory at the default budget. See
+draw, and on Vulkan every upload ends the render pass. On Vulkan the `SkinData` buffer also takes
+about 16.5 MiB of host-visible memory at the default budget. See
 [Animation](animation.md#instances-and-the-per-frame-budget).
+
+Instanced static draws also push their first record, so they share a render pass too. A custom
+instanced shader that keeps `DE_InstanceDraw` a uniform block still writes it before each draw
+(see [Scenes & ECS](scenes-and-ecs.md#instanced-custom-shaders-v10)).
 
 ### Culled animators
 

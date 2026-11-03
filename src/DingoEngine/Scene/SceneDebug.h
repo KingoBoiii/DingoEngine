@@ -5,6 +5,7 @@
 // the list of live scenes the F7 tab (AnimationDebug) reads.
 
 #include "DingoEngine/Core/UUID.h"
+#include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -54,7 +55,7 @@ namespace Dingo
 				DirectionalLight, AmbientLight, PointLight, SpotLight, Fog,
 				RigidBody2D, BoxCollider2D, CircleCollider2D,
 				MeshRenderer, SkinnedMeshRenderer, Animator, ParticleEmitter, ParticleEvent,
-				RigidBody3D, BoxCollider3D, SphereCollider3D, CapsuleCollider3D, MeshCollider3D, CharacterController3D,
+				RigidBody3D, BoxCollider3D, SphereCollider3D, CapsuleCollider3D, MeshCollider3D, CharacterController3D, Constraint3D, Ragdoll,
 				AudioSource, AudioListener,
 				Script,
 				Count
@@ -104,6 +105,13 @@ namespace Dingo
 				glm::vec4 ClearColor{ 0.0f };
 				glm::vec2 Gravity2D{ 0.0f };
 				glm::vec3 Gravity3D{ 0.0f };
+				bool FixedTick = false;
+				bool InterpolatePhysics = false;
+				float FixedStep = 0.0f;
+				float FixedAlpha = 0.0f;
+				uint64_t Tick = 0;
+				uint32_t FixedStepsLastUpdate = 0;
+				uint64_t DroppedFixedSteps = 0;
 			};
 
 			void CollectScenes(std::vector<SceneRow>& out);
@@ -140,6 +148,57 @@ namespace Dingo
 				std::vector<Field> Fields;
 			};
 
+			// The motor of a Hinge or SwingTwist Constraint3DComponent: the live settings the F9 tab edits
+			// (WriteMotor) and what the joint is doing. Angles are about Axis (the component's AxisA).
+			struct MotorView
+			{
+				bool Present = false;
+				bool SwingTwist = false;
+				// A built joint exists, so Angle and the torques mean something.
+				bool Live = false;
+				MotorMode3D Mode = MotorMode3D::Off;
+				MotorParams3D Motor;
+				MotorParams3D TwistMotor;
+				glm::vec3 Axis{ 0.0f, 1.0f, 0.0f };
+				float TargetAngle = 0.0f;
+				float TargetVelocity = 0.0f;
+				float Angle = 0.0f;
+				float Torque = 0.0f;
+				float TwistTorque = 0.0f;
+			};
+
+			// A RagdollComponent: the live settings the F9 tab edits (WriteRagdoll) and each built body.
+			struct RagdollView
+			{
+				bool Present = false;
+				// Built bodies exist, so Parts means something.
+				bool Live = false;
+				float Blend = 1.0f;
+				float Strength = 1.0f;
+				float DriveFrequency = 3.0f;
+				bool DriveToAnimation = true;
+				float TotalMass = 0.0f;
+				bool CollideWithinRagdoll = false;
+				std::string Recipe;
+				// The entity's position follows the root body (limp, nothing else moving it).
+				bool FollowsRoot = false;
+
+				struct Part
+				{
+					std::string Bone;
+					// Empty for the root body.
+					std::string Parent;
+					bool Hinge = false;
+					float Mass = 0.0f;
+					float Speed = 0.0f;
+					// The motor's torque cap at the last step (0 while limp) and the torque it applied.
+					float MaxTorque = 0.0f;
+					float Torque = 0.0f;
+					float TwistTorque = 0.0f;
+				};
+				std::vector<Part> Parts;
+			};
+
 			struct EntityDetail
 			{
 				UUID Id;
@@ -164,10 +223,22 @@ namespace Dingo
 				float WorldRotation2D = 0.0f;
 
 				std::vector<Section> Sections;
+				MotorView Motor;
+				RagdollView Ragdoll;
 			};
 
 			// False (out reset) when the scene or the entity is gone.
 			bool CollectEntity(uint64_t sceneSerial, UUID id, EntityDetail& out);
+
+			// Writes the motor fields of the entity's Constraint3DComponent from `motor`, under the scenes lock
+			// CollectEntity takes; the scene applies them at its next physics step. False when the scene or
+			// the entity is gone or has no Hinge or SwingTwist constraint.
+			bool WriteMotor(uint64_t sceneSerial, UUID id, const MotorView& motor);
+
+			// Writes Blend, Strength, DriveFrequency and DriveToAnimation of the entity's RagdollComponent from `ragdoll`,
+			// under the scenes lock; the scene reads them at its next step and pose. False when the scene
+			// or the entity is gone or has no RagdollComponent.
+			bool WriteRagdoll(uint64_t sceneSerial, UUID id, const RagdollView& ragdoll);
 
 		}
 

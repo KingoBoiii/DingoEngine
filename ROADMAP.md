@@ -417,49 +417,98 @@ game asks for it.
 **Test**: each PR was tested as it merged (its body says how), and master's Windows and Linux CI, with
 the Linux smoke test, runs on the release's merge commit before it is tagged.
 
-## v1.0 — Stability, Performance & Polish
-**Status**: in progress on `feat/v1` (PR [#147](https://github.com/KingoBoiii/DingoEngine/pull/147)),
-plan `.claude/plans/2026-10-08-v1.0-plan.md`. Done in the cloud, with GPU sign-offs pending:
-culling (P2), per-object surface overrides (P3), GPU instancing (P4), static geometry (P5), the
-skin palette arena and animation LOD (P6), per-user logs, the crash handler and unit tests (P7),
-`SaveData`, `Settings` and display modes (P8), the API pass with [versioning](docs/versioning.md)
-and [conventions](docs/conventions.md) (P9), third-party notices, the Inter font and executable
-metadata (P10), the Doxygen reference and 1.0 guides (P11), and DingoUI (U0–U9, with its review in
-`.claude/reviews/2026-10-14-dingoui-review.md`). DingoUI done; left: *Hearthvale* (P13), then the
-release: the review pass (P12), a
-soak (20 minutes per sign-off, 60 before the release tag) and the release candidate. The run on real
-Linux hardware ([L26](LINUX-SUPPORT.md#l26)) is deferred past v1.0 ([#247](https://github.com/KingoBoiii/DingoEngine/issues/247)).
+## v1.0.0 — Stability, Performance & Polish
+**Status**: released on 2026-10-21 (straight to master → `4145806f`, no release PR).
 
-Performance profiling (Optick or Tracy), full API documentation, cross-platform validation
-(Linux + Vulkan), and a thorough pass over every system for correctness, ergonomics, and long-term
-maintainability. It also takes on the **renderer throughput work** that has been implied since v0.9
-was called "Advanced Rendering & Performance" but was never scheduled anywhere:
+The first release with a stable API. It absorbed the renderer throughput work that v0.9's "Advanced
+Rendering & Performance" implied but never scheduled, and it is the last release allowed to break the
+API: from 1.0.0 [versioning](docs/versioning.md) applies. The plan is
+`.claude/plans/2026-10-08-v1.0-plan.md` (P1–P12; its §9 "As built" notes override the design), built on
+`feat/v1` in PR [#147](https://github.com/KingoBoiii/DingoEngine/pull/147) and the PRs after it.
+[docs/migrating-to-1.0.md](docs/migrating-to-1.0.md) lists every break.
 
-- **The vertex budget**: v0.9's `Renderer3D` CPU-transformed *every submitted vertex, every frame*
-  (`Renderer3D::SubmitMesh`), so the vertex count simply **is** the frame budget, and overflowing
-  `MaxVertices` drops geometry. Persistent/static batching for never-moving geometry and **GPU
-  instancing** for repeated meshes retire that. The draw-call plumbing already exists —
-  `CommandList::Draw` takes an `instanceCount`, hardcoded to 1 — so the missing piece is persistent
-  buffers, not the API.
-- **Culling**: frustum and distance culling, so what gets submitted is bounded by what's *visible*
-  rather than by what exists. v0.7 already culls *lights* by frustum; meshes are still submitted
-  whether or not they are visible, and games cull them by hand today, with `MeshRendererComponent::Visible`.
-- **Material sharing**: a shared-material path so the first custom material in a scene doesn't
-  fragment the single-batch fast path. It is also what lets per-mesh roughness and emissive stop
-  costing a material each: v0.7's lit materials are per-material, not per-mesh.
-- **DingoUI, a game UI framework** (done; [#98](https://github.com/KingoBoiii/DingoEngine/issues/98)):
-  games have no UI layer of their own today (`Dingo::UI` is an ImGui facade for debug panels), so
-  every example builds its HUD and menus from sprites and text by hand. `DingoUI` is an
-  immediate-mode API (`DingoUI::Button("Play")`) for HUDs and menus: flexbox-style layout anchored to
-  the screen, gamepad and keyboard focus navigation, world-space health bars and labels, 9-slice
-  skins and themes, tweens and screen transitions, and clicks the UI takes kept away from the game.
-  It draws a whole menu in about one draw call, after the post chain. ImGui stays the debug UI.
-  Plan: `.claude/plans/2026-10-08-v1.0-game-ui-plan.md`.
-
-Doing this last is deliberate: optimising a renderer is measurement work, and by v1.0 there is
-finally a full frame to measure — lights, skinned characters, shadows and a post chain all present —
-instead of a moving target.
-
+- **Renderer throughput** (P2–P6, PR [#147](https://github.com/KingoBoiii/DingoEngine/pull/147)).
+  v0.9's `Renderer3D` CPU-transformed every submitted vertex every frame, so the vertex count was the
+  frame budget. Now: **culling** by frustum and distance (retained submission, an upload arena),
+  **GPU instancing** for meshes repeated 8 or more times (budget 512 draws a frame), **static
+  geometry** (`MeshRendererComponent::Static`, baked once into a `StaticBatch`), a **skin palette
+  arena** with `MaxSkinnedInstances` 1024 (up to 4096) and `AnimatorComponent::CullingMode`, and
+  per-mesh **surface overrides** (`MeshRendererComponent::SetSurface`) so emissive and roughness no
+  longer cost a material each. On llvmpipe (Release, [docs/performance.md](docs/performance.md)):
+  culling takes `mixed` (10,000 meshes, ~90% out of view) from 20.9 to 5.8 ms, instancing takes `repeat`
+  (10,000 copies of five props) from 11.6 to 3.7 ms, and static geometry takes `mixed` from 4.2 to 1.7 ms.
+  On the RX 7900 XTX (Release, median of 3), `mixed` render CPU is 1.48 / 1.46 / 1.47 ms on Vulkan /
+  DX11 / DX12 against 5.72 ms in v0.9.0, and `repeat` is 1.61 / 1.62 / 1.65 ms against 7.48 ms. The
+  targets (0.5 and 0.3 ms) were missed and the owner accepted that for 1.0
+  ([#231](https://github.com/KingoBoiii/DingoEngine/issues/231)).
+- **Perf PRs after #147**, all part of #231: a bit-exact `precise` projection
+  ([#271](https://github.com/KingoBoiii/DingoEngine/pull/271)), SSE bounds and frustum tests
+  ([#280](https://github.com/KingoBoiii/DingoEngine/pull/280)), `ENTT_DISABLE_ASSERT` in Release and
+  Distribution ([#282](https://github.com/KingoBoiii/DingoEngine/pull/282)), reuse of unchanged
+  entities' matrices and bounds ([#283](https://github.com/KingoBoiii/DingoEngine/pull/283)), a
+  hand-written walk of the mesh view ([#284](https://github.com/KingoBoiii/DingoEngine/pull/284)), an
+  inline last-key check ([#286](https://github.com/KingoBoiii/DingoEngine/pull/286)) and an inline point
+  transform ([#287](https://github.com/KingoBoiii/DingoEngine/pull/287)). The instanced draw base moved
+  to a push constant ([#270](https://github.com/KingoBoiii/DingoEngine/pull/270), closes
+  [#201](https://github.com/KingoBoiii/DingoEngine/issues/201)).
+- **Stability** (P7). Per-user logs (five runs kept), a crash handler (a backtrace on Linux, a minidump
+  on Windows), `FatalError`, the `Dingo-UnitTests` doctest app (174 cases as of
+  [#291](https://github.com/KingoBoiii/DingoEngine/pull/291)) and `GraphicsAPI::Headless` without a
+  window or GPU ([#246](https://github.com/KingoBoiii/DingoEngine/pull/246),
+  [#263](https://github.com/KingoBoiii/DingoEngine/pull/263),
+  [#262](https://github.com/KingoBoiii/DingoEngine/pull/262)). Distribution builds define `NDEBUG` and
+  optimise every vendor library ([#291](https://github.com/KingoBoiii/DingoEngine/pull/291),
+  [#292](https://github.com/KingoBoiii/DingoEngine/pull/292)). The smoke tests also crash the render thread, the asset worker and Jolt's workers on purpose, so a lost crash hook on an engine thread turns CI red ([#294](https://github.com/KingoBoiii/DingoEngine/pull/294), closes [#217](https://github.com/KingoBoiii/DingoEngine/issues/217)).
+- **Shipping** (P8, P10). `SaveData`, `SaveSlots` and `Settings`; borderless and exclusive fullscreen
+  with `Window::GetDisplayModes()`; engine-owned launch flags `--graphics`, `--window` and `--no-vsync`
+  ([#254](https://github.com/KingoBoiii/DingoEngine/pull/254)); `THIRD-PARTY-NOTICES.md` (39
+  components); the Inter font in place of Arial; `exeMetadata` for an executable's name, icon and version
+  resource ([docs/shipping.md](docs/shipping.md)); push constants for user materials and compute passes
+  ([#262](https://github.com/KingoBoiii/DingoEngine/pull/262)).
+- **DingoUI, a game UI framework**
+  ([#256](https://github.com/KingoBoiii/DingoEngine/pull/256), closes
+  [#98](https://github.com/KingoBoiii/DingoEngine/issues/98); [docs/game-ui.md](docs/game-ui.md)).
+  `Dingo::UI` is an ImGui facade for debug panels, so games used to build their HUDs from sprites and
+  text by hand. `DingoUI` is an immediate-mode API (`DingoUI::Button("Play")`) with flexbox-style layout
+  anchored to the screen, keyboard and gamepad focus navigation, world-space roots, 9-slice styles and
+  themes, tweens and root transitions, and clicks the UI takes kept from the game
+  (`ImGuiParams::BlockGameInput`). It draws a frame in one draw call. *Marionette*'s HUD and, in
+  [#263](https://github.com/KingoBoiii/DingoEngine/pull/263), *Candlewick*'s moved onto it. Plan:
+  `.claude/plans/2026-10-08-v1.0-game-ui-plan.md`; review:
+  `.claude/reviews/2026-10-14-dingoui-review.md`. ImGui stays the debug UI.
+- **The API pass, versioning and conventions** (P9). 50 findings: 37 changed, 4 deprecated, 9 kept.
+  [docs/versioning.md](docs/versioning.md) sets SemVer from 1.0.0 and
+  [docs/conventions.md](docs/conventions.md) the lifetime rule (a factory returns a ready object or
+  `nullptr`, `delete` frees everything, `Dingo::Internal` is not public). New: `Entity::SetActive`,
+  `ScriptableEntity::OnFixedUpdate`. Sharp edges on invalid input were fixed in
+  [#233](https://github.com/KingoBoiii/DingoEngine/pull/233).
+- **Docs and the Doxygen reference** (P11). A line on every public declaration, built with
+  `doxygen docs/Doxyfile` to 0 warnings and published to GitHub Pages from master by the `API reference`
+  workflow. New guides: [performance](docs/performance.md), [shipping](docs/shipping.md),
+  [saves and settings](docs/saves-and-settings.md), [game UI](docs/game-ui.md) and
+  [migrating to 1.0](docs/migrating-to-1.0.md). The v1.0 review (38 findings, 0 Critical, 2 High, 6
+  Medium, 30 Low) was fixed in
+  [#187](https://github.com/KingoBoiii/DingoEngine/pull/187),
+  [#250](https://github.com/KingoBoiii/DingoEngine/pull/250),
+  [#253](https://github.com/KingoBoiii/DingoEngine/pull/253),
+  [#255](https://github.com/KingoBoiii/DingoEngine/pull/255) and
+  [#262](https://github.com/KingoBoiii/DingoEngine/pull/262).
+- ***Headstone*'s requests**: streaming PCM pushed at runtime
+  ([#218](https://github.com/KingoBoiii/DingoEngine/issues/218),
+  [#222](https://github.com/KingoBoiii/DingoEngine/pull/222)) and standard launch flags
+  ([#237](https://github.com/KingoBoiii/DingoEngine/issues/237),
+  [#254](https://github.com/KingoBoiii/DingoEngine/pull/254)).
+- **Bug fixes**: a stale body handle, a viewport swap-chain leak, a pending acquire, clear alpha and
+  duplicate UUIDs ([#187](https://github.com/KingoBoiii/DingoEngine/pull/187)); saves, window restore
+  size, empty meshes and the `SkinData` budget
+  ([#250](https://github.com/KingoBoiii/DingoEngine/pull/250)); logs, crash boxes, Windows paths and the
+  user-data folder ([#253](https://github.com/KingoBoiii/DingoEngine/pull/253)); material passes keyed
+  on texture and sampler ids ([#230](https://github.com/KingoBoiii/DingoEngine/pull/230),
+  [#234](https://github.com/KingoBoiii/DingoEngine/pull/234)); D3D12 depth clear values
+  ([#264](https://github.com/KingoBoiii/DingoEngine/pull/264)); upside-down model and sphere textures
+  ([#272](https://github.com/KingoBoiii/DingoEngine/issues/272),
+  [#278](https://github.com/KingoBoiii/DingoEngine/pull/278)); the throughput check's one-pixel flakes
+  ([#285](https://github.com/KingoBoiii/DingoEngine/pull/285)).
 - **Asset packing** (shipped early, in v0.9.1; plan `.claude/plans/2026-10-11-asset-packing-plan.md`):
   a shipped game carries one encrypted, compressed `<Game>.dpak` beside its executable instead of a
   loose `assets/` folder. Every engine file read goes through a virtual file system (assimp and
@@ -468,7 +517,150 @@ instead of a moving target.
   release workflow and the Linux packaging ship every example this way. Deterrence, not
   protection: [docs/distribution.md](docs/distribution.md) has the threat model.
 
-**Full game release**: *Hearthvale* (working title), a new cozy builder/farm sim in `examples/`, which replaced *Dungeon Crawler* as the 1.0 release game on 2026-10-08. You build up a valley of fences, crops and houses, then tend it day by day. That makes it the capstone stress test for the engine: thousands of placed objects for culling, instancing and static batching; the heaviest saves and game UI of any example; the day/night sun and lanterns of v0.7 and v0.9; and animated villagers and animals from v0.8. **Released on Itch.io, with Steam as a stretch goal.** The plan is `.claude/plans/2026-10-08-v1.0-plan.md` (§6).
+Doing this last was deliberate: optimising a renderer is measurement work, and by v1.0 there was
+finally a full frame to measure — lights, skinned characters, shadows and a post chain all present —
+instead of a moving target.
+
+**Full game release**: *Hearthvale*
+([#261](https://github.com/KingoBoiii/DingoEngine/pull/261), `examples/Hearthvale`), a cozy
+builder/farm sim that replaced *Dungeon Crawler* as the 1.0 release game on 2026-10-08. You build up a
+valley of fences, crops and houses, then tend it day by day. That makes it the capstone stress test for
+the engine: thousands of placed objects for culling, instancing and static batching; the heaviest saves
+and game UI of any example (everything is drawn through DingoUI); the day/night sun and lanterns of v0.7
+and v0.9; and animated villagers and animals from v0.8. It is meant for itch.io, with Steam as a stretch
+goal; the release workflow does not upload there. The plan is `.claude/plans/2026-10-08-v1.0-plan.md`
+(§6) and the game's own is `.claude/plans/2026-10-08-hearthvale-plan.md`; the game was marked complete on
+2026-10-20. Its README holds the how-to-play, flags and licences, and its review is
+`.claude/reviews/2026-10-15-hearthvale-review.md`.
+
+**Known issues shipped open**:
+[#186](https://github.com/KingoBoiii/DingoEngine/issues/186) (an intermittent Linux Release hang on close
+in Color Quad), [#225](https://github.com/KingoBoiii/DingoEngine/issues/225) (a Δ1 speckle on D3D lit
+surfaces against v0.9.0, accepted),
+[#226](https://github.com/KingoBoiii/DingoEngine/issues/226) and
+[#232](https://github.com/KingoBoiii/DingoEngine/issues/232) (*Marionette*'s render CPU measured 6–9%
+above v0.9.0, to re-time on a quiet machine),
+[#239](https://github.com/KingoBoiii/DingoEngine/issues/239) (the soak script does not judge
+*Marionette*'s memory growth) and
+[#247](https://github.com/KingoBoiii/DingoEngine/issues/247) (the run on real Linux hardware,
+[L26](LINUX-SUPPORT.md#l26), is deferred past 1.0).
+
+**Test**: the cloud sessions ran Linux, GCC, Debug, on Mesa llvmpipe under Xvfb. The owner ran the
+sign-off (`4faaaf0`), step 3 (`5f8b7c5`), a 20-minute soak (`b53f300`) and a 60-minute soak (`c4d4875`)
+on Windows 11 with an RX 7900 XTX, on Vulkan, DX11 and DX12; each passed. Most later PRs carry an owner
+run on all three backends with validation (Vulkan) and the debug layer (DX11, DX12), Debug unless the
+PR says Release or Distribution. No GPU run is recorded for
+[#222](https://github.com/KingoBoiii/DingoEngine/pull/222),
+[#230](https://github.com/KingoBoiii/DingoEngine/pull/230),
+[#246](https://github.com/KingoBoiii/DingoEngine/pull/246),
+[#243](https://github.com/KingoBoiii/DingoEngine/pull/243),
+[#255](https://github.com/KingoBoiii/DingoEngine/pull/255),
+[#259](https://github.com/KingoBoiii/DingoEngine/pull/259),
+[#260](https://github.com/KingoBoiii/DingoEngine/pull/260),
+[#275](https://github.com/KingoBoiii/DingoEngine/pull/275),
+[#289](https://github.com/KingoBoiii/DingoEngine/pull/289),
+[#293](https://github.com/KingoBoiii/DingoEngine/pull/293) or
+[#241](https://github.com/KingoBoiii/DingoEngine/pull/241); the master merges were checked on DX11 and
+DX12 in Release, not Vulkan. *Hearthvale*'s Release `--layout=demo` frame time, 500 buildables, sun
+stepping, night light budget, gamepad, audio and a packed run were not checked on a GPU. Linux has not
+run on real hardware.
+
+## v1.1.0 — Joints, Ragdolls & Fixed Tick
+**Status**: released on 2026-10-29 (straight to master → `84b77a9e`, no release PR).
+
+The first minor release under [versioning](docs/versioning.md): it only adds API, so a game built
+against 1.0 compiles and behaves the same, and a scene made the 1.0 way (`FixedTick = false`) steps
+physics exactly as before. It closes the `physics-coop` issue group, what a physics-driven co-op game
+needs from the engine. The ragdoll plan is `.claude/plans/2026-10-27-physics-coop-plan.md`.
+
+- **Constraints and motors** ([#295](https://github.com/KingoBoiii/DingoEngine/issues/295),
+  [#296](https://github.com/KingoBoiii/DingoEngine/issues/296), PR
+  [#303](https://github.com/KingoBoiii/DingoEngine/pull/303)). Fixed, Point, Hinge, SwingTwist,
+  Distance and Slider joints in `Physics3D` (`ConstraintParams3D`) and in a scene
+  (`Constraint3DComponent`), with Position and Velocity motors on Hinge and SwingTwist and an F9 motor
+  panel. [Constraints](docs/physics-3d.md#constraints).
+- **Breakable constraints** ([#309](https://github.com/KingoBoiii/DingoEngine/issues/309), PR
+  [#311](https://github.com/KingoBoiii/DingoEngine/pull/311)). `BreakForce`/`BreakTorque`, the reaction
+  readback, `ConsumeBrokenConstraints` and `ScriptableEntity::OnConstraintBroken`; a broken joint's
+  component is removed. [Breaking](docs/physics-3d.md#breaking).
+- **Collision groups** ([#297](https://github.com/KingoBoiii/DingoEngine/issues/297), PR
+  [#303](https://github.com/KingoBoiii/DingoEngine/pull/303)). A set of bodies ignores each other
+  without pair lists. [Collision groups](docs/physics-3d.md#collision-groups).
+- **Active ragdolls** ([#298](https://github.com/KingoBoiii/DingoEngine/issues/298),
+  [#307](https://github.com/KingoBoiii/DingoEngine/issues/307), PRs
+  [#306](https://github.com/KingoBoiii/DingoEngine/pull/306),
+  [#308](https://github.com/KingoBoiii/DingoEngine/pull/308)). `RagdollComponent` builds a ragdoll from
+  a skinned model's skeleton and drives it toward the animated pose; `.ragdoll` recipes override the
+  automatic build and hot-reload; `Animator::BlendGlobalTransforms`, `RigidBodyParams3D::Mass` and
+  `Scene::GetRagdollBody`. [Ragdolls](docs/animation.md#ragdolls).
+- **Fixed simulation tick** ([#299](https://github.com/KingoBoiii/DingoEngine/issues/299), PR
+  [#304](https://github.com/KingoBoiii/DingoEngine/pull/304)). Opt-in `SceneParams::FixedTick` steps
+  physics with `OnFixedUpdate`, with tick numbers and render interpolation between ticks.
+  [Fixed simulation tick](docs/scenes-and-ecs.md#fixed-simulation-tick-v11).
+- **Microphone capture** ([#300](https://github.com/KingoBoiii/DingoEngine/issues/300), PR
+  [#304](https://github.com/KingoBoiii/DingoEngine/pull/304)). `AudioEngine::StartCapture` and
+  `ReadCaptured`, gain, a noise gate, device switching and loss fallback.
+  [Capture](docs/audio.md#capture-v11).
+
+Shipped open: the v1.0.0 list, unchanged
+([#186](https://github.com/KingoBoiii/DingoEngine/issues/186),
+[#225](https://github.com/KingoBoiii/DingoEngine/issues/225),
+[#226](https://github.com/KingoBoiii/DingoEngine/issues/226)/[#232](https://github.com/KingoBoiii/DingoEngine/issues/232),
+[#239](https://github.com/KingoBoiii/DingoEngine/issues/239),
+[#247](https://github.com/KingoBoiii/DingoEngine/issues/247)).
+
+**Test**: the cloud sessions ran Linux, GCC, Debug, on Mesa llvmpipe under Xvfb. The owner ran every
+feature PR on Windows 11 with an RX 7900 XTX, Debug, on Vulkan (validation), DX11 and DX12 (debug
+layer): `--test=constraint` 181, `--test=ragdoll` 40, `--test=fixedtick` 14 and `--test=capture` 15
+PASS, with collider, hierarchy, anim and bus as regressions, and no `VUID-` or debug-layer messages.
+Smoothness at 144 Hz, the microphone level following a voice and dragging the panel sliders were checked
+only in part by hand. Linux has not run on real hardware.
+
+## v1.2.0 — Crash Reporting
+**Status**: released on 2026-11-03 (PR #322 → `0f418603`).
+
+A minor release: it adds API, so a game built against 1.1 compiles unchanged. The headline is opt-in
+crash and error reporting, compiled into every Release and Distribution build, so the released engine
+packages and example games carry it. The rest is CI work on the intermittent Linux hang on close
+([#186](https://github.com/KingoBoiii/DingoEngine/issues/186)), which stays open.
+
+- **Crash and error reporting** ([#316](https://github.com/KingoBoiii/DingoEngine/pull/316),
+  [#320](https://github.com/KingoBoiii/DingoEngine/pull/320),
+  [#321](https://github.com/KingoBoiii/DingoEngine/pull/321)): `ApplicationParams::CrashReporting`
+  (`Dsn`, `Enabled`, `Environment`, `Release`, `SendAttachments`) and
+  `Application::SetCrashReportingEnabled`/`IsCrashReportingEnabled`/`IsCrashReportingAvailable` send
+  reports to a Sentry-compatible server (Sentry or GlitchTip) through sentry-native 0.17.4.
+  `Error`/`Fatal` log lines become events (each message once per run, at most 25 a run), lower levels
+  become breadcrumbs. A crash written by the engine's own handler is sent on the next launch, once,
+  and only if reporting was on when it crashed. It stays off until the game gives a DSN and the player
+  opts in. It is compiled into Release and Distribution, and into Debug and Debug-ASan with premake
+  `--crash-reporting`. On Linux those builds link the system `libcurl.so.4`. With `SendAttachments`,
+  exit waits up to 10 s for an upload in progress.
+- **Stop signals in windowed apps** ([#319](https://github.com/KingoBoiii/DingoEngine/pull/319)):
+  SIGINT and SIGTERM on Linux, and a console Ctrl+C or close on Windows, now end a windowed app
+  through `Close()`, so `OnDetach` and `OnDestroy` run and it exits 0. Before, the signal killed it
+  with no teardown.
+- **CI and the Linux hang on close** ([#313](https://github.com/KingoBoiii/DingoEngine/pull/313),
+  [#315](https://github.com/KingoBoiii/DingoEngine/pull/315),
+  [#317](https://github.com/KingoBoiii/DingoEngine/pull/317),
+  [#318](https://github.com/KingoBoiii/DingoEngine/pull/318),
+  [#319](https://github.com/KingoBoiii/DingoEngine/pull/319)): CI's Linux builds keep symbols
+  (premake `--keep-symbols`; release assets stay stripped), and a hung smoke run records per-thread
+  CPU, a longer gdb dump, the X server's socket queues, the frame index and the close state. Those
+  records show the app is not deadlocked: the close event is lost. The smoke test now resends the
+  close, then sends SIGTERM, and passes with a `::warning::` naming #186. `setup-linux` fails on a
+  failed Vulkan SDK version lookup instead of a later 404
+  ([#312](https://github.com/KingoBoiii/DingoEngine/issues/312),
+  [#314](https://github.com/KingoBoiii/DingoEngine/pull/314)).
+
+**Test**: the owner ran `--test=background` and `--test=cursor` on Windows 11 with an RX 7900 XTX on
+Vulkan (validation), DX11 and DX12 (debug layer), in Debug for #316 and in Release for #320, with no
+`VUID-` or debug-layer messages. The crash flow (an error event, a crash then a relaunch, no resend)
+ran on Vulkan against a local mock server, in a `--crash-reporting` Debug build and in a default
+Release build. `DingoEngine.lib` holds sentry in Release and Distribution and none in Debug. Linux
+CI's `crash-reporting-linux` job runs the same flow under Xvfb and llvmpipe. #319 records a Linux
+check only (GCC, Debug, llvmpipe); no GPU run or Windows Ctrl+C check is recorded on it. Linux has not
+run on real hardware.
 
 ---
 

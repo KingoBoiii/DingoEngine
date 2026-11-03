@@ -76,7 +76,7 @@ namespace Dingo
 			bool IsReload = false;
 		};
 
-		// A file a watched asset reads beside its own, such as a model's .events sidecar.
+		// A file a watched asset reads beside its own, such as a model's .events or .ragdoll sidecar.
 		struct CompanionWatch
 		{
 			std::filesystem::path Path;
@@ -140,7 +140,7 @@ namespace Dingo
 			// progress, and how far through them the last poll got.
 			std::vector<AssetHandle> WatchList;
 			std::size_t WatchCursor = 0;
-			std::unordered_map<AssetHandle, CompanionWatch> Companions;
+			std::unordered_map<AssetHandle, std::vector<CompanionWatch>> Companions;
 			std::unordered_map<PackageHandle, MountedPackage> Packages;
 		};
 

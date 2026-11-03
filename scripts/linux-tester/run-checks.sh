@@ -27,11 +27,18 @@ if [[ -n $libs ]] && ! grep -q 'libvulkan\.so\.1' <<< "$libs"; then
 	echo "  Arch:          sudo pacman -S vulkan-icd-loader vulkan-tools (plus vulkan-radeon, vulkan-intel or nvidia-utils)" >&2
 	exit 1
 fi
+if [[ -n $libs ]] && ! grep -q 'libcurl\.so\.4' <<< "$libs"; then
+	echo "libcurl (libcurl.so.4) is missing; the programs link it for crash reports. Install it first:" >&2
+	echo "  Ubuntu/Debian: sudo apt install libcurl4t64 (libcurl4 before Ubuntu 24.04 and Debian 13)" >&2
+	echo "  Fedora:        sudo dnf install libcurl" >&2
+	echo "  Arch:          sudo pacman -S curl" >&2
+	exit 1
+fi
 
 close_with_xlib=1
 if ! python3 -c 'import Xlib' 2>/dev/null; then
 	close_with_xlib=0
-	echo "python3-xlib is missing, so programs are stopped with SIGTERM and their shutdown goes unchecked."
+	echo "python3-xlib is missing, so programs are stopped with SIGTERM instead of closing their window."
 	echo "  Install it for the full check: python3-xlib (Ubuntu, Debian, Fedora) or python-xlib (Arch)."
 	echo
 fi
@@ -129,6 +136,7 @@ for dir in "$HERE"/examples/*/; do
 done
 
 run "marionette-check" examples/Marionette Marionette --check
+SECONDS_PER_RUN=$((SECONDS_PER_RUN > 90 ? SECONDS_PER_RUN : 90)) run "hearthvale-check" examples/Hearthvale Hearthvale --check
 SECONDS_PER_RUN=$((SECONDS_PER_RUN > 30 ? SECONDS_PER_RUN : 30)) run "marionette-perf" examples/Marionette Marionette --autoplay --perf --vsync=off
 
 say ""

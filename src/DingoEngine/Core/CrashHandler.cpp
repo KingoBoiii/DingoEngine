@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Core/CrashHandler.h"
 #include "DingoEngine/Core/FatalError.h"
+#include "DingoEngine/Core/CrashReporter.h"
 
 #include <algorithm>
 #include <atomic>
@@ -39,6 +40,7 @@ namespace Dingo
 	{
 
 		bool s_Installed = false;
+		std::atomic<Internal::CrashHandler::ProbeFunction> s_Probes[static_cast<size_t>(Internal::CrashHandler::ProbeThread::Count)] = {};
 		char s_AppName[128] = "The application";
 
 		// Appends to a fixed buffer without allocating, for the handlers.
@@ -325,6 +327,7 @@ namespace Dingo
 		{
 			if (!BeginReport())
 				return;
+			Internal::CrashReporter::MuteForCrash();
 
 			FlushLogIfSafe();
 
@@ -335,6 +338,8 @@ namespace Dingo
 			const bool written = WriteDumpFromThread(exception);
 
 			LineBuilder footer;
+			if (Internal::CrashReporter::IsEnabled())
+				footer << "*** Crash reporting: on\n";
 			if (written)
 				footer << "*** Minidump: " << s_DumpPathUtf8 << "\n";
 			else
@@ -603,6 +608,7 @@ namespace Dingo
 				RaiseDefault(signal);
 				return;
 			}
+			Internal::CrashReporter::MuteForCrash();
 
 			FlushLogIfSafe();
 
@@ -623,6 +629,8 @@ namespace Dingo
 			backtrace_symbols_fd(frames, count, STDERR_FILENO);
 
 			LineBuilder footer;
+			if (Internal::CrashReporter::IsEnabled())
+				footer << "*** Crash reporting: on\n";
 			footer << "*** End of backtrace\n";
 			WriteBoth(footer);
 
@@ -724,6 +732,7 @@ namespace Dingo
 				}
 			}
 
+			Internal::CrashReporter::MuteForCrash();
 			ReportFatal(std::format("std::terminate called {}", reason));
 			CrashOnTerminate();
 		}
@@ -750,6 +759,17 @@ namespace Dingo
 		RunGuarded(body, context);
 	}
 
+	void Internal::CrashHandler::ArmProbe(ProbeThread thread, ProbeFunction fn)
+	{
+		s_Probes[static_cast<size_t>(thread)].store(fn);
+	}
+
+	Internal::CrashHandler::ProbeFunction Internal::CrashHandler::TakeProbe(ProbeThread thread)
+	{
+		std::atomic<ProbeFunction>& probe = s_Probes[static_cast<size_t>(thread)];
+		return probe.load(std::memory_order_relaxed) ? probe.exchange(nullptr) : nullptr;
+	}
+
 	void Internal::CrashHandler::ShowMessage(std::string_view title, std::string_view message)
 	{
 #if defined(DE_PLATFORM_WINDOWS) && defined(DE_DISTRIBUTION)
@@ -770,6 +790,7 @@ namespace Dingo
 		const std::string_view file = location.file_name();
 		const std::string where = std::format("{}:{}", file.substr(file.find_last_of("/\\") + 1), location.line());
 		ReportFatal(std::format("Fatal error: {} ({})", message, where));
+		Internal::CrashReporter::FlushBeforeFatal();
 
 		const std::filesystem::path& logFile = Log::GetFilePath();
 		const std::string text = logFile.empty()

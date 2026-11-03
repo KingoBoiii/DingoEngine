@@ -4,10 +4,12 @@
 // simulation bodies in step. Lives under src/ so EnTT stays a private
 // implementation detail.
 
+#include "DingoEngine/Core/UUID.h"
 #include "DingoEngine/Physics/2D/Physics2D.h"
 #include "DingoEngine/Physics/3D/Physics3D.h"
 #include "DingoEngine/Physics/3D/CharacterController3D.h"
 #include "DingoEngine/Scene/Systems/HierarchySystem.h"
+#include "DingoEngine/Scene/Systems/RagdollSystem.h"
 
 #include <entt/entt.hpp>
 #include <glm/glm.hpp>
@@ -15,6 +17,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace Dingo
@@ -30,7 +34,7 @@ namespace Dingo
 			static constexpr float k_MaxStepTime = k_MaxCollisionSteps / 60.0f;
 
 			// Removing a body, controller or sound settings component releases what it built.
-			void Connect(entt::registry& registry);
+			void Connect(entt::registry& registry, const std::unordered_map<UUID, entt::entity>& entityMap);
 
 			// Creates a 2D world only if the registry has 2D rigid bodies, and a 3D world
 			// only if it has 3D rigid bodies or character controllers, so a scene pays for
@@ -46,6 +50,19 @@ namespace Dingo
 			// stores the local transform that reproduces its simulated world pose, except a
 			// kinematic child, which is driven before the step to where its parent will be after it.
 			void Step(entt::registry& registry, float deltaTime);
+
+			// A joint that broke in a step. BodyA is the entity that owned the Constraint3DComponent
+			// (its component is already removed), BodyB the one it joined to, or null for the world.
+			struct BrokenConstraint
+			{
+				entt::entity BodyA;
+				entt::entity BodyB;
+				ConstraintBreak3D Info;
+			};
+
+			// Appends the breaks since the last call, in step then constraint id order, and forgets them.
+			// The caller delivers them to scripts outside the step.
+			void TakeBrokenConstraints(std::vector<BrokenConstraint>& out);
 
 			// Instantiates whatever body/controller the entity's components call for.
 			// Each route no-ops if its world isn't live or the component is absent.
@@ -70,6 +87,11 @@ namespace Dingo
 			PhysicsBodyId3D RuntimeBody3D(const entt::registry& registry, entt::entity handle) const;
 			// The entity whose live body this is (its UserData, checked against its runtime), else null.
 			entt::entity EntityOfBody3D(const entt::registry& registry, PhysicsBodyId3D body) const;
+			// After the frame's animation and physics: hands each ragdoll's simulated bones to its animator,
+			// alpha of the way from their previous step's pose to their latest (below 0: as they are).
+			void PoseRagdolls(entt::registry& registry, float alpha);
+			bool HasRagdolls(const entt::registry& registry) const;
+			PhysicsBodyId3D RagdollBody(const entt::registry& registry, entt::entity handle, std::string_view joint) const;
 			// The entities with a body or a character controller inside the sensor entity's body.
 			void SensorOverlaps3D(const entt::registry& registry, entt::entity sensor, std::vector<entt::entity>& out) const;
 
@@ -77,6 +99,8 @@ namespace Dingo
 			void DropBody2D(entt::registry& registry, entt::entity handle);
 			void DropBody3D(entt::registry& registry, entt::entity handle);
 			void DropController(entt::registry& registry, entt::entity handle);
+			void DropConstraint(entt::registry& registry, entt::entity handle);
+			void DropRagdoll(entt::registry& registry, entt::entity handle);
 
 			// Start's bake passes `memo`; a single late body works its pose out on demand.
 			void CreateBody2D(entt::registry& registry, entt::entity handle, HierarchySystem::WorldMemo* memo = nullptr);
@@ -101,6 +125,16 @@ namespace Dingo
 			// and every ancestor's controller ignores it. Recomputed each step and diffed against the
 			// last one, so reparenting, detaching and bodies coming and going all settle before the step.
 			void SyncAncestorFilters(entt::registry& registry);
+
+			// Drops the joints whose bodies are gone, then builds one for every active entity with a
+			// Constraint3DComponent and a body whose Other has its body too. Runs at Start and every step,
+			// which also covers reactivation, duplication and bodies created late.
+			void SyncConstraints(entt::registry& registry);
+			void BuildConstraint(entt::registry& registry, entt::entity handle);
+
+			// Right after the 3D step: empties the world's broken-joint list and, for each, removes the
+			// Constraint3DComponent (SyncConstraints would rebuild it otherwise) and queues the delivery.
+			void DrainBrokenConstraints(entt::registry& registry);
 
 		private:
 			struct ChildWriteBack
@@ -159,6 +193,16 @@ namespace Dingo
 
 			// Applied last step, sorted: (child body << 32 | ancestor body) and (controller slot << 32 |
 			// child body). The Wanted vectors are this step's scratch.
+			const std::unordered_map<UUID, entt::entity>* m_EntityMap = nullptr;
+			// Entities already logged for a constraint that cannot build yet (retried silently), and
+			// those the physics world rejected (not retried until their constraint or body is dropped).
+			std::unordered_set<entt::entity> m_ConstraintReported;
+			std::unordered_set<entt::entity> m_ConstraintRejected;
+			std::vector<entt::entity> m_ConstraintScratch;
+			std::vector<ConstraintBreak3D> m_BreakScratch;
+			std::vector<BrokenConstraint> m_Broken;
+			RagdollSystem m_Ragdolls;
+
 			std::vector<std::uint64_t> m_IgnoredPairs;
 			std::vector<std::uint64_t> m_IgnoredControllerBodies;
 			std::vector<std::uint64_t> m_WantedPairs;

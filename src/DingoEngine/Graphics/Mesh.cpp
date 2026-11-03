@@ -181,9 +181,11 @@ namespace Dingo
 					radius * sinTheta * sinPhi
 				};
 				glm::vec3 normal   = glm::normalize(pos);
+				// Images load bottom row first, so v = 1 at the +Y pole draws them upright, and u falls
+				// with phi so they read left to right from outside instead of mirrored.
 				glm::vec2 texcoord = {
-					static_cast<float>(seg)  / static_cast<float>(segments),
-					static_cast<float>(ring) / static_cast<float>(rings)
+					1.0f - static_cast<float>(seg)  / static_cast<float>(segments),
+					1.0f - static_cast<float>(ring) / static_cast<float>(rings)
 				};
 
 				vertices.push_back({ pos, normal, texcoord });

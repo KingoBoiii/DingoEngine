@@ -7,6 +7,7 @@
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
+#include "DingoEngine/Graphics/Renderer3DAccess.h"
 #include "DingoEngine/Graphics/Model.h"
 
 #include "DingoEngine/Scene/SceneDebug.h"
@@ -21,6 +22,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <cstring>
 
 namespace
 {
@@ -56,14 +58,19 @@ namespace Dingo
 {
 
 	Scene::Scene(const std::string& name)
-		: m_Data(new Internal::SceneData()), m_Name(name)
+		: Scene(name, SceneParams())
+	{
+	}
+
+	Scene::Scene(const std::string& name, const SceneParams& params)
+		: m_Data(new Internal::SceneData()), m_Name(name), m_Params(params)
 	{
 		static std::atomic<uint64_t> s_ProbeSalt = 0;
 		m_Data->ShadowProbes.Salt = (++s_ProbeSalt) * 0x9e3779b97f4a7c15ull;
 		Internal::AnimationSystem::Connect(m_Data->Registry, m_Data->AnimationEvents);
 		Internal::ParticleSync::Connect(m_Data->Registry, m_Data->EntityMap);
 		Internal::AudioSync::Connect(m_Data->Registry);
-		m_Data->Physics.Connect(m_Data->Registry);
+		m_Data->Physics.Connect(m_Data->Registry, m_Data->EntityMap);
 	}
 
 	Scene::~Scene()
@@ -121,7 +128,7 @@ namespace Dingo
 		std::vector<std::pair<UUID, UUID>> copies;
 		Entity clone = DuplicateSubtree(source, source.GetParent(), copies);
 
-		// A copied ParticleEventComponent still names the source's emitters; one inside the copied
+		// A copied ParticleEventComponent still names the source's emitters, and a Constraint3DComponent its source's other body; one inside the copied
 		// subtree is the clone's own counterpart now. Bindings to emitters outside it stay.
 		std::unordered_map<UUID, UUID> remap(copies.begin(), copies.end());
 		entt::registry& registry = m_Data->Registry;
@@ -138,6 +145,12 @@ namespace Dingo
 					if (target != remap.end())
 						binding.Emitter = target->second;
 				}
+			}
+			if (Constraint3DComponent* constraint = registry.try_get<Constraint3DComponent>(it->second))
+			{
+				const auto target = remap.find(constraint->Other);
+				if (target != remap.end())
+					constraint->Other = target->second;
 			}
 		}
 		return clone;
@@ -189,6 +202,8 @@ namespace Dingo
 		CopyComponentIfExists<SphereCollider3DComponent>(registry, dst, src);
 		CopyComponentIfExists<CapsuleCollider3DComponent>(registry, dst, src);
 		CopyComponentIfExists<MeshCollider3DComponent>(registry, dst, src);
+		CopyComponentIfExists<Constraint3DComponent>(registry, dst, src);
+		CopyComponentIfExists<RagdollComponent>(registry, dst, src);
 		CopyComponentIfExists<CharacterController3DComponent>(registry, dst, src);
 		CopyComponentIfExists<AudioSourceComponent>(registry, dst, src);
 		CopyComponentIfExists<AudioListenerComponent>(registry, dst, src);
@@ -329,6 +344,7 @@ namespace Dingo
 			m_Data->DebugRegistered = true;
 		}
 
+		const bool fixedTick = m_Params.FixedTick;
 		{
 			DE_PROFILE_SCOPE("ScriptSystem::Update");
 			m_Data->Updating = true;
@@ -343,17 +359,32 @@ namespace Dingo
 				carried -= step;
 				++steps;
 				m_Data->Scripts.FixedUpdate(step);
+				if (fixedTick)
+				{
+					// A tick is whole: the destroys its scripts asked for land before its physics step.
+					m_Data->Updating = false;
+					FlushPendingDestroys();
+					DE_PROFILE_SCOPE("PhysicsSync::Step");
+					m_Data->Interpolation.BeforeTick(m_Data->Registry, m_Data->Physics);
+					m_Data->Physics.Step(m_Data->Registry, step);
+					m_Data->Interpolation.AfterTick(m_Data->Registry);
+					DeliverConstraintBreaks();
+					++m_Data->Tick;
+					m_Data->Updating = true;
+				}
 			}
 			if (carried >= step)
+			{
+				m_Data->DroppedFixedSteps += static_cast<uint64_t>(carried / step);
 				carried = std::fmod(carried, step);
+			}
+			m_Data->FixedStepsLastUpdate = steps;
 
 			m_Data->Scripts.Update(deltaTime);
 			m_Data->Updating = false;
 		}
 
-		for (entt::entity handle : m_Data->PendingDestroy)
-			DestroyEntityNow(static_cast<std::uint32_t>(handle));
-		m_Data->PendingDestroy.clear();
+		FlushPendingDestroys();
 
 		// Animation events reach scripts here, so their destroys wait as theirs do in OnUpdate.
 		{
@@ -368,15 +399,23 @@ namespace Dingo
 			m_Data->Updating = false;
 		}
 
-		for (entt::entity handle : m_Data->PendingDestroy)
-			DestroyEntityNow(static_cast<std::uint32_t>(handle));
-		m_Data->PendingDestroy.clear();
+		FlushPendingDestroys();
 
 		// Step physics after the script pass (scripts may have applied forces this
 		// frame), then write the simulated transforms back onto the entities.
+		if (!fixedTick)
 		{
 			DE_PROFILE_SCOPE("PhysicsSync::Step");
 			m_Data->Physics.Step(m_Data->Registry, deltaTime);
+			DeliverConstraintBreaks();
+		}
+
+		if (m_Data->Physics.HasRagdolls(m_Data->Registry))
+		{
+			DE_PROFILE_SCOPE("PhysicsSync::PoseRagdolls");
+			// Posed in the frame the scene is drawn in, so the bones land where their bodies are drawn.
+			InterpolatedView view(*this);
+			m_Data->Physics.PoseRagdolls(m_Data->Registry, fixedTick && m_Params.InterpolatePhysics ? GetFixedTimeAlpha() : -1.0f);
 		}
 
 		// Transforms are final for the frame now (physics + controller write-back
@@ -385,7 +424,80 @@ namespace Dingo
 		m_Data->Scripts.FreeDetached();
 
 		DE_PROFILE_SCOPE("AudioSync");
+		InterpolatedView view(*this);
 		Internal::AudioSync::SyncListenerAndSources(m_Data->Registry, m_Data->Memo);
+	}
+
+	void Scene::DeliverConstraintBreaks()
+	{
+		std::vector<Internal::PhysicsSync::BrokenConstraint> broken;
+		m_Data->Physics.TakeBrokenConstraints(broken);
+		if (broken.empty())
+			return;
+
+		const bool wasUpdating = m_Data->Updating;
+		m_Data->Updating = true;
+		const entt::registry& registry = m_Data->Registry;
+		for (const Internal::PhysicsSync::BrokenConstraint& item : broken)
+		{
+			const bool aValid = registry.valid(item.BodyA);
+			const bool bValid = item.BodyB != entt::null && registry.valid(item.BodyB);
+			const Entity a = aValid ? Wrap(static_cast<std::uint32_t>(item.BodyA)) : Entity();
+			const Entity b = bValid ? Wrap(static_cast<std::uint32_t>(item.BodyB)) : Entity();
+			if (aValid)
+				m_Data->Scripts.DeliverConstraintBroken(item.BodyA, b, item.Info);
+			if (bValid)
+				m_Data->Scripts.DeliverConstraintBroken(item.BodyB, a, item.Info);
+		}
+		m_Data->Updating = wasUpdating;
+		if (!wasUpdating)
+			FlushPendingDestroys();
+	}
+
+	void Scene::FlushPendingDestroys()
+	{
+		for (entt::entity handle : m_Data->PendingDestroy)
+			DestroyEntityNow(static_cast<std::uint32_t>(handle));
+		m_Data->PendingDestroy.clear();
+	}
+
+	Scene::InterpolatedView::InterpolatedView(const Scene& scene)
+		: m_Scene(scene.m_Params.FixedTick && scene.m_Params.InterpolatePhysics ? &scene : nullptr)
+	{
+		if (m_Scene)
+			m_Scene->m_Data->Interpolation.Begin(m_Scene->m_Data->Registry, m_Scene->m_Data->Physics, m_Scene->GetFixedTimeAlpha());
+	}
+
+	Scene::InterpolatedView::~InterpolatedView()
+	{
+		if (m_Scene)
+			m_Scene->m_Data->Interpolation.End(m_Scene->m_Data->Registry);
+	}
+
+	std::uint64_t Scene::GetTick() const
+	{
+		return m_Data->Tick;
+	}
+
+	void Scene::SetTick(std::uint64_t tick)
+	{
+		m_Data->Tick = tick;
+	}
+
+	std::uint32_t Scene::GetFixedStepsLastUpdate() const
+	{
+		return m_Data->FixedStepsLastUpdate;
+	}
+
+	std::uint64_t Scene::GetDroppedFixedSteps() const
+	{
+		return m_Data->DroppedFixedSteps;
+	}
+
+	glm::mat4 Scene::GetDrawnWorldTransform(Entity entity) const
+	{
+		InterpolatedView view(*this);
+		return entity.GetWorldTransform();
 	}
 
 	void Scene::SetFixedTimeStep(float seconds)
@@ -465,6 +577,7 @@ namespace Dingo
 
 	void Scene::RenderEntities(Renderer2D& renderer)
 	{
+		InterpolatedView view(*this);
 		DE_PROFILE_SCOPE("Scene::RenderEntities");
 		Internal::HierarchySystem::WorldMemo& memo = m_Data->Memo;
 		memo.Begin(m_Data->Registry);
@@ -582,20 +695,69 @@ namespace Dingo
 			}
 			data.SkinnedViews.push_back(visibility);
 		}
+
+		template<typename T>
+		bool SameBits(const T& a, const T& b)
+		{
+			return std::memcmp(&a, &b, sizeof(T)) == 0;
+		}
+
+		const Internal::SceneData::MeshRenderMemo& RenderMemo(std::vector<Internal::SceneData::MeshRenderMemo>& entries, Internal::HierarchySystem::WorldMemo& memo,
+			entt::entity entity, const Transform3DComponent& transform, const Mesh& mesh)
+		{
+			const std::size_t index = static_cast<std::size_t>(entt::to_entity(entity));
+			if (index >= entries.size())
+				entries.resize(index + 1);
+			Internal::SceneData::MeshRenderMemo& entry = entries[index];
+
+			const bool root = !memo.HasParent(entity);
+			if (!root || !entry.Root || !SameBits(entry.Position, transform.Position) || !SameBits(entry.Rotation, transform.Rotation) || !SameBits(entry.Scale, transform.Scale))
+			{
+				const glm::mat4 world = memo.Transform(entity, transform);
+				if (!SameBits(entry.World, world))
+				{
+					entry.World = world;
+					entry.HasBounds = false;
+				}
+				entry.Root = root;
+				entry.Position = transform.Position;
+				entry.Rotation = transform.Rotation;
+				entry.Scale = transform.Scale;
+			}
+			if (!entry.HasBounds || !SameBits(entry.MeshMin, mesh.GetBoundsMin()) || !SameBits(entry.MeshMax, mesh.GetBoundsMax()))
+			{
+				entry.MeshMin = mesh.GetBoundsMin();
+				entry.MeshMax = mesh.GetBoundsMax();
+				entry.Bounded = Internal::Renderer3DAccess::WorldBounds(mesh, entry.World, entry.Bounds);
+				entry.HasBounds = true;
+			}
+			return entry;
+		}
 	}
 
 	void Scene::RenderEntities3D(Renderer3D& renderer)
 	{
+		InterpolatedView view(*this);
 		DE_PROFILE_SCOPE("Scene::RenderEntities3D");
 		Internal::HierarchySystem::WorldMemo& memo = m_Data->Memo;
 		memo.Begin(m_Data->Registry);
 		TrackSkinnedView(*m_Data, renderer);
 
 		Internal::StaticGeometry::Bake* bake = m_Data->StaticMeshes.Find(renderer);
-		auto view = m_Data->Registry.view<Transform3DComponent, MeshRendererComponent>(entt::exclude<Internal::InactiveComponent>);
-		for (entt::entity entity : view)
+		entt::registry& registry = m_Data->Registry;
+		const auto& transforms = registry.storage<Transform3DComponent>();
+		auto& meshes = registry.storage<MeshRendererComponent>();
+		const auto& inactive = registry.storage<Internal::InactiveComponent>();
+		const bool anyInactive = !inactive.empty();
+		// Walks the view's own lead pool, so submission order, and with it batching, stays the view's.
+		const entt::sparse_set& lead = *registry.view<Transform3DComponent, MeshRendererComponent>(entt::exclude<Internal::InactiveComponent>).handle();
+		const entt::sparse_set& other = &lead == &meshes ? static_cast<const entt::sparse_set&>(transforms) : meshes;
+		for (const entt::entity entity : lead)
 		{
-			auto [transform, mesh] = view.get<Transform3DComponent, MeshRendererComponent>(entity);
+			if (!other.contains(entity) || (anyInactive && inactive.contains(entity)))
+				continue;
+			const Transform3DComponent& transform = transforms.get(entity);
+			MeshRendererComponent& mesh = meshes.get(entity);
 			if (!mesh.Visible || !mesh.Mesh)
 				continue;
 
@@ -609,7 +771,9 @@ namespace Dingo
 				m_Data->StaticMeshes.Track(*bake, entity, baked);
 				continue;
 			}
-			renderer.SubmitMesh(mesh.Mesh, memo.Transform(entity, transform), mesh.Color, mesh.Material, mesh.Shadows, mesh.ShadowGroups, mesh.CullDistance, mesh.Surface ? &*mesh.Surface : nullptr);
+			const Internal::SceneData::MeshRenderMemo& entry = RenderMemo(m_Data->MeshMemo, memo, entity, transform, *mesh.Mesh);
+			Internal::Renderer3DAccess::SubmitMesh(renderer, mesh.Mesh, entry.World, mesh.Color, mesh.Material, mesh.Shadows, mesh.ShadowGroups, mesh.CullDistance,
+				mesh.Surface ? &*mesh.Surface : nullptr, entry.Bounds, entry.Bounded);
 		}
 		if (bake)
 			m_Data->StaticMeshes.Submit(*bake, renderer);
@@ -660,6 +824,7 @@ namespace Dingo
 
 	void Scene::SubmitLights(Renderer3D& renderer, Entity camera, bool shadowProbes)
 	{
+		InterpolatedView view(*this);
 		const entt::entity cameraHandle = IsValid(camera) ? static_cast<entt::entity>(camera.m_Handle) : entt::null;
 		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer, m_Data->Memo, glm::vec3(m_ClearColor), shadowProbes ? &m_Data->ShadowProbes : nullptr, cameraHandle);
 	}
@@ -739,6 +904,7 @@ namespace Dingo
 
 	glm::mat4 Scene::GetCameraViewProjection(Entity cameraEntity, float aspect)
 	{
+		InterpolatedView view(*this);
 		if (!IsValid(cameraEntity))
 			return glm::mat4(1.0f);
 
@@ -753,11 +919,13 @@ namespace Dingo
 
 	Ray Scene::ScreenPointToRay(const glm::vec2& screenPos, const glm::vec2& viewportSize)
 	{
+		InterpolatedView view(*this);
 		return Internal::CameraUtils::ScreenPointToRay(m_Data->Registry, screenPos, viewportSize);
 	}
 
 	std::optional<glm::vec2> Scene::WorldToScreenPoint(const glm::vec3& worldPos, const glm::vec2& viewportSize) const
 	{
+		InterpolatedView view(*this);
 		return Internal::CameraUtils::WorldToScreenPoint(m_Data->Registry, worldPos, viewportSize);
 	}
 
@@ -770,6 +938,8 @@ namespace Dingo
 
 		m_IsRunning = true;
 		m_Data->FixedTimeAccumulator = 0.0f;
+		m_Data->Tick = 0;
+		m_Data->DroppedFixedSteps = 0;
 
 		// Discard any transition requested before this run (or left over from a
 		// previous run) so a stale request can't fire the instant this scene reactivates.
@@ -841,6 +1011,7 @@ namespace Dingo
 
 	void Scene::StopPhysics()
 	{
+		m_Data->Interpolation.Clear(m_Data->Registry);
 		m_Data->Physics.Stop(m_Data->Registry);
 	}
 
@@ -890,6 +1061,14 @@ namespace Dingo
 			return k_InvalidBody3D;
 
 		return m_Data->Physics.RuntimeBody3D(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle));
+	}
+
+	PhysicsBodyId3D Scene::GetRagdollBody(Entity entity, std::string_view joint) const
+	{
+		if (!IsValid(entity))
+			return k_InvalidBody3D;
+
+		return m_Data->Physics.RagdollBody(m_Data->Registry, static_cast<entt::entity>(entity.m_Handle), joint);
 	}
 
 	Entity Scene::GetEntityFromBody3D(PhysicsBodyId3D body)

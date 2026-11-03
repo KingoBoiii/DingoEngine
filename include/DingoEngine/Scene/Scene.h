@@ -12,6 +12,7 @@
 #include <functional>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace Dingo
@@ -29,6 +30,18 @@ namespace Dingo
 
 	namespace Internal { struct SceneData; class ScriptSystem; }
 
+	/// Options fixed when a Scene is made.
+	struct SceneParams
+	{
+		/// True runs OnFixedUpdate and the physics worlds on one fixed step (Scene::SetFixedTimeStep),
+		/// counted by Scene::GetTick. False (default) keeps the per-frame physics step: physics steps
+		/// once per OnUpdate with the frame's delta.
+		bool FixedTick = false;
+		/// With FixedTick, draw physics bodies between their last two ticks (Scene::GetFixedTimeAlpha),
+		/// so a 60 Hz step looks smooth at 144 Hz. Scripts still read the latest tick.
+		bool InterpolatePhysics = true;
+	};
+
 	/// A Scene owns a collection of entities and the behaviours attached to them,
 	/// and knows how to render the renderable ones. The ECS backend (EnTT) is held
 	/// behind an opaque pointer so it never appears in this public header.
@@ -38,6 +51,8 @@ namespace Dingo
 	public:
 		/// An empty scene with the given name; it is not running until OnStart.
 		Scene(const std::string& name = "Untitled Scene");
+		/// An empty scene with the given name and options; it is not running until OnStart.
+		Scene(const std::string& name, const SceneParams& params);
 		/// Stops the scene if it is running and destroys every entity, script and physics body.
 		~Scene();
 
@@ -94,15 +109,18 @@ namespace Dingo
 		/// Runs every active script's OnFixedUpdate as many fixed steps as the delta covers, then
 		/// its OnUpdate, advances the animators, then steps any live physics world(s) and writes
 		/// the simulated transforms back, so a kinematic body on a joint follows this frame's pose.
-		/// Safe to create/destroy entities from within a script - destroys are deferred to the end
-		/// of the pass. deltaTime is capped at 4/60 s for scripts, animation and physics alike, so
-		/// a stall runs the scene slow instead of tunnelling bodies through colliders.
+		/// With SceneParams::FixedTick, each fixed step is a tick instead: OnFixedUpdate, one
+		/// physics step of exactly the fixed step with its write-back, then the tick count; OnUpdate
+		/// and the animators follow once. Safe to create/destroy entities from within a script -
+		/// destroys are deferred to the end of the pass. deltaTime is capped at 4/60 s for scripts,
+		/// animation and physics alike, so a stall runs the scene slow instead of tunnelling bodies
+		/// through colliders; a 3D step, per frame or per tick, is split into 1/60 s collision steps.
 		void OnUpdate(float deltaTime);
 
 		/// The step ScriptableEntity::OnFixedUpdate runs at (default 1/60 s, clamped to
 		/// [1/1000, 1/4] s). Time left over carries into the next OnUpdate; at most
-		/// k_MaxFixedStepsPerUpdate run in one, and the rest is dropped. Physics itself still steps
-		/// once per OnUpdate with the frame's delta.
+		/// k_MaxFixedStepsPerUpdate run in one, and the rest is dropped. Without
+		/// SceneParams::FixedTick, physics steps once per OnUpdate with the frame's delta instead.
 		void SetFixedTimeStep(float seconds);
 		/// The current fixed step in seconds, as clamped by SetFixedTimeStep.
 		float GetFixedTimeStep() const;
@@ -111,6 +129,24 @@ namespace Dingo
 		float GetFixedTimeAlpha() const;
 		/// The most fixed steps one OnUpdate runs; time beyond it is dropped.
 		static constexpr uint32_t k_MaxFixedStepsPerUpdate = 8;
+
+		/// The options the scene was made with.
+		const SceneParams& GetParams() const { return m_Params; }
+		/// The number of fixed ticks run since OnStart: 0 until the first, then one more per tick.
+		/// Only counts with SceneParams::FixedTick. The same on every machine that ran the same ticks.
+		std::uint64_t GetTick() const;
+		/// Sets the tick counter, for a client adopting the host's. Runs and skips no tick.
+		void SetTick(std::uint64_t tick);
+		/// Fixed steps the last OnUpdate ran.
+		std::uint32_t GetFixedStepsLastUpdate() const;
+		/// Whole fixed steps dropped by the k_MaxFixedStepsPerUpdate cap since OnStart.
+		std::uint64_t GetDroppedFixedSteps() const;
+		/// The entity's world transform as the scene draws it this frame: with
+		/// SceneParams::InterpolatePhysics, between the last two ticks for a body and what hangs
+		/// under it. Entity::GetWorldTransform reads the latest tick; place a follow camera or a
+		/// world-space label from this so it stays steady against the body it tracks. Identity for
+		/// an invalid entity.
+		glm::mat4 GetDrawnWorldTransform(Entity entity) const;
 
 		/// Issues the 2D entity draw calls (no BeginScene/Clear/EndScene). The
 		/// SceneRenderer wraps this; call it directly between your own
@@ -275,7 +311,7 @@ namespace Dingo
 
 		/// The underlying 3D physics world, for direct handle-based access (ray casts,
 		/// body control). Null until OnStart (and only if the scene has 3D
-		/// bodies or character controllers) and after OnStop. The Scene owns
+		/// bodies, character controllers or ragdolls) and after OnStop. The Scene owns
 		/// it - don't delete it.
 		Physics3D* GetPhysics3D() const;
 
@@ -292,13 +328,19 @@ namespace Dingo
 		/// The 3D counterpart of GetRuntimeBody2D; k_InvalidBody3D while the entity has no live
 		/// body.
 		PhysicsBodyId3D GetRuntimeBody3D(Entity entity) const;
-		/// The entity a live 3D body belongs to (a RayCastHit3D's Body), or a null Entity for a
-		/// body the scene didn't make or one already destroyed. The scene keeps the entity in the
+		/// The body a RagdollComponent built for the named skeleton joint, or for its nearest
+		/// simulated ancestor when the joint has none of its own (a finger finds its hand's body).
+		/// k_InvalidBody3D for an unknown joint, one above the ragdoll's root body, or while the
+		/// entity has no built ragdoll (before the first physics step after it was added).
+		PhysicsBodyId3D GetRagdollBody(Entity entity, std::string_view joint) const;
+		/// The entity a live 3D body belongs to (a RayCastHit3D's Body; a ragdoll's bodies all
+		/// belong to the entity with the RagdollComponent), or a null Entity for a body the scene
+		/// didn't make or one already destroyed. The scene keeps the entity in the
 		/// body's UserData: don't SetUserData on a scene's body.
 		Entity GetEntityFromBody3D(PhysicsBodyId3D body);
 		/// The entities inside a sensor entity's body (RigidBody3DComponent::IsSensor): those with
-		/// a body, then those with a character controller. `out` is cleared first; false when
-		/// empty.
+		/// a body, then those with a character controller, each once (a ragdoll's limbs count as its
+		/// entity). `out` is cleared first; false when empty.
 		bool GetSensorOverlaps(Entity sensor, std::vector<Entity>& out);
 
 		/// Instantiates a simulation body for a single entity created after
@@ -402,6 +444,22 @@ namespace Dingo
 		// in-flight iteration. No-op when the entity has no script.
 		void DetachScript(std::uint32_t handle);
 		void DestroyEntityNow(std::uint32_t handle);
+		void FlushPendingDestroys();
+		// Hands the joints the last physics step broke to their entities' scripts (OnConstraintBroken),
+		// then flushes the destroys those scripts asked for.
+		void DeliverConstraintBreaks();
+		// While alive, physics-written transforms hold the pose between the last two ticks
+		// (SceneParams::InterpolatePhysics); the latest tick is restored when it goes. Nests.
+		class InterpolatedView
+		{
+		public:
+			explicit InterpolatedView(const Scene& scene);
+			~InterpolatedView();
+			InterpolatedView(const InterpolatedView&) = delete;
+			InterpolatedView& operator=(const InterpolatedView&) = delete;
+		private:
+			const Scene* m_Scene;
+		};
 		// copies: every (source UUID, clone UUID) of the subtree, for rewriting bindings that point
 		// inside it.
 		Entity DuplicateSubtree(Entity source, Entity parent, std::vector<std::pair<UUID, UUID>>& copies);
@@ -413,6 +471,7 @@ namespace Dingo
 		Internal::SceneData* m_Data = nullptr;
 
 		std::string m_Name;
+		SceneParams m_Params;
 		bool m_IsRunning = false;
 		glm::vec4 m_ClearColor{ 0.0f, 0.0f, 0.0f, 1.0f };
 		glm::vec2 m_Gravity{ 0.0f, -9.81f };

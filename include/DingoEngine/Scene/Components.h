@@ -371,6 +371,9 @@ namespace Dingo
 		/// Static, Kinematic or Dynamic; read when the body is created.
 		BodyType Type = BodyType::Static;
 		bool FixedRotation = false; ///< Lock rotation about Z (e.g. a player character).
+		/// With SceneParams::FixedTick and InterpolatePhysics, draw the body between its last two
+		/// ticks; false draws the latest tick.
+		bool Interpolate = true;
 
 		/// A static body that may rotate.
 		RigidBody2DComponent() = default;
@@ -451,9 +454,10 @@ namespace Dingo
 		/// Entity::GetWorldTransform).
 		glm::mat4 GetTransform() const
 		{
-			return glm::translate(glm::mat4(1.0f), Position)
-				* glm::mat4_cast(Rotation)
-				* glm::scale(glm::mat4(1.0f), Scale);
+			// The product written out: for finite values it equals the three matrices multiplied, up to the sign of a zero.
+			const glm::mat3 rotation = glm::mat3_cast(Rotation);
+			return glm::mat4(glm::vec4(rotation[0] * Scale.x, 0.0f), glm::vec4(rotation[1] * Scale.y, 0.0f),
+				glm::vec4(rotation[2] * Scale.z, 0.0f), glm::vec4(Position, 1.0f));
 		}
 
 		/// Authoring convenience: set the rotation from XYZ Euler angles in degrees.
@@ -702,6 +706,14 @@ namespace Dingo
 		bool IsSensor = false;
 		/// Bit mask of query layers the body is in; not a collision filter.
 		std::uint32_t QueryLayers = 1u;
+		/// With SceneParams::FixedTick and InterpolatePhysics, draw the body between its last two
+		/// ticks; false draws the latest tick.
+		bool Interpolate = true;
+		/// See Physics3D::SetCollisionGroup: bodies in the same non-zero group pass through each other.
+		/// Read when the body is created; a duplicated entity stays in the same group.
+		std::uint32_t CollisionGroup = k_NoCollisionGroup;
+		/// See Physics3D::SetCollisionGroup: collide with others of the group that also set this.
+		bool CollideWithinGroup = false;
 
 		/// A static body.
 		RigidBody3DComponent() = default;
@@ -788,6 +800,105 @@ namespace Dingo
 		/// Collides against `mesh`, which the caller keeps alive; `convex` picks the hull.
 		MeshCollider3DComponent(Dingo::Mesh* mesh, bool convex = false)
 			: Mesh(mesh), Convex(convex) {}
+	};
+
+	/// A joint between this entity's 3D body and another entity's (or the world), built when the Scene's
+	/// physics starts, once every body exists. Needs a RigidBody3DComponent here; Other must have one
+	/// too, or be null to pin this body to the world. An entity without a body, or an Other that names
+	/// no entity or one without a body, logs once and builds nothing. The constraint lives with this
+	/// entity's body: destroying either entity, or SetActive(false) on either, removes it, and
+	/// reactivating rebuilds it. See ConstraintParams3D for what each field means; the Scene fills in
+	/// the bodies. AnchorA is scaled by this entity's world scale like a collider, the axes are not.
+	/// With Other null, AnchorB, AxisB and NormalAxisB are world values, so the default pins the body's
+	/// AnchorA to the world origin. The first body of a world pin should be the moving one.
+	struct Constraint3DComponent
+	{
+		ConstraintType3D Type = ConstraintType3D::Fixed; ///< Which joint to build.
+		/// IDComponent::ID of the entity to join to; null (the default) pins to the world.
+		UUID Other;
+
+		glm::vec3 AnchorA{ 0.0f };         ///< Joint point in this entity's local space, scaled by its world scale.
+		glm::vec3 AnchorB{ 0.0f };         ///< Joint point in Other's local space, or a world point when Other is null.
+		glm::vec3 AxisA{ 0.0f, 1.0f, 0.0f };      ///< Hinge, twist or slider axis in this entity's local space.
+		glm::vec3 AxisB{ 0.0f, 1.0f, 0.0f };      ///< The same axis in Other's local space, or in world space.
+		glm::vec3 NormalAxisA{ 1.0f, 0.0f, 0.0f }; ///< A direction perpendicular to AxisA.
+		glm::vec3 NormalAxisB{ 1.0f, 0.0f, 0.0f }; ///< A direction perpendicular to AxisB.
+
+		float MinLimit = 0.0f;   ///< Hinge radians or Slider/Distance metres; see ConstraintParams3D::MinLimit.
+		float MaxLimit = 0.0f;   ///< Upper limit; see ConstraintParams3D::MinLimit.
+		float SwingLimitY = 0.0f; ///< SwingTwist half cone angle about the plane axis, radians.
+		float SwingLimitZ = 0.0f; ///< SwingTwist half cone angle about the other swing axis, radians.
+		float TwistMin = 0.0f;   ///< SwingTwist lowest twist, radians.
+		float TwistMax = 0.0f;   ///< SwingTwist highest twist, radians.
+
+		/// True lets the two bodies collide; false (the default) ignores their contacts.
+		bool CollideConnected = false;
+
+		/// Force in newtons above which the joint breaks; 0 (the default) never breaks. Read when the joint
+		/// builds. When it breaks the Scene removes this component, so the entity's scripts get
+		/// OnConstraintBroken and re-adding the component builds a new joint. See ConstraintParams3D::BreakForce.
+		float BreakForce = 0.0f;
+		float BreakTorque = 0.0f; ///< Torque in newton-metres above which the joint breaks; 0 never breaks.
+
+		/// The motor fields below only drive a Hinge or SwingTwist. They are live: the Scene writes them to the
+		/// joint at the start of every physics step (Physics3D::SetMotor), so editing them needs no rebuild.
+		/// How the motors drive; a SwingTwist uses the same mode for Motor and TwistMotor.
+		Dingo::MotorMode3D MotorMode = MotorMode3D::Off;
+		MotorParams3D Motor;      ///< The Hinge motor, or the SwingTwist swing motor.
+		MotorParams3D TwistMotor; ///< The SwingTwist twist motor.
+		/// Position mode target, B relative to A in body space; see Physics3D::SetMotorTargetRotation.
+		glm::quat TargetRotation{ 1.0f, 0.0f, 0.0f, 0.0f };
+		glm::vec3 TargetAngularVelocity{ 0.0f }; ///< Velocity mode target in rad/s; see Physics3D::SetMotorTargetVelocity.
+
+		/// A Fixed constraint to the world origin.
+		Constraint3DComponent() = default;
+		/// Copies all fields.
+		Constraint3DComponent(const Constraint3DComponent&) = default;
+		/// A constraint of the given type to `other` (null for the world).
+		Constraint3DComponent(ConstraintType3D type, UUID other = UUID()) : Type(type), Other(other) {}
+	};
+
+	/// An active ragdoll for the entity's SkinnedMeshRendererComponent::Model: one dynamic capsule per
+	/// bone (or the collider its recipe names), joined by Hinge (elbows, knees) and SwingTwist joints, built from the current pose when the
+	/// Scene's physics starts (and rebuilt when the model or its skeleton changes). Each physics step
+	/// drives the joints toward the AnimatorComponent's pose with motors; without an AnimatorComponent
+	/// the target is the rest pose. The bodies share one collision group. Destroying the entity,
+	/// removing the component or SetActive(false) removes every body and joint; reactivating rebuilds
+	/// them. A skeleton needs a joint with two or more children (the hips); bones shorter than 0.3x
+	/// their parent's, end bones and "slot"/"socket" joints fold into their parent, and more than 20
+	/// bodies is an error that builds nothing. Scene::GetRagdollBody returns a bone's body.
+	struct RagdollComponent
+	{
+		/// 0 shows the animation untouched, 1 the simulated bones; between the two each simulated
+		/// joint is mixed. Above 0 the entity's own position follows the root (hips) body while it isn't
+		/// driven (DriveToAnimation off, or Strength or DriveFrequency 0), so children and cameras follow a fall, and clip
+		/// root motion is ignored; an entity with its own RigidBody3DComponent or controller never
+		/// follows. Read every frame.
+		float Blend = 1.0f;
+		/// Scales the motors' stiffness and torque cap, and how firmly the root body tracks the
+		/// animated root: 0 is limp, 1 follows the pose firmly, above 1 is allowed. Read every step.
+		float Strength = 1.0f;
+		/// The motors' natural frequency in Hz: higher holds the pose more snappily and gives way less
+		/// to a shove, 0 is limp. Each motor is capped so it never rings its own body above a quarter
+		/// of the physics step rate, which keeps light bodies under heavy subtrees stable; the hips'
+		/// pull toward the animated root stops growing at the step rate. Read every step.
+		float DriveFrequency = 3.0f;
+		/// False turns the motors off and leaves the root untracked: a limp body, whatever Strength and DriveFrequency.
+		bool DriveToAnimation = true;
+		/// The ragdoll's mass in kg, shared out by capsule volume. Read when the ragdoll is built.
+		float TotalMass = 70.0f;
+		/// True lets the ragdoll's bodies collide with each other, except two joined by a joint.
+		/// Read when the ragdoll is built.
+		bool CollideWithinRagdoll = false;
+		/// The Model's ragdoll recipe to build with (Model::FindRagdollRecipe): empty for its `.ragdoll`
+		/// file's default recipe, if it has one. An unknown name warns once and builds without a recipe.
+		/// Changing it, or a reload of the recipes, rebuilds the ragdoll.
+		std::string Recipe;
+
+		/// Blend 1, Strength 1, 3 Hz, driven, 70 kg, no self-collision, the default recipe.
+		RagdollComponent() = default;
+		/// Copies all fields.
+		RagdollComponent(const RagdollComponent&) = default;
 	};
 
 	/// A kinematic character controller for player/enemy movement, wrapping Jolt's

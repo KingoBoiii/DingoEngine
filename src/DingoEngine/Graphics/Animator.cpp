@@ -144,6 +144,15 @@ namespace Dingo
 			return glm::normalize(glm::quat_cast(axes));
 		}
 
+		JointPose DecomposePose(const glm::mat4& matrix)
+		{
+			JointPose pose;
+			pose.Translation = glm::vec3(matrix[3]);
+			pose.Scale = glm::vec3(glm::length(glm::vec3(matrix[0])), glm::length(glm::vec3(matrix[1])), glm::length(glm::vec3(matrix[2])));
+			pose.Rotation = RotationOf(matrix);
+			return pose;
+		}
+
 		// Three key cursors (translation, rotation, scale) per channel of each clip in the state.
 		size_t CursorCount(const AnimationState& state)
 		{
@@ -1429,6 +1438,45 @@ namespace Dingo
 			const RootMotionDelta motion = StateMotion(state);
 			m_RootMotionDelta = weight >= 1.0f ? motion : MixMotion(m_RootMotionDelta, motion, weight);
 		}
+	}
+
+	void Animator::BlendGlobalTransforms(std::span<const glm::mat4> globals, std::span<const float> weights)
+	{
+		if (!m_Skeleton)
+			return;
+
+		const size_t count = m_Skeleton->GetJointCount();
+		if (globals.size() < count || weights.size() < count || m_LocalPoses.size() < count || m_Globals.size() < count)
+			return;
+
+		const std::vector<Joint>& joints = m_Skeleton->GetJoints();
+		for (size_t i = 0; i < count; ++i)
+		{
+			const float weight = weights[i];
+			if (weight >= 1.0f)
+			{
+				m_Globals[i] = globals[i];
+				continue;
+			}
+
+			const int32_t parent = joints[i].Parent;
+			const glm::mat4 local = m_LocalPoses[i].ToMatrix();
+			const glm::mat4 posed = parent < 0 ? local : m_Globals[parent] * local;
+			if (!(weight > 0.0f))
+			{
+				m_Globals[i] = posed;
+				continue;
+			}
+
+			JointPose from = DecomposePose(posed);
+			const JointPose to = DecomposePose(globals[i]);
+			from.Translation = glm::mix(from.Translation, to.Translation, weight);
+			from.Rotation = glm::slerp(from.Rotation, to.Rotation, weight);
+			from.Scale = glm::mix(from.Scale, to.Scale, weight);
+			m_Globals[i] = from.ToMatrix();
+		}
+
+		m_Skeleton->ComputeSkinningPalette(m_Globals, m_Palette);
 	}
 
 	glm::mat4 Animator::GetJointTransform(int32_t joint) const

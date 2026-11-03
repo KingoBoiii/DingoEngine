@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <limits>
 #include <optional>
+#include <string>
 
 namespace Dingo
 {
@@ -80,6 +81,36 @@ namespace Dingo
 		std::uint32_t SampleRate = 48000;      ///< Frames per second of the pushed PCM, 8000 to 384000.
 		std::uint32_t Channels = 1;            ///< Interleaved channels per frame, 1 to 254.
 		std::uint32_t BufferFrames = 48000 / 2; ///< Ring buffer capacity in frames.
+	};
+
+	/// One capture device (microphone) the OS reports (AudioEngine::EnumerateCaptureDevices).
+	struct AudioCaptureDevice
+	{
+		std::string Id;          ///< Opaque; pass it to StartCapture or SetCaptureDevice. Empty means the system default.
+		std::string Name;        ///< The OS's name for the device, UTF-8.
+		bool IsDefault = false;  ///< True for the system's default capture device.
+	};
+
+	/// How AudioEngine::StartCapture opens the microphone and shapes what it hands back.
+	struct AudioCaptureDesc
+	{
+		std::string DeviceId;                    ///< From EnumerateCaptureDevices; empty = system default.
+		std::uint32_t SampleRate = 48000;        ///< Frames per second you read back, 8000 to 384000; the engine resamples from the device's.
+		std::uint32_t Channels = 1;              ///< Interleaved channels per frame, 1 or 2.
+		std::uint32_t BufferFrames = 48000 / 2;  ///< Ring buffer capacity in frames; frames past it are dropped and counted.
+		float Gain = 1.0f;                       ///< Linear input gain applied before the gate, 0 to 8.
+		bool NoiseGate = false;                  ///< Silences the input while it stays below GateThresholdDb.
+		float GateThresholdDb = -50.0f;          ///< The gate opens when a device period's loudest sample is above this, and closes below it.
+		float GateAttackMs = 5.0f;               ///< Fade-in time when the gate opens.
+		float GateReleaseMs = 150.0f;            ///< Fade-out time when the gate closes.
+	};
+
+	/// Where AudioEngine's capture stands.
+	enum class AudioCaptureState : std::uint8_t
+	{
+		Stopped, ///< Not capturing: never started, StopCapture, or a start that failed.
+		Running, ///< A device is open and filling the ring buffer.
+		Lost,    ///< The device went away (unplugged) and the system default couldn't replace it; ReadCaptured returns 0.
 	};
 
 }

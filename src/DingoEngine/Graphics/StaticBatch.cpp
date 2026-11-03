@@ -204,6 +204,24 @@ namespace Dingo
 		return m_Data->BakeCount;
 	}
 
+	const std::vector<glm::ivec3>& StaticBatch::GetLastBakedCells() const
+	{
+		return m_Data->LastBaked;
+	}
+
+	std::optional<glm::ivec3> StaticBatch::GetMeshCell(StaticMeshId id) const
+	{
+		const Internal::StaticBatchData& data = *m_Data;
+		if (id >= data.Entries.size() || !data.Entries[id].Live || data.Entries[id].Cell == ~0u)
+			return std::nullopt;
+		return data.Cells[data.Entries[id].Cell].Coord;
+	}
+
+	float StaticBatch::GetCellSize() const
+	{
+		return m_Data->CellSize;
+	}
+
 	bool StaticBatch::IsRendererAlive() const
 	{
 		return m_Data->Shared->RendererAlive;

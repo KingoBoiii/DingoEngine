@@ -11,54 +11,52 @@
 namespace Dingo
 {
 
+	bool Internal::TokenizeSidecarLine(std::string_view line, std::vector<std::string>& tokens)
+	{
+		tokens.clear();
+		size_t i = 0;
+		while (i < line.size())
+		{
+			if (std::isspace(static_cast<unsigned char>(line[i])))
+			{
+				i++;
+				continue;
+			}
+			if (line[i] == '#')
+				break;
+
+			if (line[i] == '"')
+			{
+				const size_t close = line.find('"', i + 1);
+				if (close == std::string_view::npos)
+					return false;
+				tokens.emplace_back(line.substr(i + 1, close - i - 1));
+				i = close + 1;
+				continue;
+			}
+
+			// A quote inside a token quotes that part of it: a payload's key="value with spaces".
+			std::string& token = tokens.emplace_back();
+			while (i < line.size() && !std::isspace(static_cast<unsigned char>(line[i])) && line[i] != '#')
+			{
+				if (line[i] != '"')
+				{
+					token += line[i++];
+					continue;
+				}
+
+				const size_t close = line.find('"', i + 1);
+				if (close == std::string_view::npos)
+					return false;
+				token += line.substr(i + 1, close - i - 1);
+				i = close + 1;
+			}
+		}
+		return true;
+	}
+
 	namespace
 	{
-
-		// Splits on whitespace up to a `#`; a double-quoted token may hold spaces. False on an
-		// unclosed quote.
-		bool TokenizeEventLine(std::string_view line, std::vector<std::string>& tokens)
-		{
-			tokens.clear();
-			size_t i = 0;
-			while (i < line.size())
-			{
-				if (std::isspace(static_cast<unsigned char>(line[i])))
-				{
-					i++;
-					continue;
-				}
-				if (line[i] == '#')
-					break;
-
-				if (line[i] == '"')
-				{
-					const size_t close = line.find('"', i + 1);
-					if (close == std::string_view::npos)
-						return false;
-					tokens.emplace_back(line.substr(i + 1, close - i - 1));
-					i = close + 1;
-					continue;
-				}
-
-				// A quote inside a token quotes that part of it: a payload's key="value with spaces".
-				std::string& token = tokens.emplace_back();
-				while (i < line.size() && !std::isspace(static_cast<unsigned char>(line[i])) && line[i] != '#')
-				{
-					if (line[i] != '"')
-					{
-						token += line[i++];
-						continue;
-					}
-
-					const size_t close = line.find('"', i + 1);
-					if (close == std::string_view::npos)
-						return false;
-					token += line.substr(i + 1, close - i - 1);
-					i = close + 1;
-				}
-			}
-			return true;
-		}
 
 		// Payload tokens back into AnimationEventPayload's text, a value with a space quoted again.
 		std::string JoinPayload(std::span<const std::string> tokens)
@@ -103,7 +101,7 @@ namespace Dingo
 	{
 		EventsLine result;
 		std::vector<std::string> tokens;
-		if (!TokenizeEventLine(line, tokens))
+		if (!TokenizeSidecarLine(line, tokens))
 		{
 			result.Status = EventsLine::Result::UnclosedQuote;
 			return result;

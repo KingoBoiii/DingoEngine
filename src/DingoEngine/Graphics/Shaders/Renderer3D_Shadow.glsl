@@ -37,6 +37,7 @@ layout(location = 0) in vec3 a_Position;
 layout(location = 1) in uvec4 a_Joints;
 layout(location = 2) in vec4 a_Weights;
 #elif defined(DE_INSTANCED)
+#define DE_INSTANCE_DRAW_PUSH
 #include <DingoEngine/Instancing.glsl>
 #endif
 
@@ -45,6 +46,13 @@ out gl_PerVertex
 	vec4 gl_Position;
 	float gl_ClipDistance[4];
 };
+
+// As in Renderer3D_Lit.glsl: written out under precise, so every variant projects to the same bits.
+vec4 ProjectPosition(mat4 viewProjection, vec4 position)
+{
+	precise vec4 clip = (viewProjection[0] * position.x + viewProjection[1] * position.y) + (viewProjection[2] * position.z + viewProjection[3] * position.w);
+	return clip;
+}
 
 void main()
 {
@@ -61,11 +69,12 @@ void main()
 #endif
 
 	ShadowView view = Views[viewIndex];
-	vec4 clip = view.ViewProjection * worldPosition;
+	vec4 clip = ProjectPosition(view.ViewProjection, worldPosition);
 
 	gl_ClipDistance[0] = (view.Casters.x & Groups.x) != 0u ? clip.w + clip.x : -1.0;
 	gl_ClipDistance[1] = clip.w - clip.x;
 	gl_ClipDistance[2] = clip.w + clip.y;
 	gl_ClipDistance[3] = clip.w - clip.y;
-	gl_Position = vec4(clip.xy * view.Tile.zw + view.Tile.xy * clip.w, clip.z, clip.w);
+	precise vec2 tiled = clip.xy * view.Tile.zw + view.Tile.xy * clip.w;
+	gl_Position = vec4(tiled, clip.z, clip.w);
 }

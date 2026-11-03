@@ -226,6 +226,30 @@ namespace Dingo
 		return context && context->IsFocusVisible();
 	}
 
+	uint64_t DingoUI::GetId(std::string_view label)
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context ? context->GetId(label) : 0;
+	}
+
+	uint64_t DingoUI::GetFocusedId()
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context ? context->GetFocusId() : 0;
+	}
+
+	bool DingoUI::GetRect(uint64_t id, UILayoutRect& outRect)
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context && context->GetRect(id, outRect);
+	}
+
+	bool DingoUI::GetRect(std::string_view name, UILayoutRect& outRect)
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context && context->GetRect(name, outRect);
+	}
+
 	bool DingoUI::IsBackPressed()
 	{
 		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();

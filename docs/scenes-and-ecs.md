@@ -174,11 +174,28 @@ The same `Scene` also drives **3D** entities, mirroring the 2D side. A 3D entity
 | `MeshRendererComponent` | `Mesh* Mesh` (not owned), `glm::vec4 Color`, `Material* Material` (optional; null = the built-in lit material), `bool Visible`, `ShadowCasting Shadows` (v0.9: `On`, `Off` or `ShadowsOnly`, see [Shadows](shadows.md)), `uint32_t ShadowGroups` (caster groups, default 1), `float CullDistance` (v1.0, see [Culling](#culling-v10)), `bool Static` (v1.0, see [Static geometry](#static-geometry-v10)), `std::optional<SurfaceOverride> Surface` (v1.0: its own emissive, roughness and specular on a lit material, set with `SetSurface`, see [Surface overrides](lighting.md#surface-overrides-v10)) |
 | `SkinnedMeshRendererComponent` (v0.8) | `Model* Model` (not owned), `glm::vec4 Color`, `Material* Material`, `bool Visible`, `ShadowCasting Shadows` and `uint32_t ShadowGroups` (v0.9), `float CullDistance` (v1.0). Draws every submesh, skinning those with a skin on the GPU; see [Skinned models](#skinned-models-v08) |
 | `AnimatorComponent` (v0.8) | `std::string DefaultClip`, `bool PlayOnStart` (true), `float Speed` (1), `bool Enabled` (true). Poses the entity's skinned model; `Scene::GetAnimator(entity)` plays clips. See [Animating a model](#animating-a-model-v08) |
-| `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2) |
+| `RigidBody3DComponent` | `BodyType3D Type` (`Static`/`Dynamic`/`Kinematic`), `bool ContinuousCollision` (v0.6.2), `uint32_t CollisionGroup` (0 = none) and `bool CollideWithinGroup` ([collision groups](physics-3d.md#collision-groups); read when the body is built, and a duplicate stays in the same group) |
+| `Constraint3DComponent` | `ConstraintType3D Type`, `UUID Other` (null pins to the world), `AnchorA/B`, `AxisA/B`, `NormalAxisA/B`, `MinLimit`/`MaxLimit`, `SwingLimitY/Z`, `TwistMin/Max`, `bool CollideConnected`, `BreakForce`/`BreakTorque` (0 never breaks), and the live motor fields `MotorMode`, `Motor`, `TwistMotor`, `TargetRotation`, `TargetAngularVelocity` — joins this entity's body (`BodyA`) to `Other`'s, see [Constraints](physics-3d.md#constraints) |
+| `RagdollComponent` | `float Blend` (1), `float Strength` (1), `float DriveFrequency` (3), `bool DriveToAnimation` (true), `float TotalMass` (70), `bool CollideWithinRagdoll` (false) — an active ragdoll for the entity's skinned model, driven toward its animated pose; `Scene::GetRagdollBody(entity, joint)` finds a bone's body. See [Ragdolls](animation.md#ragdolls) |
 | `BoxCollider3DComponent` | `glm::vec3 HalfExtents` (fraction of `Scale`), `Friction`, `Restitution` |
 | `SphereCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `Friction`, `Restitution` |
 | `CapsuleCollider3DComponent` | `float Radius` (fraction of `Scale.x`), `float HalfHeight` (fraction of `Scale.y`), `Friction`, `Restitution` |
 | `MeshCollider3DComponent` (v0.6.2) | `Mesh* Mesh` (not owned; null = the entity's `MeshRendererComponent::Mesh`), `bool Convex`, `Friction`, `Restitution` — scaled by the full `Scale`, see [Mesh colliders](physics-3d.md#mesh-colliders-v062) |
+
+> **Constraints in a scene.** The scene builds a `Constraint3DComponent` at `OnStart`, or on the next
+> physics step for one added later, once both entities have bodies. `AnchorA` is multiplied by the
+> entity's world scale; `AnchorB`, the axes and the normals are used as given (world values when
+> `Other` is null). `Other` is a `UUID` so a copy can follow it: `DuplicateEntity` remaps an `Other`
+> inside the copied subtree to the copy and leaves one outside it alone. The constraint goes away with
+> either entity, with the component, or while an entity is inactive (`SetActive(false)`), and is
+> rebuilt when both are active again. A missing or bodiless `Other` logs once and retries; params the
+> physics world rejects log once and are not retried until the component is re-added.
+>
+> **Breaking.** With `BreakForce` or `BreakTorque` above 0, the joint lets go when its reaction exceeds either (the measurement is in [Breaking](physics-3d.md#breaking)). The scene then **removes the `Constraint3DComponent`** from the entity (a flag would be rebuilt every step), so `HasComponent` is false afterwards and adding the component again builds a new joint. Each script of the two entities hears `OnConstraintBroken(other, info)` after the physics step that broke it: the owner of the component first, then `other`, in constraint id order. Under `SceneParams::FixedTick` that is once per tick, before `GetTick` advances.
+>
+> A script that has not run `OnStart` yet when its joint breaks does not hear it (the component is still removed). A scene drains the broken list of its own physics world every step, so a joint made by hand through `Scene::GetPhysics3D()` reports no breaks through `ConsumeBrokenConstraints`.
+>
+> The motor fields are live: they are written to the joint every physics step (and right after it is built), so editing them on a built constraint takes effect at once. `Motor` drives the hinge or swing axis and `TwistMotor` the twist; see [Motors](physics-3d.md#motors).
 
 > A 3D entity still receives the default 2D `TransformComponent` on creation; it simply goes
 > unused. The collider shape is **baked into the body at creation** (so a rigid-body entity
@@ -520,6 +537,21 @@ class Fighter : public ScriptableEntity
 entity's first events next frame, once it has started. Authoring, the `.events` format, which clip
 fires in a blend and how ranges close are in [Animation](animation.md#events).
 
+### Broken constraints (#309)
+
+```cpp
+void OnConstraintBroken(Entity other, const ConstraintBreak3D& info) override
+{
+    if (!other.IsValid()) return;   // a world pin
+    SpawnDebris(info.Force);        // info.Force and info.Torque are what broke it
+}
+```
+
+`OnConstraintBroken` runs after the physics step that broke a `Constraint3DComponent` with a
+`BreakForce` or `BreakTorque`, outside the physics lock: first on the entity that owned the
+component, then on `other`, in constraint id order. The owner's component is already gone, and a
+`DestroyEntity` from the callback waits for the end of the pass.
+
 ### Joints as parents (v0.8)
 
 `child.SetParent(character, "b_RightHand", keepWorldTransform)` attaches the child to a joint of the
@@ -622,7 +654,8 @@ The binding convention a custom mesh shader follows:
   the bytes as they are when it is recorded: `Renderer::Draw` records at the call, `Renderer3D` at
   `EndScene`, so a scene gives every mesh of a material one value. A skinned shader's only block is
   `DE_SkinDraw`, which the renderer owns, and `SetPushConstants` refuses it
-  ([custom skinned shaders](animation.md#custom-skinned-shaders)).
+  ([custom skinned shaders](animation.md#custom-skinned-shaders)), as it refuses an instanced shader's
+  push-constant `DE_InstanceDraw` ([below](#instanced-custom-shaders-v10)).
 
 The whole of binding 0, as the engine's own lit shader declares it:
 
@@ -707,6 +740,12 @@ readonly storage block at binding 9) and the draw's first record (`DE_InstanceDr
 block at binding 10), both found by name: define `DE_INSTANCE_DATA_BINDING` /
 `DE_INSTANCE_DRAW_BINDING` before the include to move them off a texture's binding.
 
+Define `DE_INSTANCE_DRAW_PUSH` before the include to make `DE_InstanceDraw` a push-constant block
+instead, as the engine's own shaders do. Each draw then sets its first record without writing a
+buffer, so on Vulkan the instanced draws of a pass no longer end and restart the render pass. The
+renderer owns that block: the shader declares no other push-constant block, `Material::SetPushConstants`
+refuses it, and `DE_INSTANCE_DRAW_BINDING` no longer applies.
+
 ```glsl
 #include <DingoEngine/Instancing.glsl>
 
@@ -741,7 +780,9 @@ since the translucent pass draws no instances.
 are well-formed OBJ, glTF and FBX files: `Model::LoadFromFile` keeps a file's winding. `MaterialParams` matches that by default (`CullMode::Back` with
 `FrontCounterClockwise = true`), so a custom material hides back faces with no extra settings, on
 Vulkan, D3D11 and D3D12 alike. Use `CullMode::None` for an open mesh you see from both sides.
-`CreateSphere` raises `rings` to at least 2 and `segments` to at least 3.
+`CreateSphere` raises `rings` to at least 2 and `segments` to at least 3. Its UVs wrap a loaded texture
+upright and unmirrored seen from outside: `v = 1` at the +Y pole, and the image's left and right
+edges meet at +X. Before 1.0 the texture showed turned half a turn.
 
 Renderer3D keeps the vertices' order, whether it transforms them on the CPU or instances them on
 the GPU, so an entity mirrored by a negative scale on one or three axes is drawn inside out by a
@@ -807,8 +848,49 @@ the scene's fixed step (`Scene::SetFixedTimeStep`, 1/60 s by default): none in a
 in a 1/30 s one. Time left over carries into the next frame, and `Scene::GetFixedTimeAlpha()` says
 how far it reaches into the next step, for drawing between the last two. At most
 `Scene::k_MaxFixedStepsPerUpdate` (8) run in one `OnUpdate`; the rest is dropped. Use it for logic
-whose result must not depend on the frame rate (a counter, a cooldown in steps, a replay). Physics
-still steps once a frame with the frame's delta, so forces set in `OnFixedUpdate` act over that.
+whose result must not depend on the frame rate (a counter, a cooldown in steps, a replay). By
+default physics still steps once a frame with the frame's delta, so forces set in `OnFixedUpdate`
+act over that.
+
+### Fixed simulation tick (v1.1)
+
+A scene made with `SceneParams::FixedTick` steps physics on the fixed step too, so the whole
+simulation advances in ticks that don't depend on the frame rate: the same inputs give bitwise the
+same bodies at 30, 60 or 144 frames a second, as long as the game moves them from `OnFixedUpdate`.
+Each tick runs every `OnFixedUpdate(step)`, then the entities destroyed during it are removed, then
+one physics step of exactly `step` (3D in `ceil(step * 60 - 0.1)` collision steps however long the
+step is, 2D with 4 substeps). `OnUpdate`, the animators and audio then run once with the frame's
+delta, so velocities set in `OnUpdate`, root motion and bodies on sockets still depend on the frame
+timing, and a socketed kinematic child follows the previous frame's pose.
+
+```cpp
+Dingo::SceneParams params;
+params.FixedTick = true;
+Dingo::Scene* scene = sceneManager.CreateScene("Match", params);
+scene->SetFixedTimeStep(1.0f / 30.0f);
+```
+
+`Scene::GetTick()` numbers the ticks: 0 after `OnStart`, one more after each tick, so a tick's
+`OnFixedUpdate` sees the number of the ticks before it. `SetTick(n)` renumbers the clock (to line
+up with a server, or after loading a save) and runs nothing. `GetFixedStepsLastUpdate()` says how
+many ticks the last `OnUpdate` ran and `GetDroppedFixedSteps()` how many have been dropped by the
+cap since `OnStart`; the F9 panel shows both.
+
+Physics bodies move only on ticks, so drawn as they are they would stutter whenever the frame rate
+isn't a multiple of the tick rate. With `SceneParams::InterpolatePhysics` (on by default) the scene
+draws each dynamic body, kinematic root body, character controller and their children between
+their last two ticks, by `GetFixedTimeAlpha()`. Only drawing sees that: the scene's render calls, lights,
+`GetCameraViewProjection`, `ScreenPointToRay`, `WorldToScreenPoint` and the audio listener and
+sources. Scripts, queries and `GetComponent` always read the latest tick. A body snaps instead of
+sliding when its position was moved since the tick (`SetPosition`, a teleport, a transform the
+game wrote); a rotation the game sets every frame (a player turning to face its input) is drawn as
+set while the position stays smooth. `RigidBody3DComponent::Interpolate` /
+`RigidBody2DComponent::Interpolate = false` draws one body at its latest tick; a character
+controller always interpolates.
+
+Game code that places something from a body's position (a follow camera, a health bar) reads the
+latest tick, one tick ahead of what is drawn, and would shake against it. Place it from
+`scene.GetDrawnWorldTransform(entity)` instead, or make it the body's child.
 
 ### Active and inactive entities (v1.0)
 
@@ -956,7 +1038,7 @@ shown.
   through the hierarchy. The runtime state behind the settings components (the live 2D or 3D body
   with its position and velocity, the character controller and whether it is grounded, the playing sound, the
   bound animator and each layer's clip, the particle emitters, and the attached script's type and
-  whether it has started) follows in its own sections, marked *runtime, read-only*.
+  whether it has started, and a constraint's id, type, other entity, enabled flag and value) follows in its own sections, marked *runtime, read-only*. A constraint's motor panel is the exception: mode, parameters and targets are editable and show the live angle and torque. So is a ragdoll's section: `Blend`, `Strength`, `DriveFrequency` and `DriveToAnimation` are editable, above each body's joint, mass, speed and motor torque.
 
 The selection is kept by entity UUID and a scene serial that is never reused: destroying the
 selected entity empties the inspector, and destroying the selected scene falls back to the first
@@ -996,8 +1078,12 @@ in a real game.
   frame the rest are skipped or batched on the CPU.
 - A `Static` mesh is not drawn static when it has a `CullDistance`, a translucent or skinned-only
   material, too many vertices for one draw or a non-affine transform; moving one rebakes its cell.
-- `OnFixedUpdate` runs at most `Scene::k_MaxFixedStepsPerUpdate` (8) times an update; physics stays
-  on the variable step.
+- `OnFixedUpdate` runs at most `Scene::k_MaxFixedStepsPerUpdate` (8) times an update, and the
+  frame's delta is capped at 4/60 s, so a very small fixed step falls behind real time. Physics
+  stays on the variable step unless the scene has `SceneParams::FixedTick`.
+- Interpolation lerps a body's local position and slerps its rotation; it does not interpolate
+  animation, particles or entities that only scripts move. A teleported body or controller that
+  has a parent slides over one tick instead of snapping, unless its transform was written too.
 - A settings component is read when the object it describes is built; editing it on a live body
   changes nothing until the body is rebuilt.
 - 2D and 3D transforms don't convert into each other in a mixed hierarchy.

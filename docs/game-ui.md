@@ -354,6 +354,38 @@ its scene's primary camera). Give each root its own name.
 - There is no depth test against the scene, and no panel drawn onto a mesh; a world root is a screen-space
   overlay placed by a world point.
 
+## Reading the UI from automated checks
+
+A layout check (nothing overlaps, nothing falls off the screen, the right button has the focus) can ask
+DingoUI instead of mirroring it by hand:
+
+- `DingoUI::GetId(label)` is the id a widget `label` declared in the open container gets, `PushId`
+  included, the same one `SetFocus` aims at. It is 0 outside a root or without game UI.
+- `DingoUI::GetFocusedId()` is the widget that holds the keyboard or gamepad focus, whether or not
+  the ring shows; 0 for none.
+- `DingoUI::GetRect(id, rect)` or `GetRect(name, rect)` fills a `UILayoutRect` with where the element
+  was laid out in the last finished frame, in pixels of the UI's target, origin top-left. By name it takes a
+  root's name, a box's `UIBoxParams::Id` or a widget's label as declared (its `##` part included), the
+  first in declaration order. It returns false when there is no such element. `VisibleMin` and
+  `VisibleMax` are the part the scroll areas and clipping boxes around the element leave; they are equal
+  when it is clipped away entirely. A root's fade, slide or scale transition is not applied.
+
+The rect belongs to the last finished frame, so called during `OnUpdate` it reports the previous
+frame's layout; the focus is the one `BeginFrame` resolved this frame.
+
+```cpp
+DingoUI::BeginRoot("menu", UIRootParams().SetAnchor(UIAnchor::Center).SetNavigable(true));
+DingoUI::Button("Play", UIWidgetParams().SetDefaultFocus());
+const uint64_t playId = DingoUI::GetId("Play");
+DingoUI::EndRoot();
+
+UILayoutRect rect;
+if (DingoUI::GetFocusedId() == playId && DingoUI::GetRect("Play", rect))
+{
+    const bool onScreen = rect.VisibleMin.x >= 0.0f && rect.VisibleMax.x <= windowWidth;
+}
+```
+
 ## Debugging and performance
 
 **The DingoUI tab.** Open the Debug window (F3 to F9 open its tabs) and pick **DingoUI**; it has no key of

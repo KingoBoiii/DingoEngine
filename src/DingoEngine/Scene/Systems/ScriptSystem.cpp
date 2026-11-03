@@ -153,6 +153,16 @@ namespace Dingo
 			}
 		}
 
+		void ScriptSystem::DeliverConstraintBroken(entt::entity handle, Entity other, const ConstraintBreak3D& info)
+		{
+			auto it = m_Scripts.find(handle);
+			if (it != m_Scripts.end() && it->second->m_Started)
+			{
+				CallScope scope(m_CallDepth);
+				it->second->OnConstraintBroken(other, info);
+			}
+		}
+
 		bool ScriptSystem::IsStarted(entt::entity handle) const
 		{
 			auto it = m_Scripts.find(handle);

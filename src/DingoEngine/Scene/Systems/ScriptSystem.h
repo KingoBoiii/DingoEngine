@@ -17,6 +17,7 @@ namespace Dingo
 	class Entity;
 	class ScriptableEntity;
 	struct AnimationEvent;
+	struct ConstraintBreak3D;
 
 	namespace Internal
 	{
@@ -51,6 +52,8 @@ namespace Dingo
 
 			// To the entity's script, if it has one that has started.
 			void DeliverAnimationEvent(entt::entity handle, const AnimationEvent& event);
+			// To the entity's script, if it has one that has started.
+			void DeliverConstraintBroken(entt::entity handle, Entity other, const ConstraintBreak3D& info);
 			// The entity has a script and its OnStart has run.
 			bool IsStarted(entt::entity handle) const;
 

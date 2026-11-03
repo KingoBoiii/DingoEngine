@@ -7,6 +7,7 @@ namespace Dingo
 {
 
 	class Scene;
+	struct SceneParams;
 
 	/// Owns a set of named scenes and tracks which one is active. Switching scenes
 	/// (e.g. Menu -> Game -> GameOver) is a single SetActiveScene() call, which stops the
@@ -29,6 +30,9 @@ namespace Dingo
 		/// If a scene with that name already exists, the existing one is returned.
 		/// A scene does not become active until SetActiveScene - that is what starts it.
 		Scene* CreateScene(const std::string& name);
+		/// As CreateScene, made with the given options. An existing scene of that name is returned
+		/// as it is, with its own options.
+		Scene* CreateScene(const std::string& name, const SceneParams& params);
 
 		/// The scene registered under `name`, or nullptr if there is none. The manager owns it.
 		Scene* GetScene(const std::string& name) const;

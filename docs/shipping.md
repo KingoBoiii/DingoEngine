@@ -45,6 +45,8 @@ What Distribution changes:
 |---|---|---|
 | Console (Windows) | `main`, a console window | `WinMain`, no console: stderr goes nowhere, so the log is the only record |
 | `DE_ASSERT`, `DE_CORE_ASSERT` | Debug only: log, then break into the debugger | compiled out, as in Release |
+| Third-party asserts (`assert()`, Jolt's `JPH_ASSERT`, Box2D's `B2_ASSERT`; GLM, ImGui, NVRHI, ...) | on | off: the engine's workspace defines `NDEBUG` for every project in it, a game project inside it included |
+| Optimisation | none in Debug; on in Release | on, as in Release, for every project including the vendor libraries: the workspace sets `optimize "On"` for any project that sets nothing for Distribution |
 | `DE_VERIFY`, `DE_CORE_VERIFY` | log, then break into the debugger (`SIGTRAP` on Linux) | `FatalError("Verify Failed ...")`: log, message box on Windows, exit code 1 |
 | Crash on Windows | dump and log line | the same, plus a message box naming the folder |
 | Vulkan validation | on in Debug only; `--vulkan-validation` turns it on elsewhere | off; `--vulkan-validation` turns it on, and its messages reach `Dingo.log` as in Release. Without it the engine creates no validation-message callback |
@@ -119,7 +121,8 @@ MyGame/
 The script loops over `examples/*/`, so a game kept elsewhere repeats its steps: copy the
 executable, pack the assets, copy the licence files, `THIRD-PARTY-NOTICES.md` and what
 `exeMetadata()` generated under `build/generated/<Project>/`, and `tar` the folder. assimp is
-linked statically, so the game needs only `libvulkan1` and a Vulkan driver on the player's machine.
+linked statically, so the game needs only `libvulkan1`, a Vulkan driver and `libcurl.so.4` (crash
+reports; installed on mainstream distros) on the player's machine.
 
 The first run compiles shaders and font atlases into a `.cache/` folder beside the executable (see
 [Where the game writes](#where-the-game-writes)). Don't put a `.cache/` in the folder you ship.

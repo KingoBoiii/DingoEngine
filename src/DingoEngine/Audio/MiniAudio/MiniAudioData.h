@@ -24,6 +24,7 @@ namespace Dingo::Internal
 
 	struct MiniAudioVfs;
 	struct MiniAudioStream;
+	struct MiniAudioCapture;
 
 	// One controllable live sound. Play() hands out a slot; Update() / Stop() reap it.
 	// Generation is bumped every time the slot is recycled so a stale AudioSoundId that
@@ -65,6 +66,7 @@ namespace Dingo::Internal
 		std::vector<BusSlot> Buses;             // index-stable; [0] is the master bus
 		std::uint64_t NextBusSerial = 1;
 		bool StaleBusWarned = false;
+		MiniAudioCapture* Capture = nullptr;    // StartCapture's device and ring; nullptr while stopped
 	};
 
 }

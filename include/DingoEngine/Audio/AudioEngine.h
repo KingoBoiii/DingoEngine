@@ -7,7 +7,9 @@
 #include <cstdint>
 #include <filesystem>
 #include <memory>
+#include <string>
 #include <string_view>
+#include <vector>
 
 namespace Dingo
 {
@@ -112,6 +114,47 @@ namespace Dingo
 		/// Frames pushed but not yet played, for a jitter buffer. 0 for a handle that is no live
 		/// stream.
 		virtual std::uint32_t GetQueuedStreamFrames(AudioSoundId stream) const = 0;
+
+		// --- Capture (one microphone per engine) -------------------------------
+
+		/// The capture devices the OS reports now, default first. Empty when there are none or
+		/// the engine has no device.
+		virtual std::vector<AudioCaptureDevice> EnumerateCaptureDevices() const = 0;
+		/// Opens the device and starts filling the ring buffer, replacing any capture already
+		/// running. False, with a logged reason and capture Stopped, when the sample rate, channel
+		/// count or buffer size is invalid, the device can't be opened or the OS denies microphone
+		/// access; never throws and never waits on a prompt. Gain and gate values are clamped.
+		virtual bool StartCapture(const AudioCaptureDesc& desc = {}) = 0;
+		/// Stops and closes the device and drops the queued frames. No-op when not capturing.
+		virtual void StopCapture() = 0;
+		/// Stopped, Running, or Lost after the device went away and the default couldn't replace it.
+		virtual AudioCaptureState GetCaptureState() const = 0;
+		/// The id of the open device (empty for the system default) while Running or Lost.
+		virtual std::string GetCaptureDeviceId() const = 0;
+
+		/// Copies up to maxFrames interleaved frames (frames holds maxFrames * Channels samples),
+		/// after gain and gate, oldest first, and returns how many. 0 unless Running. The device thread writes without a lock; call this on the
+		/// thread that drives the AudioEngine.
+		virtual std::uint32_t ReadCaptured(std::int16_t* frames, std::uint32_t maxFrames) = 0;
+		/// The same as float frames in [-1, 1].
+		virtual std::uint32_t ReadCaptured(float* frames, std::uint32_t maxFrames) = 0;
+		/// Frames waiting to be read; 0 unless Running.
+		virtual std::uint32_t GetCapturedFrames() const = 0;
+		/// Frames dropped since StartCapture because the ring buffer was full (the reader is too slow).
+		virtual std::uint64_t GetCaptureOverruns() const = 0;
+
+		/// Switches device and keeps the ring buffer: frames already queued stay readable. False,
+		/// with a logged reason, leaves the old device running. Empty means the system default.
+		virtual bool SetCaptureDevice(const std::string& deviceId) = 0;
+		/// Linear input gain, 0 to 8, applied from the next device period.
+		virtual void SetCaptureGain(float gain) = 0;
+		/// Turns the noise gate on or off and sets it, from the next device period.
+		virtual void SetCaptureNoiseGate(bool enabled, float thresholdDb = -50.0f, float attackMs = 5.0f, float releaseMs = 150.0f) = 0;
+		/// Loudest sample of the last device period, linear 0 to 1, after gain and gate: for a mic meter.
+		virtual float GetCaptureLevel() const = 0;
+		/// Whether the gate is open now: a "speaking" indicator. True with the gate off, false
+		/// unless Running.
+		virtual bool IsCaptureGateOpen() const = 0;
 
 		// --- Per-sound control (no-ops on an invalid / stale handle) ----------
 

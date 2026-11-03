@@ -302,6 +302,15 @@ namespace Dingo
 		/// RootTransform x global: the joint in the model's space. Identity for an invalid index.
 		glm::mat4 GetJointTransform(int32_t joint) const;
 
+		/// Overrides the posed joints in GetGlobalTransforms' space (relative to the skeleton's root
+		/// transform), as a ragdoll does: per joint, a weight of 1 or more takes `globals`, 0 or less
+		/// keeps the pose's own (a joint below one that moved follows it with its posed local
+		/// transform), and between the two mixes them, translation and scale linearly and rotation
+		/// by slerp. Then recomputes the skinning palette. Always applied over the pose's local
+		/// transforms, so calling it again replaces the last call; the next Evaluate, or an
+		/// Update that evaluates, discards it. Ignored without a skeleton or with a span shorter than its joint count.
+		void BlendGlobalTransforms(std::span<const glm::mat4> globals, std::span<const float> weights);
+
 	private:
 		struct ChannelBinding
 		{

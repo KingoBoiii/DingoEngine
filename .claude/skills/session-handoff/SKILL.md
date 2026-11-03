@@ -1,58 +1,55 @@
 ---
 name: session-handoff
-description: Summarize the current conversation, distill durable learnings to long-term (auto)memory, and emit a ready-to-paste handoff prompt so a fresh agent can pick up exactly where this one left off. Trigger whenever the user says "handoff", "session handoff", "context is getting full", "let's continue in a new session", "wrap this up for next time", "save what you've learned", "hand this off", "prep a handoff prompt", "I need to start a fresh session", or otherwise signals they want to end the current context window and resume work later. Also trigger when the user asks you to "summarize this conversation for the next agent" or similar.
+description: "End a DingoEngine session cleanly: write the work done into the plan's As built notes and the PR body (phases checklist, Run log), commit and push that, and print a ready-to-paste handoff prompt so a fresh session picks up exactly where this one left off. Trigger when the owner says \"handoff\", \"session handoff\", \"context is getting full\", \"let's continue in a new session\", \"wrap this up for next time\", \"hand this off\", \"prep a handoff prompt\", \"I need to start a fresh session\", or otherwise signals the session should end and the work resume later. Also when asked to \"summarize this conversation for the next agent\"."
 ---
 
 # Session Handoff
 
-The goal of a handoff is to let a completely fresh agent — one with no memory of this conversation — resume the user's work without friction or regression. That means two distinct outputs:
+The goal is to let a completely fresh session, with no memory of this conversation, resume the work without friction or regression.
 
-1. **Durable learnings → memory** Reusable knowledge that would help *any* future session: user preferences, project conventions, API gotchas, non-obvious patterns, things you'd want to know the next time you worked on anything in this domain.
-2. **Handoff prompt → printed in chat**. Task-specific state for resuming *this specific* piece of work: what the user was trying to do, what's done, what's left, what to watch out for.
+In this repo state travels in the repository, not in memory (CLAUDE.md "How we work"). Most sessions run in a cloud container whose auto memory (under `~/.claude/projects/` on that machine) is gone when the container is reclaimed. So the durable record is:
 
-The distinction matters. Memory is a long-lived knowledge base that compounds across sessions; the handoff prompt is ephemeral scaffolding for exactly one resumption. Putting task-specific minutiae into memory pollutes it; putting general insights only into the handoff prompt wastes them.
+1. **The plan's As built notes** (`.claude/plans/YYYY-MM-DD-<topic>-plan.md`): what each phase actually built, which overrides the design.
+2. **The PR body**: the phases checklist a later run continues from, and the Run log (`pr-writeup` skill).
+3. **The handoff prompt, printed in chat**: task-specific state for resuming this one piece of work.
 
 ## Workflow
 
-Do these in order. Don't skip the reflection step — a good handoff requires actually thinking about what happened, not just rephrasing the last message.
+Do these in order. Don't skip the reflection: a good handoff needs actual thought about what happened, not a rephrasing of the last message.
 
 ### 1. Reflect on the conversation
 
-Before writing anything, take a pass through the conversation and mentally answer:
+- What was the owner actually trying to accomplish? The real goal, not just the last request.
+- What concrete progress was made? Files edited, decisions locked in, questions resolved, commits pushed.
+- What's still open, and what would the owner want done next?
+- What surprised you: dead ends, gotchas, constraints that weren't obvious, corrections the owner made.
 
-- What was the user actually trying to accomplish? (The real goal, not just the literal last request.)
-- What concrete progress was made? Which files were created or edited, which decisions were locked in, which questions were resolved?
-- What's still open? What would the user want done next if they had infinite time?
-- What surprised you or the user? Dead ends, gotchas, constraints that weren't obvious upfront, corrections the user made, preferences they expressed.
-- What's *reusable* beyond this task? A preference ("user wants minimal explanations"), a convention ("this repo uses pnpm, not npm"), a gotcha ("API X silently truncates responses over 10k tokens") — things that would matter in a different session too.
+### 2. Write the state into the repository
 
-### 2. Write durable learnings to auto memory
-
-**What to save:** only insights that are reusable across future sessions. If you find yourself writing something that only makes sense in the context of this specific task, it doesn't belong here — it belongs in the handoff prompt. 
-
-**Respect existing memory content:** read before writing. Don't duplicate existing entries; extend or refine them.
+- **Plan**: if the work belongs to a plan, add or extend the "As built" notes for the phase worked on: what was built, where (`file:line` or commit), what differs from the design and why, and what is left of the phase.
+- **PR**: if a PR exists for the branch, update its body with the `pr-writeup` skill: tick the finished phases, extend the Run log (Did / Verification / Questions I answered myself / Skipped / Next). If no PR exists and the owner hasn't asked for one, put the same Run log at the end of the plan's As built notes instead.
+- Commit (`docs(plan): as built for <phase>` or similar, the Commits bullet of CLAUDE.md "How we work") and push to the session's branch. Uncommitted state is lost with the container.
+- If auto memory is available in this session, also save durable repo-wide learnings there (a convention, a gotcha that matters beyond this task). Read it first and don't duplicate entries. Never put task state there.
 
 ### 3. Compose the handoff prompt
 
-Write a prompt the user can paste verbatim into a new session. It should contain, in this order:
+Write a prompt the owner can paste verbatim into a new session, in this order:
 
-**Goal** — one or two sentences on what the user is ultimately trying to accomplish. The *why*, not just the *what*.
+**Goal**: one or two sentences on what the owner is ultimately trying to accomplish.
 
-**Progress so far** — concrete work completed. Reference file paths, decisions made, problems solved. Be specific enough that a fresh agent can orient quickly; concise enough that it doesn't become a dump of the whole conversation.
+**Progress so far**: concrete work completed, with file paths, commits and decisions. Point at the plan's As built notes and the PR rather than repeating them.
 
-**Next steps** — what's left to do, ordered by priority. For each, say enough that the next agent knows how to start (not necessarily how to finish).
+**Next steps**: what's left, in priority order, with enough for the next session to start (the first unchecked phase, the next issue group).
 
-**Key context & gotchas** — non-obvious things the fresh agent needs to know. Things like: constraints the user emphasized, approaches that were tried and rejected and why, external systems or credentials involved, preferences for tone or format.
-
-**Pointer to memory** — one line telling the next agent to check memory for durable context.
+**Key context & gotchas**: constraints the owner emphasised, approaches tried and rejected and why, anything the repo doesn't record.
 
 ### 4. Print the handoff prompt in chat
 
-Output the handoff prompt inside a single fenced code block so the user can copy it cleanly. Put it at the very end of your response. Before the code block, briefly list (in one or two sentences) what you saved to memory and where, so the user knows what happened. Don't add postamble after the code block.
+Before it, say in one or two sentences what you committed and pushed (and saved to memory, if anything). Then output the prompt in a single fenced code block at the very end of the response, with nothing after it.
 
 ## Handoff prompt template
 
-Use this structure. Adapt headings if the work doesn't fit neatly, but keep the sections.
+Adapt headings if the work doesn't fit neatly, but keep the sections.
 
 ```
 You're picking up a session that was handed off because the prior context was getting long. Read this fully before acting.
@@ -61,8 +58,9 @@ You're picking up a session that was handed off because the prior context was ge
 <one or two sentences on the real goal>
 
 ## Progress so far
-- <concrete thing done, with file path or decision reference>
+- <concrete thing done, with file path, commit or decision reference>
 - <…>
+- State: plan `.claude/plans/<file>` As built notes, PR #<n> phases checklist and Run log, branch `<branch>`.
 
 ## Next steps (in order)
 1. <next action, with enough detail to start>
@@ -76,10 +74,10 @@ You're picking up a session that was handed off because the prior context was ge
 
 ## Principles
 
-**Err on the side of more memory, less prompt.** If a piece of context would plausibly matter in another session, put it in memory. The handoff prompt should be lean — anything the next agent can re-derive by reading memory or the repo doesn't need to be in the prompt.
+**The repo is the memory.** Anything the next session needs beyond this one task goes into the plan, the PR or CLAUDE.md's reference files, all of which survive the container. The handoff prompt stays lean.
 
-**Don't summarize for its own sake.** A handoff isn't a meeting minutes exercise. Skip things that don't help the next agent act. If nothing meaningful happened in a portion of the conversation, don't mention it.
+**Don't summarize for its own sake.** Skip whatever doesn't help the next session act.
 
-**Be concrete.** "Refactor the auth flow" is useless; "extract `validateJWT` from `middleware/auth.ts` into a shared `lib/jwt.ts` module — we got as far as the extraction but haven't updated the three call sites in `routes/`" is actionable.
+**Be concrete.** "Finish the shadows phase" is useless; "P4's cascade refit is in `Renderer3D.cpp` `PrepareShadowCascades`, the `--shadow=budget` check still fails on the third cascade" is actionable.
 
-**Preserve the user's voice on open questions.** If the user was leaning a particular direction but hadn't committed, say so. Don't launder their uncertainty into false precision.
+**Preserve the owner's voice on open questions.** If the owner was leaning a direction but hadn't decided, say so.

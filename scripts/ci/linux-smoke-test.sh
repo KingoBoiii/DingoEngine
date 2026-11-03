@@ -1,17 +1,20 @@
 #!/usr/bin/env bash
 # Usage: scripts/ci/linux-smoke-test.sh <Debug|Debug-ASan|Release|Distribution>
 #
-# Runs the unit tests, then every Dingo-TestFramework case, every example and Marionette's --check
-# from an existing build, each from its own source directory, then the test app headless with
-# DISPLAY unset (--graphics=headless), then the test app's deliberate crashes (--crash=), which
-# must leave their report in the log, then Marionette's --check and Candlewick packed (a copy of
-# the executable beside its .dpak, started from elsewhere). A hung app's thread stacks are dumped
-# with gdb before it is killed. Apps that don't exit by themselves are closed after SMOKE_SECONDS
-# (default 20) through WM_DELETE_WINDOW, so teardown runs too. A run fails on an unexpected exit
-# code, a hang, a [FAIL] self-check, a Vulkan validation error, an AddressSanitizer or
-# LeakSanitizer report or an spdlog LOG ERROR. SMOKE_TOURNAMENT=1 adds Marionette's tournament
-# (about 5 minutes in Release). Needs an X display (DISPLAY) and python3-xlib; logs go to
-# build/smoke/<config>/.
+# Runs the unit tests, then every Dingo-TestFramework case, every example, the --check of Marionette
+# and of Hearthvale (headless, then windowed) from an existing build, each from its own source
+# directory, then the test app headless with DISPLAY unset (--graphics=headless), then the test
+# app's deliberate crashes (--crash=), which must leave their report in the log, then Marionette's
+# --check and Candlewick packed (a copy of the executable beside its .dpak, started from
+# elsewhere). A hung app's frame index (twice, 5 s apart), whether it and GLFW saw the close,
+# its per-thread CPU use, the X server's CPU use and wait channel, both ends of the
+# app's sockets' queues and its thread stacks are recorded before it is killed. Apps that don't
+# exit by themselves are closed after SMOKE_SECONDS (default 20) through WM_DELETE_WINDOW, sent
+# again every 5 s while the app hasn't logged it, then after 30 s through SIGTERM, so teardown runs
+# too; a run that needed either passes with a warning. A run fails on an unexpected exit code, a hang, a [FAIL] self-check, a Vulkan
+# validation error, an AddressSanitizer or LeakSanitizer report or an spdlog LOG ERROR.
+# SMOKE_TOURNAMENT=1 adds Marionette's tournament (about 5 minutes in Release). Needs an X display
+# (DISPLAY) and python3-xlib; logs go to build/smoke/<config>/.
 set -uo pipefail
 
 CONFIG=${1:?usage: $0 <Debug|Debug-ASan|Release|Distribution>}
@@ -41,7 +44,77 @@ dump_threads() {
 	exe=$(readlink "/proc/$1/exe") || return 0
 	local gdb=(gdb)
 	sudo -n true 2> /dev/null && gdb=(sudo -n gdb)
-	timeout -k 10 120 "${gdb[@]}" -p "$1" "$exe" -batch -nx -ex 'set pagination off' -ex 'thread apply all -ascending bt' 2>&1 | grep -vE '^\[New LWP|^\[Thread debugging' | head -400
+	timeout -k 10 120 "${gdb[@]}" -p "$1" "$exe" -batch -nx -ex 'set pagination off' -ex 'thread apply all -ascending bt' 2>&1 | grep -vE '^\[New LWP|^\[Thread debugging' | head -2000
+}
+
+# Frames that still advance with the close unseen by GLFW mean the request was lost on the way;
+# a frame index that stands still means the frame loop itself stalled. Needs the engine's
+# symbols (Debug, or --keep-symbols); GLFW's line also needs its debug info.
+app_state() {
+	command -v gdb > /dev/null || return 0
+	local exe
+	exe=$(readlink "/proc/$1/exe") || return 0
+	local gdb=(gdb)
+	sudo -n true 2> /dev/null && gdb=(sudo -n gdb)
+	timeout -k 10 60 "${gdb[@]}" -p "$1" "$exe" -batch -nx \
+		-ex "printf \"frame index %lu\\n\", (unsigned long) 'Dingo::Renderer::GetFrameIndex'()" \
+		-ex "printf \"application running %d\\n\", (int) 'Dingo::Application::s_Instance'->m_IsRunning" \
+		-ex 'printf "glfw should close %d\n", (int) _glfw.windowListHead->shouldClose' 2>&1 \
+		| grep -E '^(frame index|application running|glfw should close) |^No symbol|^Cannot access|unknown (return )?type|ptrace|Could not attach' \
+		|| echo "(no state: gdb was denied, timed out or found no symbols)"
+	return 0
+}
+
+thread_cpu() {
+	local stat
+	for stat in /proc/$1/task/*/stat; do
+		sed -E 's/^([0-9]+) \((.*)\) (.*)$/\1\t\2\t\3/' "$stat" 2> /dev/null
+	done | awk -F'\t' '{ split($3, f, " "); printf "%s\t%s\t%s\t%d\n", $1, $2, f[1], f[12] + f[13] }'
+}
+
+# A deadlocked app's threads use no CPU between two samples; a slow one's render or llvmpipe threads do.
+thread_activity() {
+	local before after
+	before=$(thread_cpu "$1")
+	sleep 5
+	after=$(thread_cpu "$1")
+	echo "tid	name	state	cpu ticks in 5 s"
+	awk -F'\t' 'NF < 4 { next } NR == FNR { b[$1] = $4; next } { printf "%s\t%s\t%s\t%s\n", $1, $2, $3, ($1 in b) ? $4 - b[$1] : "new" }' <(echo "$before") <(echo "$after")
+}
+
+x_server_pid() {
+	[[ -n ${DISPLAY:-} ]] || return 1
+	pgrep -n -f "^Xvfb ${DISPLAY%.*}( |\$)" || pgrep -n -x Xvfb
+}
+
+app_sockets() {
+	command -v ss > /dev/null || { echo "(ss is not installed)"; return 0; }
+	ss -xpn 2> /dev/null | awk -v app="pid=$1," 'NR == 1 { print; next } { row[NR] = $0; own[NR] = $6; peer[NR] = $8 } index($0, app) { mine[$6] = 1 }
+		END { for (i = 2; i <= NR; i++) if ((own[i] in mine) || (peer[i] in mine)) print row[i] }'
+}
+
+x_server_ticks() {
+	sed -E 's/^.*\) //' "/proc/$1/stat" 2> /dev/null | awk '{ print $12 + $13 }'
+}
+
+# The main thread and Mesa's WSI thread can both block on the X socket (#186); whether the X server
+# still runs and which end's queue stays full shows who stopped reading.
+x_server_activity() {
+	local xpid before after
+	xpid=$(x_server_pid) || { echo "no X server found for DISPLAY=${DISPLAY:-}"; return 0; }
+	echo "X server $xpid: $({ tr '\0' ' ' < "/proc/$xpid/cmdline"; } 2> /dev/null)"
+	before=$(x_server_ticks "$xpid")
+	echo "-- before --"
+	app_sockets "$1"
+	sleep 5
+	after=$(x_server_ticks "$xpid")
+	echo "-- 5 s later --"
+	app_sockets "$1"
+	if [[ -n $before && -n $after ]]; then
+		echo "X server: state $(awk '{ print $3 }' "/proc/$xpid/stat" 2> /dev/null), wchan $(cat "/proc/$xpid/wchan" 2> /dev/null), cpu ticks in 5 s $((after - before))"
+	else
+		echo "X server: gone"
+	fi
 }
 
 # RUN_SECONDS, EXPECT_EXIT (default 0), EXPECT_LOG (a pattern that must be in EXPECT_LOG_FILE,
@@ -51,28 +124,54 @@ run() {
 	local log=$LOGS/$name.log status problems=""
 	local seconds=${RUN_SECONDS:-$SECONDS_PER_RUN} expected=${EXPECT_EXIT:-0}
 
-	(cd "$cwd" && { [[ -z ${NO_DISPLAY:-} ]] || unset DISPLAY WAYLAND_DISPLAY; } && LD_PRELOAD=$APP_PRELOAD exec "$exe" "$@") > "$log" 2>&1 &
+	# Line-buffered, so a hung run's log tail is what it last logged: spdlog flushes only warnings.
+	(cd "$cwd" && { [[ -z ${NO_DISPLAY:-} ]] || unset DISPLAY WAYLAND_DISPLAY; } && LD_PRELOAD=$APP_PRELOAD exec stdbuf -oL "$exe" "$@") > "$log" 2>&1 &
 	local pid=$!
 	for ((i = 0; i < seconds; i++)); do
 		kill -0 $pid 2>/dev/null || break
 		sleep 1
 	done
+	local closes=0 delivered=0 termed=0
 	if kill -0 $pid 2>/dev/null; then
-		local delivered=1
-		$CLOSE $pid || delivered=0
+		# A WM_DELETE_WINDOW can be read off the X connection and never reach GLFW (#186), so
+		# it is sent again every 5 s until the app logs it, then SIGTERM ends the run through
+		# Close() instead. Either is reported as a warning, not a failure. Only a run whose
+		# window took a close gets the SIGTERM, so a headless run that wedges still fails.
 		for ((i = 0; i < 60; i++)); do
 			kill -0 $pid 2>/dev/null || break
+			if ! grep -q 'Window close requested' "$log"; then
+				if (( i < 30 && i % 5 == 0 )); then
+					closes=$((closes + 1))
+					$CLOSE $pid && delivered=$((delivered + 1))
+				elif (( i == 30 && delivered > 0 )); then
+					termed=1
+					kill -TERM $pid 2>/dev/null
+				fi
+			fi
 			sleep 1
 		done
 		if kill -0 $pid 2>/dev/null; then
+			x_server_activity $pid > "$log.x11" &
+			thread_activity $pid > "$log.activity"
+			wait $!
+			# After the samples above: the attach and the inferior call interrupt the app's waits.
+			{ app_state $pid; sleep 5; echo "-- 5 s later --"; app_state $pid; } > "$log.state"
 			dump_threads $pid > "$log.threads"
 			kill -9 $pid 2>/dev/null
 			problems+=" hung"
 			((delivered)) || problems+=" close-not-delivered"
+			((termed)) && problems+=" sigterm-ignored"
 		fi
 	fi
 	wait $pid
 	status=$?
+
+	if [[ $problems != *hung* ]] && ((termed || closes > 1)); then
+		local how="the close needed $closes sends ($delivered delivered)"
+		((termed)) && how="the close was sent $closes times ($delivered delivered) and never handled; SIGTERM ended it"
+		echo "::warning title=Smoke test $name ($CONFIG)::$how (#186)"
+		echo "note  $name: $how"
+	fi
 
 	[[ $status -ne $expected ]] && problems+=" exit=$status"
 	if [[ -n ${EXPECT_LOG:-} ]] && ! grep -qE "$EXPECT_LOG" "${EXPECT_LOG_FILE:-$log}" 2>/dev/null; then
@@ -94,8 +193,16 @@ run() {
 		if [[ $problems == *hung* ]]; then
 			echo "---- the last lines it logged ----"
 			tail -25 "$log"
+			grep -q 'Window close requested' "$log" && echo "---- it logged the close request ----" \
+				|| echo "---- it never logged the close request (or the log was still buffered) ----"
+			echo "---- frame loop and close state, 5 s apart ----"
+			cat "$log.state"
+			echo "---- CPU per thread over 5 s ----"
+			cat "$log.activity"
+			echo "---- the X server and the app's sockets over the same 5 s ----"
+			cat "$log.x11"
 			echo "---- its threads ----"
-			grep -E '^Thread|^#' "$log.threads" | head -150
+			grep -E '^Thread|^#' "$log.threads" | head -1000
 		fi
 	else
 		echo "ok    $name ($passed passed)"
@@ -136,6 +243,9 @@ for dir in "$ROOT"/examples/*/; do
 done
 
 run "marionette-check" "$ROOT/examples/Marionette" "$BIN/Marionette/Marionette" --check
+run "hearthvale-check-headless" "$ROOT/examples/Hearthvale" "$BIN/Hearthvale/Hearthvale" --check --graphics=headless
+RUN_SECONDS=${SMOKE_CHECK_SECONDS:-150} EXPECT_LOG='\[Checks\] [0-9]+ passed, 0 failed' \
+	run "hearthvale-check" "$ROOT/examples/Hearthvale" "$BIN/Hearthvale/Hearthvale" --check
 
 if [[ ${SMOKE_TOURNAMENT:-0} == 1 ]]; then
 	RUN_SECONDS=1200 EXPECT_LOG='\[PASS\] tournament' \
@@ -159,6 +269,8 @@ if [[ $CONFIG != Debug-ASan ]]; then
 	crash engine-thread 139 'End of backtrace'
 	crash engine-stack 139 'crashed: SIGSEGV'
 	crash prepared-stack 139 'crashed: SIGSEGV'
+	crash render-stack 139 'crashed: SIGSEGV'
+	crash physics-stack 139 'crashed: SIGSEGV'
 	crash threads 139 'End of backtrace'
 	crash segv-after-info 139 'End of backtrace'
 	if ! awk '/last info line/{i=NR} /crashed: SIGSEGV/{c=NR} END{exit !(i && i<c)}' "$LOGS/crash-segv-after-info/Dingo.log" 2>/dev/null; then
@@ -172,6 +284,8 @@ if [[ $CONFIG != Debug-ASan ]]; then
 	crash throw 134 "std::terminate called on an uncaught exception: the test app's --crash=throw"
 	crash engine-throw 134 "std::terminate called on an uncaught exception: the test app's engine-thread throw"
 	crash prepared-throw 134 "std::terminate called on an uncaught exception: the test app's engine-thread throw"
+	crash render-throw 134 "std::terminate called on an uncaught exception: the test app's engine-thread throw"
+	crash asset-throw 134 "std::terminate called on an uncaught exception: the test app's engine-thread throw"
 	if [[ $CONFIG == Distribution ]]; then
 		crash verify 1 "Fatal error: Verify Failed the test app's --crash=verify"
 	else
@@ -200,5 +314,5 @@ done
 EXPECT_LOG="mounted package 'Marionette\\.dpak'" run "packed-marionette-check" "$packed/cwd" "$packed/Marionette/Marionette" --check
 EXPECT_LOG="mounted package 'Candlewick\\.dpak'" run "packed-candlewick" "$packed/cwd" "$packed/Candlewick/Candlewick"
 
-echo "Unit tests, ${#tests[@]} test cases, $(ls -d "$ROOT"/examples/*/ | wc -l) examples, Marionette --check, the headless check, the crash reports, packed Marionette --check and Candlewick: $failures failed"
+echo "Unit tests, ${#tests[@]} test cases, $(ls -d "$ROOT"/examples/*/ | wc -l) examples, Marionette and Hearthvale --check, the headless check, the crash reports, packed Marionette --check and Candlewick: $failures failed"
 exit $((failures > 0))

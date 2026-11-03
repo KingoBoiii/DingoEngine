@@ -149,6 +149,38 @@ namespace Dingo::Internal
 		m_PendingFocusFrames = 3;
 	}
 
+	namespace
+	{
+		bool FillLayoutRect(const UIElement* element, UILayoutRect& outRect)
+		{
+			if (!element)
+				return false;
+			outRect.Min = element->Rect.Min;
+			outRect.Max = element->Rect.Max;
+			UIRect visible = element->Rect;
+			if (element->Clip.Min != k_UINoClip.Min || element->Clip.Max != k_UINoClip.Max)
+			{
+				visible.Min = glm::max(visible.Min, element->Clip.Min);
+				visible.Max = glm::max(glm::min(visible.Max, element->Clip.Max), visible.Min);
+				if (visible.IsEmpty())
+					visible.Max = visible.Min;
+			}
+			outRect.VisibleMin = visible.Min;
+			outRect.VisibleMax = visible.Max;
+			return true;
+		}
+	}
+
+	bool DingoUIContext::GetRect(uint64_t id, UILayoutRect& outRect) const
+	{
+		return id != 0 && FillLayoutRect(m_LastTree.FindById(id), outRect);
+	}
+
+	bool DingoUIContext::GetRect(std::string_view name, UILayoutRect& outRect) const
+	{
+		return !name.empty() && FillLayoutRect(m_LastTree.FindByName(name), outRect);
+	}
+
 	void DingoUIContext::CollectNavCandidates()
 	{
 		m_NavCandidates.clear();

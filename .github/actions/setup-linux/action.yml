@@ -20,7 +20,7 @@ runs:
   - name: Install packages
     shell: bash
     run: |
-      packages="build-essential cmake ninja-build python3 zlib1g-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev"
+      packages="build-essential cmake ninja-build python3 zlib1g-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libcurl4-openssl-dev"
       if [[ "${{ inputs.runtime }}" == "true" ]]; then
         packages+=" xvfb xauth mesa-vulkan-drivers python3-xlib gdb"
       fi
@@ -30,7 +30,10 @@ runs:
   - name: Get Vulkan SDK version
     id: vulkan
     shell: bash
-    run: echo "version=$(curl -sSfL https://vulkan.lunarg.com/sdk/latest/linux.txt | tr -d '[:space:]')" >> "$GITHUB_OUTPUT"
+    run: |
+      version=$(curl -sSfL --retry 3 --retry-all-errors https://vulkan.lunarg.com/sdk/latest/linux.txt | tr -d '[:space:]')
+      [[ "$version" =~ ^[0-9]+(\.[0-9]+)+$ ]] || { echo "::error::Vulkan SDK version lookup failed: got '$version'"; exit 1; }
+      echo "version=$version" >> "$GITHUB_OUTPUT"
 
   - name: Cache Vulkan SDK
     id: cache-vulkan

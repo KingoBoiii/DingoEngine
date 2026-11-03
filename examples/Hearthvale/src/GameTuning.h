@@ -1,0 +1,318 @@
+#pragma once
+#include "Defs/ItemDefs.h"
+
+#include <glm/glm.hpp>
+
+#include <cstdint>
+
+namespace Dingo
+{
+	inline constexpr const char* SCENE_VALLEY = "Valley";
+
+	inline constexpr float SIM_STEP_SECONDS        = 1.0f / 60.0f;
+	inline constexpr float FIXED_DT_MAX            = 0.1f;
+	inline constexpr int STEPS_PER_FRAME_MAX       = 600;
+
+	inline constexpr int VALLEY_SIZE               = 96;
+	inline constexpr int CELL_TILES                = 16;
+	inline constexpr float TILE_SIZE               = 1.0f;
+
+	// The scene bakes Static meshes in fixed 32 m cells by bounds centre; game cells nest in them.
+	inline constexpr float ENGINE_STATIC_CELL      = 32.0f;
+
+	// Every slab's bounds centre stays above y = 0, so ground and what stands on it share an engine cell.
+	inline constexpr float GROUND_TOP              = 0.2f;
+	inline constexpr float WATER_TOP               = 0.12f;
+	inline constexpr float RIM_TOP                 = 0.6f;
+	inline constexpr float SOIL_TOP                = 0.24f;
+	inline constexpr float DECOR_VARIANT_SCALE[]   = { 0.85f, 1.0f, 1.15f };
+
+	inline constexpr float DAY_START_HOUR          = 6.0f;
+	inline constexpr float DAY_END_HOUR            = 26.0f;
+	inline constexpr float DAY_REAL_SECONDS        = 12.0f * 60.0f;
+	inline constexpr int SIM_TICKS_PER_SECOND      = 60;
+	inline constexpr int DAY_TICKS                 = 12 * 60 * SIM_TICKS_PER_SECOND;
+	inline constexpr int DAYS_PER_SEASON           = 14;
+	inline constexpr int SEASON_COUNT              = 4;
+	inline constexpr int DAYS_MAX                  = DAYS_PER_SEASON * SEASON_COUNT * 4;
+
+	inline constexpr int SIM_MAX_STEPS_REAL_TIME   = 8;
+
+	// Weather rolls in per-mille; winter has snow and no rain. The first day is always clear.
+	inline constexpr int WEATHER_PRECIP_PERMILLE_SPRING = 250;
+	inline constexpr int WEATHER_PRECIP_PERMILLE_SUMMER = 150;
+	inline constexpr int WEATHER_PRECIP_PERMILLE_FALL   = 280;
+	inline constexpr int WEATHER_PRECIP_PERMILLE_WINTER = 400;
+
+	inline constexpr int BUILD_REFUND_PERMILLE     = 500;
+
+	inline constexpr int PASSOUT_COIN_LOSS_PERMILLE = 100;
+
+	// Nine hotbar slots (keys 1-9) lead a 6 x 4 backpack; all 33 are plain stack slots and items fill them in order.
+	inline constexpr int HOTBAR_SLOTS              = 9;
+	inline constexpr int INVENTORY_COLUMNS         = 6;
+	inline constexpr int INVENTORY_ROWS            = 4;
+	inline constexpr int BACKPACK_SLOTS            = INVENTORY_COLUMNS * INVENTORY_ROWS;
+	inline constexpr int INVENTORY_SLOTS           = HOTBAR_SLOTS + BACKPACK_SLOTS;
+
+	struct StarterStack
+	{
+		ItemId Item;
+		int Count;
+	};
+
+	// A new game: the five tools fill the hotbar's first slots, then a few spring seeds.
+	inline constexpr int STARTER_COINS             = 500;
+	inline constexpr StarterStack STARTER_LOADOUT[] = {
+		{ ItemId::Hoe, 1 }, { ItemId::WateringCan, 1 }, { ItemId::Axe, 1 }, { ItemId::Pickaxe, 1 }, { ItemId::Scythe, 1 },
+		{ SeedItem(CropId::Parsnip), 8 }, { SeedItem(CropId::Radish), 4 }, { SeedItem(CropId::Strawberry), 2 },
+	};
+
+	// The shop pays this share of an item's ship price at once; the shipping bin pays the full price at the day roll.
+	inline constexpr int SHOP_SELL_BACK_PERMILLE   = 500;
+	inline constexpr float FADE_OUT_SECONDS        = 0.8f;
+	inline constexpr float FADE_HOLD_SECONDS       = 0.6f;
+	inline constexpr float FADE_IN_SECONDS         = 0.8f;
+	inline constexpr int FADE_UI_LAYER             = 100;
+
+	inline constexpr int TARGET_MOUSE_REACH_TILES  = 3;
+	inline constexpr float TARGET_MARKER_HEIGHT    = 0.04f;
+	inline constexpr float TARGET_MARKER_LIFT      = 0.03f;
+	inline constexpr glm::vec4 TARGET_COLOR_TOOL    = glm::vec4(1.0f, 0.95f, 0.6f, 0.45f);
+	inline constexpr glm::vec4 TARGET_COLOR_VALID   = glm::vec4(0.35f, 1.0f, 0.4f, 0.5f);
+	inline constexpr glm::vec4 TARGET_COLOR_INVALID = glm::vec4(1.0f, 0.3f, 0.25f, 0.5f);
+	inline constexpr glm::vec4 GHOST_COLOR_VALID    = glm::vec4(0.55f, 1.0f, 0.6f, 0.55f);
+	inline constexpr glm::vec4 GHOST_COLOR_INVALID  = glm::vec4(1.0f, 0.4f, 0.35f, 0.55f);
+
+	// Valley generation densities, in per-mille of eligible tiles.
+	inline constexpr int RIM_DEPTH_MIN             = 6;
+	inline constexpr int RIM_DEPTH_MAX             = 9;
+	inline constexpr int DECOR_RIM_PERMILLE        = 740;
+	inline constexpr int DECOR_OVERGROWN_PERMILLE  = 500;
+	inline constexpr int DECOR_MEADOW_PERMILLE     = 420;
+	inline constexpr int DECOR_VILLAGE_PERMILLE    = 120;
+	inline constexpr int DECOR_COUNT_MIN           = 3000;
+	inline constexpr int DECOR_COUNT_MAX           = 5200;
+
+	inline constexpr float CAMERA_FOV              = 40.0f;
+	inline constexpr float CAMERA_NEAR             = 0.1f;
+	inline constexpr float CAMERA_FAR              = 400.0f;
+	inline constexpr float CAMERA_PITCH_DEG        = 45.0f;
+	inline constexpr float CAMERA_YAW_STEP_DEG     = 90.0f;
+	inline constexpr float CAMERA_YAW_SPEED_DEG    = 360.0f;
+	inline constexpr float CAMERA_FOCUS_HEIGHT     = 0.7f;
+	inline constexpr float CAMERA_LAG              = 7.0f;
+	inline constexpr float CAMERA_DISTANCE         = 14.0f;
+	inline constexpr float CAMERA_DISTANCE_MIN     = 8.0f;
+	inline constexpr float CAMERA_DISTANCE_MAX     = 26.0f;
+	inline constexpr float CAMERA_ZOOM_SPEED       = 10.0f;
+	inline constexpr float CAMERA_ZOOM_WHEEL_STEP  = 1.5f;
+	inline constexpr float BLOOM_INTENSITY         = 0.3f;
+	inline constexpr float BLOOM_THRESHOLD         = 1.0f;
+
+	inline constexpr float PLAYER_SPEED            = 4.0f;
+	inline constexpr float PLAYER_TURN_SPEED       = 14.0f;
+	inline constexpr float PLAYER_RADIUS           = 0.25f;
+	inline constexpr float PLAYER_HEIGHT           = 1.4f;
+	inline constexpr float PLAYER_STEP_HEIGHT      = 0.25f;
+	inline constexpr float PLAYER_SLOPE_DEG        = 50.0f;
+	inline constexpr float PLAYER_GRAVITY_Y        = -18.0f;
+	inline constexpr float PLAYER_TERMINAL_Y       = -30.0f;
+	inline constexpr float PLAYER_SPAWN_LIFT       = 0.05f;
+	inline constexpr float PLAYER_MOVE_THRESHOLD   = 0.1f;
+	inline constexpr float PLAYER_BLOCK_LOOKAHEAD  = 1.0f / 30.0f;
+	inline constexpr float PLAYER_ANIM_FADE        = 0.2f;
+	inline constexpr float PLAYER_WALK_ANIM_SPEED  = 2.0f;
+	inline constexpr float PLAYER_MODEL_HEIGHT     = 1.5f;
+	inline constexpr float PLAYER_MODEL_ROUGHNESS  = 0.85f;
+
+	// One sample of the day. Keys are evaluated by SkyCurve (Look/SkyCurve.h): linear between neighbours in
+	// hours, with the elevation capped at SKY_ELEVATION_MAX_DEG.
+	struct SkyKey
+	{
+		float Hour;
+		float ElevationDeg;
+		glm::vec3 SunColor;
+		float SunIntensity;
+		glm::vec3 AmbientColor;
+		float AmbientIntensity;
+		glm::vec3 SkyColor;
+		float FogStart;
+		float FogEnd;
+	};
+
+	// Six keys: dawn, morning, noon, late afternoon, just after sunset (the sun is below the horizon by 20:00), deep night.
+	inline constexpr SkyKey SKY_KEYS[] = {
+		{  6.0f,  10.0f, glm::vec3(1.00f, 0.62f, 0.38f), 0.70f, glm::vec3(0.55f, 0.60f, 0.80f), 0.22f, glm::vec3(0.95f, 0.72f, 0.55f), 60.0f, 220.0f },
+		{  9.0f,  38.0f, glm::vec3(1.00f, 0.93f, 0.82f), 1.00f, glm::vec3(0.60f, 0.70f, 0.88f), 0.32f, glm::vec3(0.62f, 0.78f, 0.92f), 70.0f, 240.0f },
+		{ 12.0f,  65.0f, glm::vec3(1.00f, 0.97f, 0.90f), 1.15f, glm::vec3(0.62f, 0.72f, 0.90f), 0.38f, glm::vec3(0.55f, 0.74f, 0.93f), 80.0f, 260.0f },
+		{ 16.0f,  40.0f, glm::vec3(1.00f, 0.82f, 0.55f), 1.00f, glm::vec3(0.64f, 0.68f, 0.85f), 0.34f, glm::vec3(0.70f, 0.76f, 0.86f), 70.0f, 240.0f },
+		{ 20.0f,  -4.0f, glm::vec3(1.00f, 0.45f, 0.25f), 0.10f, glm::vec3(0.40f, 0.42f, 0.68f), 0.22f, glm::vec3(0.30f, 0.26f, 0.42f), 45.0f, 180.0f },
+		{ 26.0f, -40.0f, glm::vec3(0.30f, 0.35f, 0.60f), 0.00f, glm::vec3(0.22f, 0.30f, 0.58f), 0.16f, glm::vec3(0.04f, 0.06f, 0.14f), 35.0f, 140.0f },
+	};
+
+	inline constexpr float SKY_ELEVATION_MAX_DEG   = 65.0f;
+	inline constexpr float SKY_ANGLE_STEP_DEG      = 0.25f;
+	inline constexpr float SKY_BLEND_SECONDS       = 1.0f;
+	// The sun crosses from east (0) through south (90) to west (180) between these hours.
+	inline constexpr float SKY_AZIMUTH_START_HOUR  = 6.0f;
+	inline constexpr float SKY_AZIMUTH_END_HOUR    = 20.0f;
+	inline constexpr float SKY_AZIMUTH_START_DEG   = 0.0f;
+	inline constexpr float SKY_AZIMUTH_END_DEG     = 180.0f;
+	// A shadow-casting sun flips its cascades as it grazes the horizon, so it stops casting below this.
+	inline constexpr float SKY_SHADOW_MIN_ELEVATION_DEG = 3.0f;
+	inline constexpr float SUN_SHADOW_STRENGTH     = 0.85f;
+	inline constexpr float SKY_SUN_FADE_DEG        = 6.0f;
+
+	inline constexpr glm::vec3 MOON_COLOR          = glm::vec3(0.55f, 0.65f, 1.00f);
+	inline constexpr float MOON_INTENSITY          = 0.28f;
+	inline constexpr float MOON_FADE_DEG           = 12.0f;
+
+	// Morning mist: strongest at the first hour, gone by the end hour.
+	inline constexpr float MIST_START_HOUR         = 6.0f;
+	inline constexpr float MIST_END_HOUR           = 9.0f;
+	inline constexpr float MIST_FOG_SCALE          = 0.30f;
+	inline constexpr float MIST_CLEAR_WEIGHT       = 0.70f;
+	inline constexpr float WEATHER_RAIN_SUN_SCALE  = 0.55f;
+	inline constexpr float WEATHER_RAIN_FOG_SCALE  = 0.45f;
+	inline constexpr float WEATHER_SNOW_SUN_SCALE  = 0.75f;
+	inline constexpr float WEATHER_SNOW_FOG_SCALE  = 0.65f;
+
+	// Coop and barn animals are one switch: off, no animal moves in, none is saved or hashed and nothing is spawned.
+	inline constexpr bool ANIMALS_ENABLED          = true;
+
+	inline constexpr float VILLAGER_WALK_TILES_PER_MINUTE = 1.5f;
+	inline constexpr float VILLAGER_RADIUS         = 0.25f;
+	inline constexpr float VILLAGER_TALK_RADIUS    = 1.8f;
+	inline constexpr float VILLAGER_TALK_ARC_DEG   = 70.0f;
+	inline constexpr float VILLAGER_PICK_REACH     = 4.0f;
+	inline constexpr float VILLAGER_PICK_RAY_LENGTH = 200.0f;
+
+	inline constexpr int FRIENDSHIP_POINTS_PER_HEART = 100;
+	inline constexpr int FRIENDSHIP_HEARTS_MAX     = 10;
+	inline constexpr int FRIENDSHIP_TALK_POINTS    = 20;
+	inline constexpr int FRIENDSHIP_GIFT_LIKED     = 80;
+	inline constexpr int FRIENDSHIP_GIFT_FINE      = 20;
+	inline constexpr int FRIENDSHIP_GIFTS_PER_DAY  = 1;
+
+	inline constexpr int COOP_CAPACITY             = 4;
+	inline constexpr int BARN_CAPACITY             = 3;
+	inline constexpr int ANIMAL_HAPPINESS_MAX      = 100;
+	inline constexpr int ANIMAL_HAPPINESS_START    = 50;
+	inline constexpr int ANIMAL_HAPPINESS_FED      = 8;
+	inline constexpr int ANIMAL_HAPPINESS_HUNGRY   = 12;
+	inline constexpr int ANIMAL_HAPPINESS_PRODUCE  = 20;
+	inline constexpr int ANIMAL_WANDER_TILES       = 3;
+	inline constexpr float ANIMAL_RADIUS           = 0.2f;
+	inline constexpr float CHICKEN_SPEED           = 0.9f;
+	inline constexpr float COW_SPEED               = 0.5f;
+	inline constexpr int ANIMAL_IDLE_STEPS_MIN     = 60;
+	inline constexpr int ANIMAL_IDLE_STEPS_MAX     = 240;
+
+	inline constexpr int UI_HUD_LAYER              = 0;
+	inline constexpr int UI_SCREEN_LAYER           = 10;
+	inline constexpr float UI_TOAST_SECONDS        = 2.5f;
+	inline constexpr glm::vec4 UI_TEXT_COLOR       = glm::vec4(1.0f, 0.97f, 0.9f, 1.0f);
+	inline constexpr glm::vec4 UI_TEXT_DIM_COLOR   = glm::vec4(0.65f, 0.6f, 0.55f, 1.0f);
+	inline constexpr glm::vec4 UI_TEXT_PICK_COLOR  = glm::vec4(1.0f, 0.88f, 0.4f, 1.0f);
+	inline constexpr glm::vec4 UI_TEXT_BAD_COLOR   = glm::vec4(1.0f, 0.55f, 0.45f, 1.0f);
+	inline constexpr glm::vec4 UI_HUD_PANEL_COLOR  = glm::vec4(0.1f, 0.08f, 0.06f, 0.55f);
+	inline constexpr glm::vec4 UI_PANEL_COLOR      = glm::vec4(0.13f, 0.1f, 0.08f, 0.96f);
+	inline constexpr glm::vec4 UI_BACKDROP_COLOR   = glm::vec4(0.0f, 0.0f, 0.0f, 0.55f);
+	inline constexpr glm::vec4 UI_BUTTON_COLOR     = glm::vec4(0.24f, 0.2f, 0.16f, 1.0f);
+	inline constexpr glm::vec4 UI_BUTTON_HOVER     = glm::vec4(0.34f, 0.28f, 0.21f, 1.0f);
+	inline constexpr glm::vec4 UI_BUTTON_PRESSED   = glm::vec4(0.18f, 0.15f, 0.12f, 1.0f);
+	inline constexpr glm::vec4 UI_FOCUS_COLOR      = glm::vec4(1.0f, 0.9f, 0.45f, 1.0f);
+	inline constexpr glm::vec4 UI_SELECTED_COLOR   = glm::vec4(0.95f, 0.75f, 0.2f, 1.0f);
+
+	// Look and sound. Every value is a first guess: nobody has seen or heard them on a device yet.
+	inline constexpr float NIGHT_DUSK_START_HOUR   = 18.0f;
+	inline constexpr float NIGHT_DUSK_END_HOUR     = 20.0f;
+	inline constexpr float NIGHT_DAWN_START_HOUR   = 6.0f;
+	inline constexpr float NIGHT_DAWN_END_HOUR     = 7.0f;
+	// Lamps and windows glow this much in the day when it rains or snows.
+	inline constexpr float NIGHT_GLOOM_RAIN        = 0.35f;
+	inline constexpr float NIGHT_GLOOM_SNOW        = 0.25f;
+
+	inline constexpr glm::vec3 LAMP_COLOR          = glm::vec3(1.0f, 0.78f, 0.45f);
+	inline constexpr float LAMP_INTENSITY          = 2.2f;
+	inline constexpr float LAMP_RANGE              = 9.0f;
+	inline constexpr float LAMP_HEIGHT             = 2.1f;
+	inline constexpr glm::vec3 LANTERN_COLOR       = glm::vec3(1.0f, 0.55f, 0.3f);
+	inline constexpr float LANTERN_INTENSITY       = 1.4f;
+	inline constexpr float LANTERN_RANGE           = 6.0f;
+	inline constexpr float LANTERN_HEIGHT          = 0.9f;
+	inline constexpr glm::vec3 HOUSE_LIGHT_COLOR   = glm::vec3(1.0f, 0.72f, 0.4f);
+	inline constexpr float HOUSE_LIGHT_INTENSITY   = 1.3f;
+	inline constexpr float HOUSE_LIGHT_RANGE       = 7.0f;
+	inline constexpr float HOUSE_LIGHT_HEIGHT      = 1.6f;
+	inline constexpr float HOUSE_LIGHT_FORWARD     = 1.2f;
+
+	inline constexpr int   LIGHT_LOD_HEADROOM      = 2;
+	inline constexpr float LIGHT_LOD_STICKINESS    = 0.6f;
+	inline constexpr float LIGHT_LOD_FADE_TIME     = 0.4f;
+	inline constexpr float LIGHT_LOD_VIEW_MARGIN   = 2.0f;
+
+	inline constexpr glm::vec3 WINDOW_GLOW_COLOR   = glm::vec3(1.0f, 0.72f, 0.35f);
+	inline constexpr float WINDOW_GLOW_STRENGTH    = 2.5f;
+	inline constexpr glm::vec3 BULB_GLOW_COLOR     = glm::vec3(1.0f, 0.82f, 0.5f);
+	inline constexpr float BULB_GLOW_STRENGTH      = 3.0f;
+	// A glow change under this is not written, so a lit window does not rebuild every frame.
+	inline constexpr float GLOW_WRITE_EPSILON      = 0.01f;
+
+	inline constexpr float FIREFLY_START_HOUR      = 19.5f;
+	inline constexpr float FIREFLY_FULL_HOUR       = 20.5f;
+	inline constexpr float FIREFLY_FADE_OUT_START  = 25.0f;
+	inline constexpr float FIREFLY_FADE_OUT_END    = 26.0f;
+	inline constexpr float FIREFLY_SEASON_AMOUNT[] = { 0.6f, 1.0f, 0.3f, 0.0f };
+	inline constexpr float CHIMNEY_SEASON_AMOUNT[] = { 0.4f, 0.2f, 0.7f, 1.0f };
+
+	inline constexpr float MIST_SEASON_AMOUNT[]    = { 0.8f, 0.4f, 1.0f, 0.6f };
+	inline constexpr float MIST_FADE_OUT_START     = 8.0f;
+	inline constexpr float MIST_FADE_OUT_END       = 10.5f;
+
+	inline constexpr float VFX_FOLLOW_HEIGHT_RAIN  = 12.0f;
+	inline constexpr float VFX_FOLLOW_HEIGHT_SNOW  = 10.0f;
+	inline constexpr float VFX_RAIN_RATE           = 700.0f;
+	inline constexpr float VFX_SNOW_RATE           = 260.0f;
+	inline constexpr float VFX_FIREFLY_RATE        = 12.0f;
+	inline constexpr float VFX_MIST_RATE           = 7.0f;
+	inline constexpr float VFX_CHIMNEY_RATE        = 5.0f;
+	inline constexpr float VFX_SPARK_RATE          = 4.0f;
+	inline constexpr float VFX_AREA_HALF_EXTENT    = 14.0f;
+	inline constexpr uint32_t VFX_BURST_HARVEST    = 18;
+	inline constexpr uint32_t VFX_BURST_DUST       = 22;
+	inline constexpr uint32_t VFX_BURST_CHIPS      = 12;
+	inline constexpr uint32_t VFX_BURST_SPRAY      = 20;
+
+	inline constexpr float MUSIC_FADE_IN_START_HOUR = 6.0f;
+	inline constexpr float MUSIC_FADE_IN_END_HOUR   = 6.4f;
+	inline constexpr float MUSIC_FADE_OUT_START_HOUR = 19.5f;
+	inline constexpr float MUSIC_FADE_OUT_END_HOUR  = 20.0f;
+	inline constexpr float MUSIC_CROSSFADE_SECONDS  = 6.0f;
+	inline constexpr float MUSIC_VOLUME             = 0.8f;
+	inline constexpr float AMBIENCE_FADE_SECONDS    = 3.0f;
+	inline constexpr float AMBIENCE_VOLUME          = 0.7f;
+	inline constexpr float SFX_VOLUME_TOOL          = 0.8f;
+	inline constexpr float SFX_VOLUME_STEP          = 0.45f;
+	inline constexpr float SFX_VOLUME_PLACE         = 0.85f;
+	inline constexpr float SFX_VOLUME_UI            = 0.7f;
+	inline constexpr float SFX_VOLUME_POND          = 0.6f;
+	inline constexpr float SFX_VOLUME_CHICKEN       = 0.7f;
+	inline constexpr float SFX_NEAR                 = 2.0f;
+	inline constexpr float SFX_FAR                  = 22.0f;
+	inline constexpr float SFX_STEP_FAR             = 12.0f;
+	inline constexpr float POND_NEAR                = 3.0f;
+	inline constexpr float POND_FAR                 = 26.0f;
+	inline constexpr float CHICKEN_NEAR             = 2.0f;
+	inline constexpr float CHICKEN_FAR              = 16.0f;
+	inline constexpr float FOOTSTEP_STRIDE          = 1.4f;
+	// A move longer than this in one step is a teleport (sleep, load), not walking.
+	inline constexpr float FOOTSTEP_MAX_JUMP        = 1.0f;
+	inline constexpr float CLUCK_INTERVAL_MIN       = 3.0f;
+	inline constexpr float CLUCK_INTERVAL_MAX       = 9.0f;
+
+	inline constexpr int PERF_WARMUP_FRAMES       = 180;
+	inline constexpr int PERF_WINDOW_FRAMES       = 600;
+	inline constexpr int DAYS_STEPS_WINDOWED       = 60;
+}

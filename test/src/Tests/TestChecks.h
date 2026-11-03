@@ -1,7 +1,9 @@
 #pragma once
 #include <DingoEngine.h>
 
+#include <filesystem>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace Dingo
@@ -44,5 +46,9 @@ namespace Dingo
 	private:
 		std::vector<CheckResult> m_Results;
 	};
+
+	// Unique to this process: the GPU runner starts one test app per backend at once, and a shared
+	// folder lets one app's cleanup delete another's files mid-check.
+	std::filesystem::path TestTempDirectory(std::string_view name);
 
 }

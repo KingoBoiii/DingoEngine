@@ -5,12 +5,13 @@
 // Renderer3D::InstanceDraw. Both blocks are found by name, so a custom shader may move them to
 // bindings its own uniforms and textures leave free: define DE_INSTANCE_DATA_BINDING and
 // DE_INSTANCE_DRAW_BINDING before including this.
+//
+// With DE_INSTANCE_DRAW_PUSH (the engine's shaders) DE_InstanceDraw is a push-constant block
+// instead, which a draw sets without writing a buffer, so on Vulkan the draws of a pass share one
+// render pass. The renderer then owns the shader's push constants: it declares no other push block.
 
 #ifndef DE_INSTANCE_DATA_BINDING
 #define DE_INSTANCE_DATA_BINDING 9
-#endif
-#ifndef DE_INSTANCE_DRAW_BINDING
-#define DE_INSTANCE_DRAW_BINDING 10
 #endif
 
 struct InstanceRecord
@@ -26,7 +27,14 @@ layout(std430, binding = DE_INSTANCE_DATA_BINDING) readonly buffer DE_InstanceDa
 	InstanceRecord Instances[];
 };
 
+#ifdef DE_INSTANCE_DRAW_PUSH
+layout(push_constant) uniform DE_InstanceDraw
+#else
+#ifndef DE_INSTANCE_DRAW_BINDING
+#define DE_INSTANCE_DRAW_BINDING 10
+#endif
 layout(std140, binding = DE_INSTANCE_DRAW_BINDING) uniform DE_InstanceDraw
+#endif
 {
 	uvec4 InstanceBase; // x = the draw's first record, y = the views each record is drawn into
 };

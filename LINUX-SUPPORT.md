@@ -245,7 +245,7 @@ Not Linux-specific. Linux's working sanitizers found it.
 | premake5 5.0.0-beta8, Linux build | The repo only ships `vendor/premake/bin/premake5.exe`; CI already pins beta8. Use the **`gmake`** action. |
 | Vulkan SDK ≥ 1.4 | LunarG's Linux tarball, **not** the distro packages (see below). |
 | assimp 6.0.x, static | Built from source into `vendor/assimp/lib/linux-x86_64/` ([L6](#l6), [Appendix A](#appendix-a)). Distro packages are too old. |
-| Build tools and headers | `cmake ninja-build python3 zlib1g-dev` (for Appendix A), plus `libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev` for GLFW's X11 back-end, which loads the libraries themselves at runtime. |
+| Build tools and headers | `cmake ninja-build python3 zlib1g-dev` (for Appendix A), plus `libcurl4-openssl-dev` for crash reports (sentry-native) and `libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev` for GLFW's X11 back-end, which loads the libraries themselves at runtime. |
 | Runtime | `libvulkan1` and a Vulkan **1.3** driver (`VulkanGraphicsContext.cpp:246`) offering `VK_KHR_maintenance1` and `VK_KHR_swapchain` (`VulkanGraphicsContext.h:79-80`). Headless: `xvfb` plus `mesa-vulkan-drivers` (llvmpipe). |
 
 **Why the distro packages don't work** (Ubuntu 24.04):
@@ -278,7 +278,7 @@ Windows SDK's version), whose `setup-env.sh` also puts its validation layer on t
 ```bash
 # System packages (Ubuntu/Debian names)
 sudo apt install build-essential git cmake ninja-build python3 zlib1g-dev \
-                 libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev
+                 libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libcurl4-openssl-dev
 
 # Vulkan SDK: extract LunarG's Linux tarball, then source its environment script,
 # which points VULKAN_SDK at the SDK's x86_64 directory
@@ -882,7 +882,7 @@ every example beside its assets, so it runs without the SDK or a build. The test
 - `play.sh` starts any program from its own directory.
 - The README's checklist covers the subsystems above.
 
-The binaries need glibc 2.38 and GCC 13's libstdc++ (Ubuntu 24.04-era distros or newer) and `libvulkan.so.1`.
+The binaries need glibc 2.38 and GCC 13's libstdc++ (Ubuntu 24.04-era distros or newer), `libvulkan.so.1` and `libcurl.so.4` (crash reports).
 
 <a id="l27"></a>
 ### L27 — Native Wayland *(optional)*

@@ -2,6 +2,7 @@
 #include "DingoEngine/Core/FileReaders.h"
 #include "DingoEngine/Graphics/Model.h"
 #include "DingoEngine/Graphics/EventsFile.h"
+#include "DingoEngine/Graphics/RagdollRecipeFile.h"
 #include "DingoEngine/Core/PathText.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/GraphicsDevice.h"
@@ -33,7 +34,6 @@ namespace Dingo
 	static constexpr uint32_t k_StaticImportFlags =
 		aiProcess_Triangulate           |
 		aiProcess_GenSmoothNormals      |
-		aiProcess_FlipUVs               |
 		aiProcess_CalcTangentSpace      |
 		aiProcess_JoinIdenticalVertices |
 		aiProcess_PreTransformVertices;
@@ -41,7 +41,6 @@ namespace Dingo
 	static constexpr uint32_t k_SkinnedImportFlags =
 		aiProcess_Triangulate           |
 		aiProcess_GenSmoothNormals      |
-		aiProcess_FlipUVs               |
 		aiProcess_JoinIdenticalVertices |
 		aiProcess_LimitBoneWeights;
 
@@ -977,7 +976,7 @@ namespace Dingo
 		importer.SetPropertyBool(AI_CONFIG_IMPORT_NO_SKELETON_MESHES, true);
 		const aiScene* scene = importer.ReadFile(assimpPath, 0);
 
-		const bool skinned = scene && (HasBones(scene) || IsClipLibrary(scene));
+		const bool skinned = scene && (HasBones(scene) || IsClipLibrary(scene) || (params.AnimateNodes && scene->mNumAnimations > 0));
 		if (skinned && scene->mRootNode && HasFbxPivotNodes(scene->mRootNode))
 		{
 			// Pivot helper nodes would sit between the joints and take over their names and
@@ -991,6 +990,7 @@ namespace Dingo
 		if (skinned)
 			importer.SetPropertyBool(AI_CONFIG_IMPORT_REMOVE_EMPTY_BONES, false);
 
+		const uint32_t clipCount = scene ? scene->mNumAnimations : 0;
 		if (scene)
 			scene = importer.ApplyPostProcessing(skinned ? k_SkinnedImportFlags : k_StaticImportFlags);
 
@@ -1005,11 +1005,11 @@ namespace Dingo
 		const std::string modelName = Internal::PathToUtf8(resolvedPath.filename());
 		if (params.ClipsOnly && !skinned)
 		{
-			DE_CORE_ERROR("Model::LoadFromFile failed for '{}': ClipsOnly, but the file has no bones, so it has no clips to load", Internal::PathToUtf8(resolvedPath));
+			DE_CORE_ERROR("Model::LoadFromFile failed for '{}': ClipsOnly, but the file has no bones or clips to load (ModelLoadParams::AnimateNodes loads clips that move its nodes)", Internal::PathToUtf8(resolvedPath));
 			return nullptr;
 		}
-		if (!skinned && scene->mNumAnimations > 0)
-			DE_CORE_WARN("Model '{}': {} clip(s) ignored; a model without bones loads as a static mesh.", modelName, scene->mNumAnimations);
+		if (!skinned && clipCount > 0)
+			DE_CORE_WARN("Model '{}': {} clip(s) ignored; a model without bones loads as a static mesh (ModelLoadParams::AnimateNodes plays clips that move its nodes).", modelName, clipCount);
 
 		Model* model = new Model();
 		model->m_FilePath = std::filesystem::absolute(resolvedPath);
@@ -1048,6 +1048,14 @@ namespace Dingo
 			events.replace_extension(".events");
 			if (VirtualFileSystem::Exists(events))
 				model->LoadEvents(events);
+		}
+
+		if (model->m_Skeleton)
+		{
+			std::filesystem::path recipes = resolvedPath;
+			recipes.replace_extension(".ragdoll");
+			if (VirtualFileSystem::Exists(recipes))
+				model->LoadRagdollRecipes(recipes);
 		}
 
 		return model;
@@ -1117,6 +1125,33 @@ namespace Dingo
 			clip->ClearEvents();
 		if (exists)
 			LoadEvents(events);
+		++m_Generation;
+		return true;
+	}
+
+	bool Model::ReloadRagdollRecipes()
+	{
+		if (m_FilePath.empty())
+		{
+			DE_CORE_WARN("Model::ReloadRagdollRecipes: the model wasn't loaded from a file");
+			return false;
+		}
+
+		std::filesystem::path recipes = m_FilePath;
+		recipes.replace_extension(".ragdoll");
+		if (m_Skeleton && VirtualFileSystem::Exists(recipes))
+		{
+			if (!LoadRagdollRecipes(recipes))
+			{
+				DE_CORE_WARN("Model '{}': couldn't read '{}', so the ragdoll recipes stay as they were", Internal::PathToUtf8(m_FilePath.filename()), Internal::PathToUtf8(recipes.filename()));
+				return false;
+			}
+		}
+		else
+		{
+			m_RagdollRecipes.clear();
+			++m_RagdollRecipeRevision;
+		}
 		++m_Generation;
 		return true;
 	}
@@ -1225,6 +1260,9 @@ namespace Dingo
 		}
 		m_Textures = std::move(fresh.m_Textures);
 		fresh.m_Textures.clear();
+
+		m_RagdollRecipes = std::move(fresh.m_RagdollRecipes);
+		++m_RagdollRecipeRevision;
 	}
 
 	AnimationClip* Model::GetAnimation(uint32_t index) const
@@ -1303,6 +1341,44 @@ namespace Dingo
 		for (AnimationClip* clip : added)
 			clip->RebuildEventMarks();
 		return true;
+	}
+
+	bool Model::LoadRagdollRecipes(const std::filesystem::path& filepath)
+	{
+		if (!m_Skeleton)
+		{
+			DE_CORE_ERROR("Model::LoadRagdollRecipes: '{}' has no skeleton", Internal::PathToUtf8(m_FilePath.filename()));
+			return false;
+		}
+
+		std::optional<std::vector<uint8_t>> bytes = VirtualFileSystem::ReadBytes(filepath);
+		if (!bytes)
+		{
+			DE_CORE_ERROR("Model::LoadRagdollRecipes: can't read '{}'", Internal::PathToUtf8(filepath));
+			return false;
+		}
+
+		const Skeleton& skeleton = *m_Skeleton;
+		Internal::RagdollRecipeFile file = Internal::ParseRagdollRecipes(std::string_view(reinterpret_cast<const char*>(bytes->data()), bytes->size()),
+			[&](std::string_view joint) { return skeleton.FindJoint(joint) != Skeleton::k_InvalidJoint; });
+
+		const std::string fileName = Internal::PathToUtf8(filepath.filename());
+		for (const Internal::RagdollRecipeWarning& warning : file.Warnings)
+			DE_CORE_WARN("{} line {}: {}", fileName, warning.Line, warning.Message);
+
+		m_RagdollRecipes = std::move(file.Recipes);
+		++m_RagdollRecipeRevision;
+		return true;
+	}
+
+	const RagdollRecipe* Model::FindRagdollRecipe(std::string_view name) const
+	{
+		for (const RagdollRecipe& recipe : m_RagdollRecipes)
+		{
+			if (recipe.Name == name)
+				return &recipe;
+		}
+		return nullptr;
 	}
 
 }

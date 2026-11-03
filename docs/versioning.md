@@ -56,8 +56,9 @@ Physics steps once per `Scene::OnUpdate` with that update's delta (capped at 4/6
 `ceil(dt * 60 - 0.1)` collision steps, clamped to 1..4, and 2D with 4 substeps. A script's
 `OnFixedUpdate(step)` runs from a separate accumulator (`Scene::SetFixedTimeStep`, 1/60 s by default)
 before `OnUpdate`; it is for game logic on a fixed clock and does not step physics. Moving physics
-onto the fixed step would change how every game simulates, so 1.x keeps it as it is; a fixed-step
-physics mode, if it comes, is opt-in.
+onto the fixed step would change how every game simulates, so 1.x keeps it as the default. The
+fixed-step mode is opt-in: `SceneParams::FixedTick` (v1.1) steps physics once per fixed tick and
+draws bodies between ticks ([Scenes & ECS](scenes-and-ecs.md#fixed-simulation-tick-v11)).
 
 ## Version numbers in the build
 

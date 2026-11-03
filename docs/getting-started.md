@@ -21,8 +21,8 @@ Either way, your *code* is identical — only the build setup differs.
 | OS | Windows 10/11, x64 | x86-64; verified on Ubuntu 24.04 (X11, or Wayland through XWayland) |
 | [Vulkan SDK](https://vulkan.lunarg.com/) ≥ 1.4 | The installer; it sets `VULKAN_SDK` | LunarG's Linux tarball: `source <sdk>/setup-env.sh` sets `VULKAN_SDK`. Distro packages are too old. |
 | C++20 toolchain | MSVC (Visual Studio 2022/2026, toolset v143+) | GCC ≥ 13 (the engine's `std::format` needs libstdc++ 13) |
-| Packages | — | `build-essential cmake ninja-build python3 zlib1g-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev` (Ubuntu/Debian names) |
-| Runtime | A Vulkan 1.3 driver | `libvulkan1` and a Vulkan 1.3 driver |
+| Packages | — | `build-essential cmake ninja-build python3 zlib1g-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libcurl4-openssl-dev` (Ubuntu/Debian names) |
+| Runtime | A Vulkan 1.3 driver | `libvulkan1`, a Vulkan 1.3 driver and `libcurl.so.4` (Release and Distribution, for crash reports) |
 
 The engine links **ShaderC** and **SPIRV-Cross** from the SDK and loads Vulkan at runtime.
 Debug builds enable the SDK's validation layer when it is installed, and warn when it isn't.
@@ -201,18 +201,19 @@ glm/                       # GLM math headers       ← public dependency
 ```
 
 Build with GCC ≥ 13 and link the archive with the Vulkan SDK's ShaderC and SPIRV-Cross,
-zlib, dl and pthread. Nothing else is needed, not even a link group:
+zlib, dl and pthread, plus curl for the Release and Distribution packages, which carry crash
+reporting. Nothing else is needed, not even a link group:
 
 ```bash
 g++ -std=c++20 -O2 -DDE_PLATFORM_LINUX -DDE_RELEASE -DGLM_FORCE_DEPTH_ZERO_TO_ONE \
     -I <pkg>/include -I <pkg>/glm main.cpp -o MyGame \
     <pkg>/libDingoEngine.a -L"$VULKAN_SDK/lib" \
-    -lshaderc_combined -lspirv-cross-hlsl -lspirv-cross-glsl -lspirv-cross-core -lz -ldl -lpthread
+    -lshaderc_combined -lspirv-cross-hlsl -lspirv-cross-glsl -lspirv-cross-core -lz -ldl -lpthread -lcurl
 ```
 
 Use the package's own config define (`DE_DEBUG`, `DE_RELEASE` or `DE_DISTRIBUTION`). The
-executable needs only `libz`, the C/C++ runtime, `libvulkan1` and a Vulkan driver at run
-time.
+executable needs only `libz`, the C/C++ runtime, `libvulkan1`, a Vulkan driver and, from a
+Release or Distribution package, `libcurl.so.4` at run time.
 
 ### Runtime
 

@@ -6,6 +6,8 @@
 #include "DingoEngine/Core/VirtualFileSystem.h"
 
 #include <algorithm>
+#include <atomic>
+#include <cmath>
 #include <cstring>
 
 // All miniaudio usage is confined to this .cpp (+ the engine-internal MiniAudioData.h).
@@ -247,6 +249,8 @@ namespace Dingo
 		if (!m_Data)
 			return;
 
+		StopCapture();
+
 		// Uninit every live sound before the engine so its mixer graph is clean. The
 		// generation bump ReleaseSlot does is harmless here — the engine is going away.
 		for (Internal::SoundSlot& slot : m_Data->Slots)
@@ -289,6 +293,8 @@ namespace Dingo
 	{
 		if (!m_Data)
 			return;
+
+		PollCaptureDevice();
 
 		// Reap any finished non-looping sound (one-shots AND handle-returning sounds):
 		// free the ma_sound and bump the slot generation so any lingering handle goes
@@ -950,6 +956,518 @@ namespace Dingo
 			return;
 		ma_engine_listener_set_direction(m_Data->Engine, 0, forward.x, forward.y, forward.z);
 		ma_engine_listener_set_world_up(m_Data->Engine, 0, up.x, up.y, up.z);
+	}
+
+	namespace
+	{
+
+		constexpr float k_MaxCaptureGain = 8.0f;
+
+		float DbToLinear(float db)
+		{
+			return std::pow(10.0f, db / 20.0f);
+		}
+
+		std::string EncodeDeviceId(const ma_device_id& id)
+		{
+			const auto* bytes = reinterpret_cast<const unsigned char*>(&id);
+			std::size_t length = sizeof(ma_device_id);
+			while (length > 0 && bytes[length - 1] == 0)
+				--length;
+			if (length == 0)
+				length = 1;
+
+			constexpr char k_Hex[] = "0123456789abcdef";
+			std::string text;
+			text.reserve(length * 2);
+			for (std::size_t i = 0; i < length; ++i)
+			{
+				text.push_back(k_Hex[bytes[i] >> 4]);
+				text.push_back(k_Hex[bytes[i] & 0xF]);
+			}
+			return text;
+		}
+
+		bool DecodeDeviceId(const std::string& text, ma_device_id& id)
+		{
+			std::memset(&id, 0, sizeof(id));
+			if (text.size() % 2 != 0 || text.size() / 2 > sizeof(ma_device_id))
+				return false;
+
+			auto nibble = [](char c) -> int
+			{
+				if (c >= '0' && c <= '9') return c - '0';
+				if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+				if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+				return -1;
+			};
+			auto* bytes = reinterpret_cast<unsigned char*>(&id);
+			for (std::size_t i = 0; i < text.size() / 2; ++i)
+			{
+				const int high = nibble(text[i * 2]);
+				const int low = nibble(text[i * 2 + 1]);
+				if (high < 0 || low < 0)
+					return false;
+				bytes[i] = static_cast<unsigned char>((high << 4) | low);
+			}
+			return true;
+		}
+
+	}
+
+}
+
+namespace Dingo::Internal
+{
+
+	// The device thread is the ring's only writer and the game thread its only reader. Settings
+	// the game changes live are atomics the callback reads once a period.
+	struct MiniAudioCapture
+	{
+		ma_device* Device = nullptr;
+		ma_pcm_rb Ring{};
+		std::uint32_t Channels = 1;
+		std::uint32_t SampleRate = 48000;
+		std::string DeviceId;
+		AudioCaptureState State = AudioCaptureState::Stopped;
+		bool RetriedDefault = false;
+
+		std::atomic<float> Gain{ 1.0f };
+		std::atomic<bool> GateEnabled{ false };
+		std::atomic<float> GateThreshold{ 0.0f };
+		std::atomic<float> GateAttackMs{ 5.0f };
+		std::atomic<float> GateReleaseMs{ 150.0f };
+		float GateGain = 1.0f;
+
+		std::atomic<float> Level{ 0.0f };
+		std::atomic<bool> GateOpen{ true };
+		std::atomic<std::uint64_t> Overruns{ 0 };
+		bool LostForTest = false;
+	};
+
+	namespace
+	{
+
+		void ProcessCapture(MiniAudioCapture& capture, const float* input, std::uint32_t frameCount)
+		{
+			const std::uint32_t channels = capture.Channels;
+			const float gain = capture.Gain.load(std::memory_order_relaxed);
+
+			float inputPeak = 0.0f;
+			if (input)
+			{
+				for (std::size_t i = 0; i < static_cast<std::size_t>(frameCount) * channels; ++i)
+					inputPeak = (std::max)(inputPeak, std::fabs(input[i] * gain));
+			}
+			inputPeak = (std::min)(inputPeak, 1.0f);
+
+			const bool gateEnabled = capture.GateEnabled.load(std::memory_order_relaxed);
+			const bool open = !gateEnabled || inputPeak >= capture.GateThreshold.load(std::memory_order_relaxed);
+			float gateStep = 1.0f;
+			if (gateEnabled)
+			{
+				const float ms = open ? capture.GateAttackMs.load(std::memory_order_relaxed) : capture.GateReleaseMs.load(std::memory_order_relaxed);
+				const float frames = ms * 0.001f * static_cast<float>(capture.SampleRate);
+				gateStep = frames > 1.0f ? 1.0f / frames : 1.0f;
+			}
+			const float gateTarget = open ? 1.0f : 0.0f;
+
+			float outputPeak = 0.0f;
+			std::uint32_t done = 0;
+			while (done < frameCount)
+			{
+				ma_uint32 count = frameCount - done;
+				void* buffer = nullptr;
+				const bool writable = ma_pcm_rb_acquire_write(&capture.Ring, &count, &buffer) == MA_SUCCESS && count > 0;
+				if (!writable)
+				{
+					count = frameCount - done;
+					buffer = nullptr;
+				}
+
+				float* out = static_cast<float*>(buffer);
+				for (std::uint32_t frame = 0; frame < count; ++frame)
+				{
+					if (capture.GateGain < gateTarget)
+						capture.GateGain = (std::min)(capture.GateGain + gateStep, gateTarget);
+					else if (capture.GateGain > gateTarget)
+						capture.GateGain = (std::max)(capture.GateGain - gateStep, gateTarget);
+
+					for (std::uint32_t c = 0; c < channels; ++c)
+					{
+						const std::size_t index = static_cast<std::size_t>(done + frame) * channels + c;
+						const float sample = input ? std::clamp(input[index] * gain, -1.0f, 1.0f) * capture.GateGain : 0.0f;
+						outputPeak = (std::max)(outputPeak, std::fabs(sample));
+						if (out)
+							out[static_cast<std::size_t>(frame) * channels + c] = sample;
+					}
+				}
+
+				if (writable)
+					ma_pcm_rb_commit_write(&capture.Ring, count);
+				else
+					capture.Overruns.fetch_add(count, std::memory_order_relaxed);
+				done += count;
+			}
+
+			capture.Level.store(outputPeak, std::memory_order_relaxed);
+			capture.GateOpen.store(open, std::memory_order_relaxed);
+		}
+
+		void CaptureCallback(ma_device* device, void*, const void* input, ma_uint32 frameCount)
+		{
+			ProcessCapture(*static_cast<MiniAudioCapture*>(device->pUserData), static_cast<const float*>(input), frameCount);
+		}
+
+		ma_context* CaptureContext(MiniAudioData& data)
+		{
+			ma_device* playback = ma_engine_get_device(data.Engine);
+			return playback ? playback->pContext : nullptr;
+		}
+
+		// A device opened but not started, or nullptr with the reason logged.
+		ma_device* OpenCaptureDevice(MiniAudioData& data, MiniAudioCapture& capture, const std::string& deviceId, const char* caller)
+		{
+			ma_context* context = CaptureContext(data);
+			if (!context)
+			{
+				DE_CORE_ERROR("AudioEngine::{}: the engine has no audio context", caller);
+				return nullptr;
+			}
+
+			ma_device_id id{};
+			if (!deviceId.empty() && !DecodeDeviceId(deviceId, id))
+			{
+				DE_CORE_ERROR("AudioEngine::{}: '{}' is not a capture device id from EnumerateCaptureDevices", caller, deviceId);
+				return nullptr;
+			}
+
+			ma_device_config config = ma_device_config_init(ma_device_type_capture);
+			config.capture.pDeviceID = deviceId.empty() ? nullptr : &id;
+			config.capture.format = ma_format_f32;
+			config.capture.channels = capture.Channels;
+			config.sampleRate = capture.SampleRate;
+			config.dataCallback = CaptureCallback;
+			config.pUserData = &capture;
+
+			auto* device = new ma_device();
+			const ma_result result = ma_device_init(context, &config, device);
+			if (result != MA_SUCCESS)
+			{
+				DE_CORE_ERROR("AudioEngine::{}: can't open the capture device{} ({}: {}); no microphone, or access to it is denied",
+					caller, deviceId.empty() ? " (system default)" : "", (int)result, ma_result_description(result));
+				delete device;
+				return nullptr;
+			}
+			return device;
+		}
+
+		void CloseCaptureDevice(MiniAudioCapture& capture, ma_device*& device)
+		{
+			if (!device)
+				return;
+			ma_device_uninit(device);
+			delete device;
+			device = nullptr;
+		}
+
+		bool StartCaptureDevice(MiniAudioCapture& capture, ma_device* device, const char* caller)
+		{
+			capture.LostForTest = false;
+			const ma_result result = ma_device_start(device);
+			if (result != MA_SUCCESS)
+			{
+				DE_CORE_ERROR("AudioEngine::{}: can't start the capture device ({}: {})", caller, (int)result, ma_result_description(result));
+				return false;
+			}
+			return true;
+		}
+
+	}
+
+}
+
+namespace Dingo
+{
+
+	std::vector<AudioCaptureDevice> MiniAudioEngine::EnumerateCaptureDevices() const
+	{
+		std::vector<AudioCaptureDevice> devices;
+		ma_context* context = m_Data ? Internal::CaptureContext(*m_Data) : nullptr;
+		if (!context)
+			return devices;
+
+		ma_device_info* playback = nullptr;
+		ma_device_info* capture = nullptr;
+		ma_uint32 playbackCount = 0;
+		ma_uint32 captureCount = 0;
+		const ma_result result = ma_context_get_devices(context, &playback, &playbackCount, &capture, &captureCount);
+		if (result != MA_SUCCESS)
+		{
+			DE_CORE_WARN("AudioEngine::EnumerateCaptureDevices: the OS didn't list its devices ({})", (int)result);
+			return devices;
+		}
+
+		for (ma_uint32 i = 0; i < captureCount; ++i)
+		{
+			AudioCaptureDevice& device = devices.emplace_back();
+			device.Id = EncodeDeviceId(capture[i].id);
+			device.Name = capture[i].name;
+			device.IsDefault = capture[i].isDefault != MA_FALSE;
+		}
+		std::stable_partition(devices.begin(), devices.end(), [](const AudioCaptureDevice& device) { return device.IsDefault; });
+		return devices;
+	}
+
+	bool MiniAudioEngine::StartCapture(const AudioCaptureDesc& desc)
+	{
+		if (!m_Data)
+		{
+			DE_CORE_ERROR("AudioEngine::StartCapture: the engine has no audio device");
+			return false;
+		}
+		if (desc.Channels < 1 || desc.Channels > 2 || desc.BufferFrames == 0
+			|| desc.BufferFrames > 0x7FFFFFFFu / (sizeof(float) * desc.Channels)
+			|| desc.SampleRate < k_MinStreamSampleRate || desc.SampleRate > k_MaxStreamSampleRate)
+		{
+			DE_CORE_ERROR("AudioEngine::StartCapture: invalid capture ({} Hz, {} channels, {} frames)", desc.SampleRate, desc.Channels, desc.BufferFrames);
+			return false;
+		}
+
+		StopCapture();
+
+		auto* capture = new Internal::MiniAudioCapture();
+		capture->Channels = desc.Channels;
+		capture->SampleRate = desc.SampleRate;
+		capture->DeviceId = desc.DeviceId;
+		const ma_result ringResult = ma_pcm_rb_init(ma_format_f32, desc.Channels, desc.BufferFrames, nullptr, nullptr, &capture->Ring);
+		if (ringResult != MA_SUCCESS)
+		{
+			DE_CORE_ERROR("AudioEngine::StartCapture: ring buffer of {} frames failed ({})", desc.BufferFrames, (int)ringResult);
+			delete capture;
+			return false;
+		}
+
+		m_Data->Capture = capture;
+		SetCaptureGain(desc.Gain);
+		SetCaptureNoiseGate(desc.NoiseGate, desc.GateThresholdDb, desc.GateAttackMs, desc.GateReleaseMs);
+		capture->GateGain = desc.NoiseGate ? 0.0f : 1.0f;
+		capture->GateOpen.store(!desc.NoiseGate);
+
+		capture->Device = Internal::OpenCaptureDevice(*m_Data, *capture, desc.DeviceId, "StartCapture");
+		if (!capture->Device || !Internal::StartCaptureDevice(*capture, capture->Device, "StartCapture"))
+		{
+			StopCapture();
+			return false;
+		}
+		capture->State = AudioCaptureState::Running;
+		return true;
+	}
+
+	void MiniAudioEngine::StopCapture()
+	{
+		if (!m_Data || !m_Data->Capture)
+			return;
+		Internal::MiniAudioCapture* capture = m_Data->Capture;
+		Internal::CloseCaptureDevice(*capture, capture->Device);
+		ma_pcm_rb_uninit(&capture->Ring);
+		delete capture;
+		m_Data->Capture = nullptr;
+	}
+
+	AudioCaptureState MiniAudioEngine::GetCaptureState() const
+	{
+		return m_Data && m_Data->Capture ? m_Data->Capture->State : AudioCaptureState::Stopped;
+	}
+
+	std::string MiniAudioEngine::GetCaptureDeviceId() const
+	{
+		return m_Data && m_Data->Capture ? m_Data->Capture->DeviceId : std::string();
+	}
+
+	Internal::MiniAudioCapture* MiniAudioEngine::RunningCapture() const
+	{
+		if (!m_Data || !m_Data->Capture || m_Data->Capture->State != AudioCaptureState::Running)
+			return nullptr;
+		return m_Data->Capture;
+	}
+
+	std::uint32_t MiniAudioEngine::ReadCaptured(std::int16_t* frames, std::uint32_t maxFrames)
+	{
+		Internal::MiniAudioCapture* capture = RunningCapture();
+		if (!capture || !frames)
+			return 0;
+
+		const std::uint32_t channels = capture->Channels;
+		std::uint32_t read = 0;
+		while (read < maxFrames)
+		{
+			ma_uint32 count = maxFrames - read;
+			void* buffer = nullptr;
+			if (ma_pcm_rb_acquire_read(&capture->Ring, &count, &buffer) != MA_SUCCESS || count == 0)
+				break;
+
+			const float* in = static_cast<const float*>(buffer);
+			std::int16_t* out = frames + static_cast<std::size_t>(read) * channels;
+			for (std::size_t i = 0; i < static_cast<std::size_t>(count) * channels; ++i)
+				out[i] = static_cast<std::int16_t>(std::lrint(std::clamp(in[i], -1.0f, 1.0f) * 32767.0f));
+
+			ma_pcm_rb_commit_read(&capture->Ring, count);
+			read += count;
+		}
+		return read;
+	}
+
+	std::uint32_t MiniAudioEngine::ReadCaptured(float* frames, std::uint32_t maxFrames)
+	{
+		Internal::MiniAudioCapture* capture = RunningCapture();
+		if (!capture || !frames)
+			return 0;
+
+		const std::uint32_t channels = capture->Channels;
+		std::uint32_t read = 0;
+		while (read < maxFrames)
+		{
+			ma_uint32 count = maxFrames - read;
+			void* buffer = nullptr;
+			if (ma_pcm_rb_acquire_read(&capture->Ring, &count, &buffer) != MA_SUCCESS || count == 0)
+				break;
+
+			std::memcpy(frames + static_cast<std::size_t>(read) * channels, buffer, static_cast<std::size_t>(count) * channels * sizeof(float));
+			ma_pcm_rb_commit_read(&capture->Ring, count);
+			read += count;
+		}
+		return read;
+	}
+
+	std::uint32_t MiniAudioEngine::GetCapturedFrames() const
+	{
+		Internal::MiniAudioCapture* capture = RunningCapture();
+		return capture ? ma_pcm_rb_available_read(&capture->Ring) : 0;
+	}
+
+	std::uint64_t MiniAudioEngine::GetCaptureOverruns() const
+	{
+		return m_Data && m_Data->Capture ? m_Data->Capture->Overruns.load() : 0;
+	}
+
+	bool MiniAudioEngine::SetCaptureDevice(const std::string& deviceId)
+	{
+		if (!m_Data || !m_Data->Capture)
+		{
+			DE_CORE_ERROR("AudioEngine::SetCaptureDevice: not capturing; call StartCapture first");
+			return false;
+		}
+		return SwitchCaptureDevice(deviceId, "SetCaptureDevice");
+	}
+
+	bool MiniAudioEngine::SwitchCaptureDevice(const std::string& deviceId, const char* caller)
+	{
+		Internal::MiniAudioCapture& capture = *m_Data->Capture;
+		if (capture.Device && capture.State == AudioCaptureState::Running && deviceId == capture.DeviceId)
+			return true;
+		ma_device* device = Internal::OpenCaptureDevice(*m_Data, capture, deviceId, caller);
+		if (!device)
+			return false;
+
+		// One writer at a time: the old device stops before the new one starts.
+		if (capture.Device)
+			ma_device_stop(capture.Device);
+		if (!Internal::StartCaptureDevice(capture, device, caller))
+		{
+			Internal::CloseCaptureDevice(capture, device);
+			if (capture.Device && capture.State == AudioCaptureState::Running && ma_device_start(capture.Device) != MA_SUCCESS)
+				capture.State = AudioCaptureState::Lost;
+			return false;
+		}
+
+		Internal::CloseCaptureDevice(capture, capture.Device);
+		capture.Device = device;
+		capture.DeviceId = deviceId;
+		capture.State = AudioCaptureState::Running;
+		capture.RetriedDefault = false;
+		return true;
+	}
+
+	void MiniAudioEngine::PollCaptureDevice()
+	{
+		if (!m_Data || !m_Data->Capture)
+			return;
+		Internal::MiniAudioCapture& capture = *m_Data->Capture;
+		// Polled rather than notified: miniaudio skips the stopped notification when an unplugged
+		// device's stop fails (WASAPI), and Pulse notifies a suspend that leaves the device started.
+		const bool started = capture.Device ? ma_device_is_started(capture.Device) != MA_FALSE : !capture.LostForTest;
+		if (capture.State == AudioCaptureState::Lost && started && capture.Device)
+		{
+			capture.State = AudioCaptureState::Running;
+			DE_CORE_INFO("AudioEngine: the capture device came back");
+			return;
+		}
+		if (capture.State != AudioCaptureState::Running || started)
+			return;
+
+		capture.State = AudioCaptureState::Lost;
+		DE_CORE_WARN("AudioEngine: the capture device stopped (unplugged?); trying the system default");
+		if (capture.RetriedDefault)
+			return;
+		capture.RetriedDefault = true;
+		if (SwitchCaptureDevice(std::string(), "capture recovery"))
+			DE_CORE_INFO("AudioEngine: capture continues on the system default device");
+		else
+			DE_CORE_WARN("AudioEngine: no capture device to fall back on; capture stays lost until SetCaptureDevice or StartCapture");
+	}
+
+	void MiniAudioEngine::SetCaptureGain(float gain)
+	{
+		if (m_Data && m_Data->Capture)
+			m_Data->Capture->Gain.store(std::isfinite(gain) ? std::clamp(gain, 0.0f, k_MaxCaptureGain) : 1.0f);
+	}
+
+	void MiniAudioEngine::SetCaptureNoiseGate(bool enabled, float thresholdDb, float attackMs, float releaseMs)
+	{
+		if (!m_Data || !m_Data->Capture)
+			return;
+		Internal::MiniAudioCapture& capture = *m_Data->Capture;
+		capture.GateThreshold.store(DbToLinear(std::isfinite(thresholdDb) ? thresholdDb : -50.0f));
+		capture.GateAttackMs.store(std::isfinite(attackMs) ? (std::max)(attackMs, 0.0f) : 5.0f);
+		capture.GateReleaseMs.store(std::isfinite(releaseMs) ? (std::max)(releaseMs, 0.0f) : 150.0f);
+		capture.GateEnabled.store(enabled);
+	}
+
+	float MiniAudioEngine::GetCaptureLevel() const
+	{
+		Internal::MiniAudioCapture* capture = RunningCapture();
+		return capture ? capture->Level.load() : 0.0f;
+	}
+
+	bool MiniAudioEngine::IsCaptureGateOpen() const
+	{
+		Internal::MiniAudioCapture* capture = RunningCapture();
+		return capture && capture->GateOpen.load();
+	}
+
+	void MiniAudioEngine::DetachCaptureDeviceForTest()
+	{
+		if (m_Data && m_Data->Capture)
+			Internal::CloseCaptureDevice(*m_Data->Capture, m_Data->Capture->Device);
+	}
+
+	void MiniAudioEngine::FeedCaptureForTest(const float* frames, std::uint32_t frameCount)
+	{
+		if (m_Data && m_Data->Capture && !m_Data->Capture->Device)
+			Internal::ProcessCapture(*m_Data->Capture, frames, frameCount);
+	}
+
+	void MiniAudioEngine::SimulateCaptureLossForTest()
+	{
+		if (!m_Data || !m_Data->Capture)
+			return;
+		Internal::MiniAudioCapture& capture = *m_Data->Capture;
+		if (capture.Device)
+			ma_device_stop(capture.Device);
+		else
+			capture.LostForTest = true;
+		PollCaptureDevice();
 	}
 
 }

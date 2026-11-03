@@ -1,3 +1,5 @@
+**Status**: done (v0.9.1)
+
 # Headstone requests — runtime VSync, audio buses, fog, translucent 3D materials
 
 The four open `headstone` issues, all filed 2026-10-06 from the *Headstone* game:

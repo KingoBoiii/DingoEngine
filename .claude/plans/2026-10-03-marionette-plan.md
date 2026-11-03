@@ -1,3 +1,5 @@
+**Status**: done (v0.8.0)
+
 # P13 — *Marionette*: example-game plan
 
 Drafted 2026-10-03 on branch `claude/v0-8-animation-character-fidelity-7209eb` @ `368caff` (v0.8

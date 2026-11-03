@@ -197,8 +197,9 @@ access beyond the entity-based helpers above, reach the live world directly via
   `Scene::GetEntityFromBody2D` (it comes with 2D queries).
 - Only box and circle colliders (no polygons), read when the body is built: editing a component on
   a live body changes nothing until the body is rebuilt.
-- Bodies step on the variable frame delta, cut to 4/60 s, with 4 substeps; `OnFixedUpdate` does
-  not change that ([Scenes & ECS](scenes-and-ecs.md#behaviours-scriptableentity)).
+- Bodies step on the variable frame delta, cut to 4/60 s, with 4 substeps, unless the scene has
+  `SceneParams::FixedTick`, which steps them once per fixed tick and draws them between ticks
+  ([Scenes & ECS](scenes-and-ecs.md#fixed-simulation-tick-v11)).
 - Unlike 3D, a kinematic child does not ignore its ancestors: bodies in one hierarchy collide, so
   keep a child's collider clear of its parents'.
 - A body's angle can differ from its transform's by about a tenth of a degree (Box2D's fast

@@ -518,16 +518,6 @@ namespace Dingo
 				}
 			}
 
-			entt::entity WorldMemo::ParentOf(entt::entity handle) const
-			{
-				return m_Links && m_Links->contains(handle) ? m_Links->get(handle).Parent : entt::null;
-			}
-
-			bool WorldMemo::HasParent(entt::entity handle) const
-			{
-				return ParentOf(handle) != entt::null;
-			}
-
 			std::uint32_t WorldMemo::Depth(entt::entity handle) const
 			{
 				std::uint32_t depth = 0;
