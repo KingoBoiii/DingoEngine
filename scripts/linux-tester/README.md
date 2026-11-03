@@ -17,7 +17,7 @@ It takes about 10 minutes for the automatic part (step 2) and as long as you lik
 
   | Distro | Command |
   |---|---|
-  | Ubuntu, Mint, Pop!_OS, Debian | `sudo apt install libvulkan1 mesa-vulkan-drivers vulkan-tools python3-xlib libcurl4t64` |
+  | Ubuntu, Mint, Pop!_OS, Debian | `sudo apt install libvulkan1 mesa-vulkan-drivers vulkan-tools python3-xlib libcurl4t64` (`libcurl4` before Ubuntu 24.04 and Debian 13) |
   | Fedora | `sudo dnf install vulkan-loader mesa-vulkan-drivers vulkan-tools python3-xlib libcurl` |
   | Arch, Manjaro | `sudo pacman -S vulkan-icd-loader vulkan-tools python-xlib curl` plus your GPU's driver: `vulkan-radeon`, `vulkan-intel` or `nvidia-utils` |
 

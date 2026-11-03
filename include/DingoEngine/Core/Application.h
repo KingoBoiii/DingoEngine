@@ -67,9 +67,9 @@ namespace Dingo
 	/// Opt-in crash and error reports to a Sentry-compatible server (Sentry or a self-hosted
 	/// GlitchTip), compiled into Release and Distribution, and into Debug with premake
 	/// `--crash-reporting`. Error and Fatal log lines become events (each distinct message once
-	/// per run, 25 at most), lower levels become their breadcrumbs, and a crash the engine's crash handler logged is sent on the next launch. Nothing
-	/// identifies the player: no user, IP or host name is sent, and the home folder is replaced by
-	/// `~` in every text sent.
+	/// per run, 25 at most), lower levels become their breadcrumbs, and a crash the engine's crash
+	/// handler logged is sent on the next launch. Nothing identifies the player: no user, IP or
+	/// host name is sent, and the home folder is replaced by `~` in every text sent.
 	struct CrashReportingParams
 	{
 		/// The project's DSN from the server (`https://<key>@<host>/<project id>`). Empty = off.
