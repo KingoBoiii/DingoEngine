@@ -1,7 +1,7 @@
 #pragma once
 
-// Engine-internal: opt-in crash and error reports through sentry-native (premake --crash-reporting,
-// DE_CRASH_REPORTING), with sentry's backend "none": the engine's CrashHandler stays the only crash
+// Engine-internal: opt-in crash and error reports through sentry-native (DE_CRASH_REPORTING: Release,
+// Distribution, and Debug with premake --crash-reporting), with sentry's backend "none": the engine's CrashHandler stays the only crash
 // handler, and a crash it logged is sent on the next launch. A sink on the loggers queues every
 // line; one worker thread, the only code that calls sentry, turns Error/Fatal into events and the
 // rest into breadcrumbs. The sink never blocks on sentry and never logs, so it is safe under the

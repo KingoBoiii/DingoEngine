@@ -59,7 +59,7 @@ Sections (Grep `## <name>`):
 
 ## Crash reporting
 
-- docs/application-and-layers.md "Crash and error reports". Compiled in only with premake `--crash-reporting` (`DE_CRASH_REPORTING`, workspace-wide); without it `Internal::CrashReporter` (`Core/CrashReporter.h`) is inline no-ops and `CrashReporter.cpp` is empty.
+- docs/application-and-layers.md "Crash and error reports". Compiled into Release and Distribution, and into Debug with premake `--crash-reporting` (`DE_CRASH_REPORTING`, workspace-wide, per configuration); without it `Internal::CrashReporter` (`Core/CrashReporter.h`) is inline no-ops and `CrashReporter.cpp` is empty.
 - sentry-native runs with backend `none`: no Crashpad/Breakpad/inproc handler, so `CrashHandler` stays the only one and nothing is uploaded from a crashed process. The `sentry` project (`scripts/premake/sentry-native.lua`) mirrors its CMake build: WinHTTP / system libcurl transport, no unwinder, no screenshots, no WER, `SENTRY_THREAD_STACK_GUARANTEE_AUTO_INIT` off (`PrepareThread` owns stack guarantees). `sentry.lib` joins the merged `DingoEngine.lib`/`libDingoEngine.a`; Linux executables also link `curl`.
 - The `Application` constructor calls `Configure` (first call wins, so a `RequestRestart` keeps the config and the runtime on/off choice) after `CrashHandler::Install`, then `SetEnabled(true)` if `CrashReportingParams::Enabled`. `Internal::Main` calls `CrashReporter::Shutdown` before `ShutdownLog`.
 - A `ReportSink` added to `LogSinks` through `Internal::AddLogSink` only copies the line into a bounded queue (1024; Error/Fatal get 64 more) under its own `timed_mutex`: it never calls sentry, never logs, and is safe in `TryLogFatal`. One worker thread (`CrashHandler::RunThread`) is the only caller of sentry: Error/Fatal → `sentry_capture_event` (each distinct message once, 25 a run: `CrashReportText::EventLimiter`), every line → a breadcrumb (100 kept). The worker never logs.
@@ -250,7 +250,7 @@ Sections (Grep `## <name>`):
 | entt / box2d / JoltPhysics | ECS / 2D physics / 3D physics backends (all hidden) |
 | miniaudio | Audio backend (hidden behind the `Audio` interface; v0.5) |
 | tracy | CPU zones and GPU plots, compiled in only with premake `--profile` (v0.9; hidden behind `Core/Profiler.h`) |
-| sentry-native | Crash and error reports, compiled in only with premake `--crash-reporting` (fork `KingoBoiii/sentry-native` at upstream 0.17.4; built by `scripts/premake/sentry-native.lua`; only `Core/CrashReporter.cpp` includes it) |
+| sentry-native | Crash and error reports, compiled into Release and Distribution (Debug with premake `--crash-reporting`) (fork `KingoBoiii/sentry-native` at upstream 0.17.4; built by `scripts/premake/sentry-native.lua`; only `Core/CrashReporter.cpp` includes it) |
 | doctest | `Dingo-UnitTests` only (v1.0 P7); never linked into the engine |
 | nlohmann/json | v3.11.3 (`vendor/json`, header-only): `SaveData`'s JSON (v1.0 P8), included only by `SaveData.cpp` |
 

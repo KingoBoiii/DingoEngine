@@ -27,6 +27,13 @@ if [[ -n $libs ]] && ! grep -q 'libvulkan\.so\.1' <<< "$libs"; then
 	echo "  Arch:          sudo pacman -S vulkan-icd-loader vulkan-tools (plus vulkan-radeon, vulkan-intel or nvidia-utils)" >&2
 	exit 1
 fi
+if [[ -n $libs ]] && ! grep -q 'libcurl\.so\.4' <<< "$libs"; then
+	echo "libcurl (libcurl.so.4) is missing; the programs link it for crash reports. Install it first:" >&2
+	echo "  Ubuntu/Debian: sudo apt install libcurl4t64 (libcurl4 before Ubuntu 24.04 and Debian 13)" >&2
+	echo "  Fedora:        sudo dnf install libcurl" >&2
+	echo "  Arch:          sudo pacman -S curl" >&2
+	exit 1
+fi
 
 close_with_xlib=1
 if ! python3 -c 'import Xlib' 2>/dev/null; then

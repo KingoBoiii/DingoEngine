@@ -3,7 +3,7 @@
 -- only, no Crashpad/Breakpad/inproc handler, so the engine's own crash handler stays the only one.
 -- Transport: WinHTTP on Windows, the system libcurl on Linux. No unwinder (nothing captures stack
 -- traces), no screenshots, no WER integration. Kept here, not in the submodule, so vendor/ stays
--- untouched; included from premake5.lua only with --crash-reporting.
+-- untouched. Always included: Release and Distribution link it, Debug only with --crash-reporting.
 local root = path.join(_MAIN_SCRIPT_DIR, "vendor/sentry-native")
 
 project "sentry"

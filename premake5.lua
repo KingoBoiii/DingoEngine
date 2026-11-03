@@ -7,8 +7,10 @@ newoption {
 
 newoption {
     trigger = "crash-reporting",
-    description = "Compile sentry-native into the engine for opt-in crash and error reports (DE_CRASH_REPORTING)"
+    description = "Also compile crash and error reports (sentry-native, DE_CRASH_REPORTING) into Debug and Debug-ASan; Release and Distribution always have them"
 }
+
+CrashReportingConfigs = _OPTIONS["crash-reporting"] and "configurations:*" or "configurations:Release or configurations:Distribution"
 
 -- major.minor.patch from VERSION (DE_VERSION overrides it: a release tag); DE_BUILD_NUMBER is the build.
 local EngineVersion = {}
@@ -69,9 +71,9 @@ workspace "DingoEngine"
         defines { "DE_PROFILE" }
     end
 
-    if _OPTIONS["crash-reporting"] then
+    filter(CrashReportingConfigs)
         defines { "DE_CRASH_REPORTING" }
-    end
+    filter {}
 
     -- No PCH: a syntax-only compile never writes the .pch/.gch the other files would read.
     if _OPTIONS["lint"] then
@@ -145,9 +147,7 @@ BundledVendorLibs = table.concat({
     vendorLib("JoltPhysics", "Jolt"),
 }, " ")
 
-if _OPTIONS["crash-reporting"] then
-    BundledVendorLibs = BundledVendorLibs .. ' "$(ProjectDir)build/bin/' .. outputdir .. '/sentry/sentry.lib"'
-end
+SentryVendorLib = '"$(ProjectDir)build/bin/' .. outputdir .. '/sentry/sentry.lib"'
 
 -- The same set for the Linux libDingoEngine.a, with the static assimp as well (Windows links
 -- assimp's import library and ships its DLLs).
@@ -169,8 +169,16 @@ LinuxBundledVendorLibs = table.concat({
     '"' .. path.join(_MAIN_SCRIPT_DIR, "vendor/assimp/lib/linux-x86_64/libassimp.a") .. '"',
 }, " ")
 
-if _OPTIONS["crash-reporting"] then
-    LinuxBundledVendorLibs = LinuxBundledVendorLibs .. ' "' .. path.join(_MAIN_SCRIPT_DIR, "build/bin") .. '/' .. outputdir .. '/sentry/libsentry.a"'
+LinuxSentryVendorLib = '"' .. path.join(_MAIN_SCRIPT_DIR, "build/bin") .. '/' .. outputdir .. '/sentry/libsentry.a"'
+
+function mergeWindowsEngineLib(libs)
+    return '"$(VCToolsInstallDir)bin\\Hostx64\\x64\\lib.exe" /NOLOGO /IGNORE:4006 /OUT:"$(ProjectDir)build/dist/'
+        .. outputdir .. '/DingoEngine.lib" "$(TargetPath)" ' .. libs
+end
+
+function mergeLinuxEngineLib(libs)
+    return 'sh "' .. path.join(_MAIN_SCRIPT_DIR, "scripts/merge-static-libs.sh") .. '" "'
+        .. path.join(_MAIN_SCRIPT_DIR, "build/dist") .. '/' .. outputdir .. '/libDingoEngine.a" "%{cfg.buildtarget.abspath}" ' .. libs
 end
 
 -- On Windows, every exe that links the engine also loads Assimp's DLLs (and their
@@ -205,10 +213,8 @@ function copyAssimpRuntime()
             "assimp", "z", "dl", "pthread"
         }
 
-    if _OPTIONS["crash-reporting"] then
-        filter { "system:linux", "kind:ConsoleApp or WindowedApp" }
-            links { "sentry", "curl" }
-    end
+    filter { "system:linux", "kind:ConsoleApp or WindowedApp", CrashReportingConfigs }
+        links { "sentry", "curl" }
 
     filter {}
 end
@@ -413,7 +419,7 @@ IncludeDir['box2d'] = "%{wks.location}/vendor/box2d/include";
 IncludeDir['jolt'] = "%{wks.location}/vendor/JoltPhysics";
 IncludeDir['miniaudio'] = "%{wks.location}/vendor/miniaudio"; -- header-only (miniaudio.h + stb_vorbis.c), engine-only
 IncludeDir['json'] = "%{wks.location}/vendor/json/single_include"; -- header-only nlohmann/json, engine-only (SaveData.cpp)
-IncludeDir['sentry'] = "%{wks.location}/vendor/sentry-native/include"; -- engine-only (CrashReporter.cpp), with --crash-reporting
+IncludeDir['sentry'] = "%{wks.location}/vendor/sentry-native/include"; -- engine-only (CrashReporter.cpp), where DE_CRASH_REPORTING is defined
 
 LibraryDir = {}
 LibraryDir['vulkan'] = "%{VULKAN_SDK}/lib";
@@ -474,9 +480,7 @@ group "Dependencies"
 	include "vendor/msdf-atlas-gen"
 	include "vendor/box2d"
 	include "vendor/JoltPhysics"
-	if _OPTIONS["crash-reporting"] then
-		include "scripts/premake/sentry-native.lua"
-	end
+	include "scripts/premake/sentry-native.lua"
 
 	-- Linux additions to the forks' own scripts, made here so vendor/ stays untouched.
 	project "GLFW"
@@ -580,15 +584,14 @@ group "Engine"
 			"SPDLOG_USE_STD_FORMAT"
 		}
 
-		if _OPTIONS["crash-reporting"] then
+		filter(CrashReportingConfigs)
 			includedirs { "%{IncludeDir.sentry}" }
 			links { "sentry" }
 			defines { "SENTRY_BUILD_STATIC" }
 
-			filter "system:windows"
-				links { "%{Library.WinHTTP}", "%{Library.DbgHelp}", "%{Library.ShLwApi}", "%{Library.Synchronization}" }
-			filter {}
-		end
+		filter { "system:windows", CrashReportingConfigs }
+			links { "%{Library.WinHTTP}", "%{Library.DbgHelp}", "%{Library.ShLwApi}", "%{Library.Synchronization}" }
+		filter {}
 
 		if _OPTIONS["profile"] then
 			files { "vendor/tracy/public/TracyClient.cpp" }
@@ -645,23 +648,28 @@ group "Engine"
 			-- resolved via MSBuild so this also works outside a VS dev shell.
 			-- /IGNORE:4006: the NVRHI sub-libs share identical objects
 			-- (validation-device.obj, dxgi-format.obj); duplicates are benign.
-			postbuildcommands {
-				'{MKDIR} "$(ProjectDir)build/dist/' .. outputdir .. '"',
-				'"$(VCToolsInstallDir)bin\\Hostx64\\x64\\lib.exe" /NOLOGO /IGNORE:4006 /OUT:"$(ProjectDir)build/dist/'
-					.. outputdir .. '/DingoEngine.lib" "$(TargetPath)" ' .. BundledVendorLibs,
-			}
+			postbuildcommands { '{MKDIR} "$(ProjectDir)build/dist/' .. outputdir .. '"' }
+
+		filter { "system:windows", CrashReportingConfigs }
+			postbuildcommands { mergeWindowsEngineLib(BundledVendorLibs .. " " .. SentryVendorLib) }
+		if not _OPTIONS["crash-reporting"] then
+			filter { "system:windows", "configurations:Debug or configurations:Debug-ASan" }
+				postbuildcommands { mergeWindowsEngineLib(BundledVendorLibs) }
+		end
 
 		filter "system:linux"
 			defines { "DE_PLATFORM_LINUX" }
 			removefiles { "src/DingoEngine/Graphics/NVRHI/DirectX11/**", "src/DingoEngine/Graphics/NVRHI/DirectX12/**" }
 
 			-- The distributable libDingoEngine.a under build/dist, like Windows' DingoEngine.lib.
-			-- Consumers add only the Vulkan SDK's shaderc and SPIRV-Cross, zlib, dl and pthread.
-			postbuildcommands {
-				'sh "' .. path.join(_MAIN_SCRIPT_DIR, "scripts/merge-static-libs.sh") .. '" "'
-					.. path.join(_MAIN_SCRIPT_DIR, "build/dist") .. '/' .. outputdir .. '/libDingoEngine.a" "%{cfg.buildtarget.abspath}" '
-					.. LinuxBundledVendorLibs,
-			}
+			-- Consumers add only the Vulkan SDK's shaderc and SPIRV-Cross, zlib, dl and pthread, plus
+			-- curl where crash reporting is compiled in.
+		filter { "system:linux", CrashReportingConfigs }
+			postbuildcommands { mergeLinuxEngineLib(LinuxBundledVendorLibs .. " " .. LinuxSentryVendorLib) }
+		if not _OPTIONS["crash-reporting"] then
+			filter { "system:linux", "configurations:Debug or configurations:Debug-ASan" }
+				postbuildcommands { mergeLinuxEngineLib(LinuxBundledVendorLibs) }
+		end
 
 		-- Four engine-internal members are still named after their type, which GCC alone rejects.
 		filter { "system:linux", "toolset:gcc" }

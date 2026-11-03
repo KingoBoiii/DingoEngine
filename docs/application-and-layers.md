@@ -109,10 +109,12 @@ crashes on purpose, which is how CI checks all of this.
 
 ### Crash and error reports
 
-An engine built with premake's `--crash-reporting` can send crash and error reports to a
-Sentry-compatible server (Sentry, or a self-hosted [GlitchTip](https://glitchtip.com)) through
-[sentry-native](https://github.com/getsentry/sentry-native). Without the flag nothing of it is
-compiled in, and the calls below do nothing.
+The engine can send crash and error reports to a Sentry-compatible server (Sentry, or a
+self-hosted [GlitchTip](https://glitchtip.com)) through
+[sentry-native](https://github.com/getsentry/sentry-native). It is compiled into every Release and
+Distribution build, and into Debug and Debug-ASan only with premake's `--crash-reporting`; where it
+isn't compiled in, the calls below do nothing. Compiled in, it still stays off until the game gives
+it a DSN and the player opts in. On Linux those builds link the system `libcurl`.
 
 ```cpp
 params.CrashReporting = {
