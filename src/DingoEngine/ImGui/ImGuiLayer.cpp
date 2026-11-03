@@ -191,16 +191,6 @@ namespace Dingo
 			.Height = (int32_t)viewport->Size.y,
 		};
 
-		if (GraphicsContext::Get().GetGraphicsAPI() == GraphicsAPI::Vulkan)
-		{
-			vk::Instance vInstance = static_cast<const VulkanGraphicsContext&>(GraphicsContext::Get()).GetVulkanInstance();
-			ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
-			vk::SurfaceKHR surface;
-			VkResult err = (VkResult)platform_io.Platform_CreateVkSurface(viewport, *(ImU64*)&vInstance, nullptr, (ImU64*)&surface);
-			DE_CORE_ASSERT(err == VkResult::VK_SUCCESS);
-			params.VulkanSurface = &surface;
-		}
-
 		data->SwapChain = Internal::SwapChain::Create(params);
 		data->SwapChain->Initialize();
 		data->WindowOwned = true;

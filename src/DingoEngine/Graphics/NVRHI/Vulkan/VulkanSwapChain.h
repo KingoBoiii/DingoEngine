@@ -46,6 +46,7 @@ namespace Dingo
 		bool RecreateSwapChain();
 	private:
 		vk::SurfaceKHR m_WindowSurface = nullptr;
+		void* m_XcbConnection = nullptr;
 		vk::SwapchainKHR m_SwapChain = nullptr;
 		vk::SurfaceFormatKHR m_SwapChainFormat;
 		nvrhi::Format m_SwapChainTextureFormat = nvrhi::Format::RGBA8_UNORM;
