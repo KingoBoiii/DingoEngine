@@ -614,6 +614,52 @@ PASS, with collider, hierarchy, anim and bus as regressions, and no `VUID-` or d
 Smoothness at 144 Hz, the microphone level following a voice and dragging the panel sliders were checked
 only in part by hand. Linux has not run on real hardware.
 
+## v1.2.0 — Crash Reporting
+**Status**: planned.
+
+A minor release: it adds API, so a game built against 1.1 compiles unchanged. The headline is opt-in
+crash and error reporting, compiled into every Release and Distribution build, so the released engine
+packages and example games carry it. The rest is CI work on the intermittent Linux hang on close
+([#186](https://github.com/KingoBoiii/DingoEngine/issues/186)), which stays open.
+
+- **Crash and error reporting** ([#316](https://github.com/KingoBoiii/DingoEngine/pull/316),
+  [#320](https://github.com/KingoBoiii/DingoEngine/pull/320),
+  [#321](https://github.com/KingoBoiii/DingoEngine/pull/321)): `ApplicationParams::CrashReporting`
+  (`Dsn`, `Enabled`, `Environment`, `Release`, `SendAttachments`) and
+  `Application::SetCrashReportingEnabled`/`IsCrashReportingEnabled`/`IsCrashReportingAvailable` send
+  reports to a Sentry-compatible server (Sentry or GlitchTip) through sentry-native 0.17.4.
+  `Error`/`Fatal` log lines become events (each message once per run, at most 25 a run), lower levels
+  become breadcrumbs. A crash written by the engine's own handler is sent on the next launch, once,
+  and only if reporting was on when it crashed. It stays off until the game gives a DSN and the player
+  opts in. It is compiled into Release and Distribution, and into Debug and Debug-ASan with premake
+  `--crash-reporting`. On Linux those builds link the system `libcurl.so.4`. With `SendAttachments`,
+  exit waits up to 10 s for an upload in progress.
+- **Stop signals in windowed apps** ([#319](https://github.com/KingoBoiii/DingoEngine/pull/319)):
+  SIGINT and SIGTERM on Linux, and a console Ctrl+C or close on Windows, now end a windowed app
+  through `Close()`, so `OnDetach` and `OnDestroy` run and it exits 0. Before, the signal killed it
+  with no teardown.
+- **CI and the Linux hang on close** ([#313](https://github.com/KingoBoiii/DingoEngine/pull/313),
+  [#315](https://github.com/KingoBoiii/DingoEngine/pull/315),
+  [#317](https://github.com/KingoBoiii/DingoEngine/pull/317),
+  [#318](https://github.com/KingoBoiii/DingoEngine/pull/318),
+  [#319](https://github.com/KingoBoiii/DingoEngine/pull/319)): CI's Linux builds keep symbols
+  (premake `--keep-symbols`; release assets stay stripped), and a hung smoke run records per-thread
+  CPU, a longer gdb dump, the X server's socket queues, the frame index and the close state. Those
+  records show the app is not deadlocked: the close event is lost. The smoke test now resends the
+  close, then sends SIGTERM, and passes with a `::warning::` naming #186. `setup-linux` fails on a
+  failed Vulkan SDK version lookup instead of a later 404
+  ([#312](https://github.com/KingoBoiii/DingoEngine/issues/312),
+  [#314](https://github.com/KingoBoiii/DingoEngine/pull/314)).
+
+**Test**: the owner ran `--test=background` and `--test=cursor` on Windows 11 with an RX 7900 XTX on
+Vulkan (validation), DX11 and DX12 (debug layer), in Debug for #316 and in Release for #320, with no
+`VUID-` or debug-layer messages. The crash flow (an error event, a crash then a relaunch, no resend)
+ran on Vulkan against a local mock server, in a `--crash-reporting` Debug build and in a default
+Release build. `DingoEngine.lib` holds sentry in Release and Distribution and none in Debug. Linux
+CI's `crash-reporting-linux` job runs the same flow under Xvfb and llvmpipe. #319 records a Linux
+check only (GCC, Debug, llvmpipe); no GPU run or Windows Ctrl+C check is recorded on it. Linux has not
+run on real hardware.
+
 ---
 
 ## Modules — shipped out of band
