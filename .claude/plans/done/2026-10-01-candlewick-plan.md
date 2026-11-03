@@ -4,7 +4,7 @@
 
 Drafted 2026-10-01 on branch `claude/v0-7-lighting-planning-cad5a1` @ `1ac5ee3` (v0.7 P0–P7 done).
 Every `file:line` below was read on that date. Scope source: `ROADMAP.md:138-144` and §6 of
-`.claude/plans/2026-09-26-v0.7-lighting-plan.md`.
+`.claude/plans/done/2026-09-26-v0.7-lighting-plan.md`.
 
 **Status**: built, C0–C6, 2026-10-01 (decisions D1–D4 in §9 settled on the recommended options).
 §11 "As built" overrides the design sections where they differ. Merge and release are next.
