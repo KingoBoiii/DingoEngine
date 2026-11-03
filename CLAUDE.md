@@ -97,8 +97,8 @@ Read the area's file before changing it. Each has one `##` or `###` heading per 
 | [.claude/reference/build-details.md](.claude/reference/build-details.md) | Packaging, executables, profiling, ASan, versioning |
 | [.claude/reference/project-history.md](.claude/reference/project-history.md) | Source tree, examples, releases |
 | `.claude/skills/session-meter/`, `usage-meter/` | Mods, not skills, loaded only when the session starts at the repo root: meter bands (README in each) |
-| [ROADMAP.md](ROADMAP.md) | v0.1 → v1.0 plan, out-of-band modules |
-| [ROADMAP-1.x.md](ROADMAP-1.x.md) | After 1.0: engine layers, 1.x milestones, 2.0 candidates, modules; decisions R1–R3 |
+| [ROADMAP.md](ROADMAP.md) | v0.1 → v1.0 plan, every release's notes, out-of-band modules |
+| [ROADMAP-1.x.md](ROADMAP-1.x.md) | The plan after 1.0: what shipped, the patch sweep, 1.3–1.7 (engine layers first), 2.0 candidates, modules; decisions R1–R3 |
 | [LINUX-SUPPORT.md](LINUX-SUPPORT.md) | Linux status; why the toolchain is built from source |
 | `docs/` | One page per feature (`docs/README.md`) |
 | `.claude/plans/`, `.claude/reviews/` | As built notes win; trust a review's fix-status section, check `git log` |

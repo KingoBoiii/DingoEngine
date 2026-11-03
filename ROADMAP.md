@@ -1,6 +1,7 @@
 # DingoEngine Roadmap
 
-v0.1 → v1.0. What comes after the v1.0.0 tag is in [ROADMAP-1.x.md](ROADMAP-1.x.md).
+The plan from v0.1 to v1.0, and the notes of every release since. The plan after 1.0 is in
+[ROADMAP-1.x.md](ROADMAP-1.x.md).
 
 ## v0.1 — Core Foundation
 Core components, windowing, input, and a basic rendering pipeline. ImGui for debugging UI.

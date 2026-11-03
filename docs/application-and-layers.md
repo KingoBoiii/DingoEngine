@@ -648,8 +648,10 @@ bool OnFocus(WindowFocusEvent& e)
   are tracked.
 - Both fullscreen modes are GLFW fullscreen windows, which an alt-tab minimizes. Exclusive
   fullscreen switches the display mode on the window's monitor only.
-- A crash report is a backtrace on Linux (none under AddressSanitizer) and a minidump on Windows;
-  neither is uploaded anywhere ([Logs and crashes](#logs-and-crashes)).
+- A crash report is a backtrace on Linux (none under AddressSanitizer) and a minidump on Windows.
+  Nothing is uploaded unless the game turns on
+  [crash and error reports](#crash-and-error-reports) and the player opts in; Linux sends no
+  minidump.
 - The VSync limits above apply: "off" can stay capped on some drivers and D3D compositors.
 - Update ordering is variable-step: `OnUpdate` gets the frame's delta. `Scene` scripts have a
   fixed-step hook ([Scenes & ECS](scenes-and-ecs.md#behaviours-scriptableentity)), layers do not.
