@@ -67,7 +67,7 @@ Rules the agent files can't carry:
 
 ## Token budget
 
-- **One session, one job**: a plan, each phase, issue group, PR test or release; the plan's "As built" notes and the PR's phases checklist carry state. When done, say so in one line and suggest **handoff** and a new session. Past ~200k context or a day old, stop at the next clean point (phase committed and pushed); `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=20` in `.claude/settings.json` is that limit: change both together.
+- **One session, one job**: a plan, each phase, issue group, PR test or release; the plan's "As built" notes and the PR's phases checklist carry state. When done, say so in one line and suggest **handoff** and a new session. Past ~200k context or a day old, stop at the next clean point (phase committed and pushed); `CLAUDE_AUTOCOMPACT_PCT_OVERRIDE=50` in `.claude/settings.json` compacts at half the window (100k on a 200k window): change both together.
 - **The model fits the job**: Sonnet by default; for engine internals (the Opus rows above) say so at the start and suggest the owner switch to Opus.
 - **Read narrowly**: the area's `.claude/reference/` file, then Grep, then only the lines you need. Never read a source file over 40 KB whole (`find src include test examples -name '*.[ch]*' -size +40000c`).
 - **Long output** goes to a scratchpad file; read only errors, warnings in files you changed, and `[FAIL]`, `VUID-` and `LOG ERROR` lines.
