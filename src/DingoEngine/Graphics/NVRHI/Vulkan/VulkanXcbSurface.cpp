@@ -1,7 +1,7 @@
 #include "depch.h"
 #include "VulkanXcbSurface.h"
 
-#if defined(__linux__)
+#if defined(DE_PLATFORM_LINUX)
 
 #include <dlfcn.h>
 #include <xcb/xcb.h>
@@ -48,16 +48,16 @@ namespace Dingo
 
 	XcbSurface CreateXcbSurface(VkInstance instance, GLFWwindow* window, const std::unordered_set<std::string>& enabledInstanceExtensions)
 	{
-		if (!window || glfwGetPlatform() != GLFW_PLATFORM_X11 || !enabledInstanceExtensions.contains(VK_KHR_XCB_SURFACE_EXTENSION_NAME))
+		if (!window || glfwGetPlatform() != GLFW_PLATFORM_X11)
 			return {};
 
 		const XcbApi& xcb = GetXcbApi();
-		if (!xcb.Connect)
-			return {};
-
 		const auto createSurface = reinterpret_cast<PFN_vkCreateXcbSurfaceKHR>(glfwGetInstanceProcAddress(instance, "vkCreateXcbSurfaceKHR"));
-		if (!createSurface)
+		if (!enabledInstanceExtensions.contains(VK_KHR_XCB_SURFACE_EXTENSION_NAME) || !xcb.Connect || !createSurface)
+		{
+			DE_CORE_WARN("No VK_KHR_xcb_surface or libxcb; presenting on GLFW's X connection.");
 			return {};
+		}
 
 		Display* display = glfwGetX11Display();
 		xcb_connection_t* connection = xcb.Connect(display ? DisplayString(display) : nullptr, nullptr);
@@ -68,14 +68,16 @@ namespace Dingo
 			return {};
 		}
 
-		VkXcbSurfaceCreateInfoKHR createInfo = { VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR };
+		VkXcbSurfaceCreateInfoKHR createInfo{};
+		createInfo.sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
 		createInfo.connection = connection;
 		createInfo.window = static_cast<xcb_window_t>(glfwGetX11Window(window));
 
 		VkSurfaceKHR surface = VK_NULL_HANDLE;
-		if (createSurface(instance, &createInfo, nullptr, &surface) != VK_SUCCESS)
+		if (const VkResult result = createSurface(instance, &createInfo, nullptr, &surface); result != VK_SUCCESS)
 		{
 			xcb.Disconnect(connection);
+			DE_CORE_WARN("vkCreateXcbSurfaceKHR failed ({}); presenting on GLFW's X connection.", static_cast<int>(result));
 			return {};
 		}
 
