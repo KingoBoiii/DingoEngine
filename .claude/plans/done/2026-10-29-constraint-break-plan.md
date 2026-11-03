@@ -1,3 +1,5 @@
+**Status**: done (v1.1.0)
+
 # physics-coop: breakable constraints (#309)
 
 Sub-issue of #295 (constraints and joints). Requested by the owner for NEDRIVNING (houses are pre-cut
