@@ -231,7 +231,7 @@ gave those parts parents; v0.8 replaces the pile with a skinned mesh that plays 
   a hand-tuned timer that drifts every time the art changes.
 
 **Status**: released as v0.8.0 on 2026-10-05. The engine work (P4–P12 of
-`.claude/plans/2026-10-01-v0.8-animation-plan.md`, reviewed in `.claude/reviews/2026-10-03-v0.8.0-review.md`)
+`.claude/plans/done/2026-10-01-v0.8-animation-plan.md`, reviewed in `.claude/reviews/2026-10-03-v0.8.0-review.md`)
 and the example game, *Marionette* (P13, M0–M6, closed by a milestone review in
 `.claude/reviews/2026-10-04-marionette-review.md`), shipped together. Built:
 - **Skinned models**: `Model::LoadFromFile` reads skeletons, skin weights and clips from glTF and FBX, including clip libraries (clips without meshes). Static models load exactly as before.
@@ -322,10 +322,10 @@ The requests:
 
 ## v0.9 — Shadows, Post-processing & VFX
 **Status**: released as v0.9.0 on 2026-10-08 (PR #106). The engine work (P1–P12 of
-`.claude/plans/2026-10-06-v0.9-shadows-post-vfx-plan.md`, whose "As built" notes override the design
+`.claude/plans/done/2026-10-06-v0.9-shadows-post-vfx-plan.md`, whose "As built" notes override the design
 below, reviewed in `.claude/reviews/2026-10-08-v0.9.0-review.md`), the *Candlewick* upgrade (P14,
-`.claude/plans/2026-10-08-candlewick-v0.9-plan.md`) and the *Marionette* upgrade (P15,
-`.claude/plans/2026-10-08-marionette-v0.9-plan.md`) shipped together, verified on Vulkan, DX11 and
+`.claude/plans/done/2026-10-08-candlewick-v0.9-plan.md`) and the *Marionette* upgrade (P15,
+`.claude/plans/done/2026-10-08-marionette-v0.9-plan.md`) shipped together, verified on Vulkan, DX11 and
 DX12 (the plan's §9 "GPU verification"). What it adds:
 
 - **Profiling**: Tracy (not Optick) behind premake's `--profile`, `DE_PROFILE_*` zones, always-on GPU
@@ -421,7 +421,7 @@ the Linux smoke test, runs on the release's merge commit before it is tagged.
 The first release with a stable API. It absorbed the renderer throughput work that v0.9's "Advanced
 Rendering & Performance" implied but never scheduled, and it is the last release allowed to break the
 API: from 1.0.0 [versioning](docs/versioning.md) applies. The plan is
-`.claude/plans/2026-10-08-v1.0-plan.md` (P1–P12; its §9 "As built" notes override the design), built on
+`.claude/plans/done/2026-10-08-v1.0-plan.md` (P1–P12; its §9 "As built" notes override the design), built on
 `feat/v1` in PR [#147](https://github.com/KingoBoiii/DingoEngine/pull/147) and the PRs after it.
 [docs/migrating-to-1.0.md](docs/migrating-to-1.0.md) lists every break.
 
@@ -472,7 +472,7 @@ API: from 1.0.0 [versioning](docs/versioning.md) applies. The plan is
   themes, tweens and root transitions, and clicks the UI takes kept from the game
   (`ImGuiParams::BlockGameInput`). It draws a frame in one draw call. *Marionette*'s HUD and, in
   [#263](https://github.com/KingoBoiii/DingoEngine/pull/263), *Candlewick*'s moved onto it. Plan:
-  `.claude/plans/2026-10-08-v1.0-game-ui-plan.md`; review:
+  `.claude/plans/done/2026-10-08-v1.0-game-ui-plan.md`; review:
   `.claude/reviews/2026-10-14-dingoui-review.md`. ImGui stays the debug UI.
 - **The API pass, versioning and conventions** (P9). 50 findings: 37 changed, 4 deprecated, 9 kept.
   [docs/versioning.md](docs/versioning.md) sets SemVer from 1.0.0 and
@@ -507,7 +507,7 @@ API: from 1.0.0 [versioning](docs/versioning.md) applies. The plan is
   ([#272](https://github.com/KingoBoiii/DingoEngine/issues/272),
   [#278](https://github.com/KingoBoiii/DingoEngine/pull/278)); the throughput check's one-pixel flakes
   ([#285](https://github.com/KingoBoiii/DingoEngine/pull/285)).
-- **Asset packing** (shipped early, in v0.9.1; plan `.claude/plans/2026-10-11-asset-packing-plan.md`):
+- **Asset packing** (shipped early, in v0.9.1; plan `.claude/plans/done/2026-10-11-asset-packing-plan.md`):
   a shipped game carries one encrypted, compressed `<Game>.dpak` beside its executable instead of a
   loose `assets/` folder. Every engine file read goes through a virtual file system (assimp and
   miniaudio included), the package is mounted in memory at start-up with the game's embedded key,
@@ -526,8 +526,8 @@ valley of fences, crops and houses, then tend it day by day. That makes it the c
 the engine: thousands of placed objects for culling, instancing and static batching; the heaviest saves
 and game UI of any example (everything is drawn through DingoUI); the day/night sun and lanterns of v0.7
 and v0.9; and animated villagers and animals from v0.8. It is meant for itch.io, with Steam as a stretch
-goal; the release workflow does not upload there. The plan is `.claude/plans/2026-10-08-v1.0-plan.md`
-(§6) and the game's own is `.claude/plans/2026-10-08-hearthvale-plan.md`; the game was marked complete on
+goal; the release workflow does not upload there. The plan is `.claude/plans/done/2026-10-08-v1.0-plan.md`
+(§6) and the game's own is `.claude/plans/done/2026-10-08-hearthvale-plan.md`; the game was marked complete on
 2026-10-20. Its README holds the how-to-play, flags and licences, and its review is
 `.claude/reviews/2026-10-15-hearthvale-review.md`.
 

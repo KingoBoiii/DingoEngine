@@ -3,8 +3,8 @@
 # P14 — *Candlewick* on v0.9: shadows you hide in, bloom, particle flames
 
 Drafted 2026-10-08 on branch `claude/dingo-v0-9-0-planning-ee00a9` @ `0543d88` (v0.9 P1–P13 done, none
-of it run on a GPU yet). Scope source: §6 of `.claude/plans/2026-10-06-v0.9-shadows-post-vfx-plan.md`.
-The game's own design is `.claude/plans/2026-10-01-candlewick-plan.md`, whose §11 "As built" holds.
+of it run on a GPU yet). Scope source: §6 of `.claude/plans/done/2026-10-06-v0.9-shadows-post-vfx-plan.md`.
+The game's own design is `.claude/plans/done/2026-10-01-candlewick-plan.md`, whose §11 "As built" holds.
 
 **Status**: W0–W5 built 2026-10-08 (§8 "As built"); decisions C1–C4 (§4) settled on the recommended
 options. None of it is built with MSVC or run: the captures, perf numbers and tuning passes in §6 are
