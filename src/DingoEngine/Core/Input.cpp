@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Core/Input.h"
+#include "DingoEngine/Core/PadRumble.h"
 #include "DingoEngine/Core/XInput.h"
 
 #include <GLFW/glfw3.h>
@@ -17,6 +18,7 @@ namespace Dingo
 	static_assert(k_GamepadButtonCount == GLFW_GAMEPAD_BUTTON_LAST + 1);
 	static_assert(k_GamepadAxisCount == GLFW_GAMEPAD_AXIS_LAST + 1);
 	static_assert(k_MaxGamepads == GLFW_JOYSTICK_LAST + 1);
+	static_assert(k_MaxGamepads == Internal::PadRumble::k_MaxJoysticks);
 
 	namespace
 	{
@@ -169,8 +171,9 @@ namespace Dingo
 		// GLFW gives the XInput pads it detects the lowest free joystick ids, walking the user indices
 		// in order; walking the unpaired user indices and ids the same way pairs them as GLFW did. It
 		// runs when a joystick connects (GLFW reports them one at a time, lowest user index first) and
-		// when the window opens, for the ones GLFW found at start-up.
-		void PairXInputJoysticks()
+		// when the window opens, for the ones GLFW found at start-up. Any other pad is offered to
+		// PadRumble, which pairs it with a device of the same ids.
+		void PairRumbleDevices()
 		{
 			const uint32_t connected = Internal::XInput::GetConnectedMask();
 			uint32_t user = 0;
@@ -187,12 +190,31 @@ namespace Dingo
 
 				s_XInputUsers[jid] = static_cast<int>(user++);
 			}
+
+			for (int jid = 0; jid < static_cast<int>(k_MaxGamepads); ++jid)
+			{
+				if (s_XInputUsers[jid] != k_NoXInputUser || !glfwJoystickPresent(jid) || IsXInputJoystick(jid))
+					continue;
+				Internal::PadRumble::Pair(static_cast<uint32_t>(jid), Internal::PadRumble::ParseGlfwGuid(glfwGetJoystickGUID(jid)), glfwGetJoystickName(jid));
+			}
+		}
+
+		bool HasRumbleDevice(uint32_t gamepad)
+		{
+			return s_XInputUsers[gamepad] != k_NoXInputUser || Internal::PadRumble::IsPaired(gamepad);
+		}
+
+		bool SetMotors(uint32_t gamepad, float lowFrequency, float highFrequency)
+		{
+			if (s_XInputUsers[gamepad] != k_NoXInputUser)
+				return Internal::XInput::SetVibration(static_cast<uint32_t>(s_XInputUsers[gamepad]), lowFrequency, highFrequency);
+			return Internal::PadRumble::SetVibration(gamepad, lowFrequency, highFrequency);
 		}
 
 		void StopRumble(uint32_t gamepad)
 		{
-			if (s_RumbleEnds[gamepad] && s_XInputUsers[gamepad] != k_NoXInputUser)
-				Internal::XInput::SetVibration(static_cast<uint32_t>(s_XInputUsers[gamepad]), 0.0f, 0.0f);
+			if (s_RumbleEnds[gamepad] && HasRumbleDevice(gamepad))
+				SetMotors(gamepad, 0.0f, 0.0f);
 			s_RumbleEnds[gamepad].reset();
 		}
 
@@ -604,7 +626,7 @@ namespace Dingo
 			return true;
 		}
 
-		if (!Internal::XInput::SetVibration(static_cast<uint32_t>(s_XInputUsers[gamepad]), lowFrequency, highFrequency))
+		if (!SetMotors(gamepad, lowFrequency, highFrequency))
 			return false;
 
 		// Capped so an infinite duration can't overflow the clock: eleven days is "until stopped".
@@ -621,7 +643,7 @@ namespace Dingo
 
 	bool Input::IsGamepadRumbleSupported(uint32_t gamepad)
 	{
-		return IsGamepadConnected(gamepad) && !s_SimulatedGamepads[gamepad] && s_XInputUsers[gamepad] != k_NoXInputUser;
+		return IsGamepadConnected(gamepad) && !s_SimulatedGamepads[gamepad] && HasRumbleDevice(gamepad);
 	}
 
 	void Input::UpdateRumble()
@@ -701,7 +723,7 @@ namespace Dingo
 
 	void Input::OnJoystickConnected()
 	{
-		PairXInputJoysticks();
+		PairRumbleDevices();
 	}
 
 	void Input::OnJoystickDisconnected(uint32_t joystick)
@@ -711,6 +733,7 @@ namespace Dingo
 
 		s_RumbleEnds[joystick].reset();
 		s_XInputUsers[joystick] = k_NoXInputUser;
+		Internal::PadRumble::Unpair(joystick);
 	}
 
 	void Input::UpdateKeyState(KeyCode key, bool pressed)
@@ -752,7 +775,10 @@ namespace Dingo
 			s_MouseDeltaSuppressFrames = 0;
 			s_MouseDeltaSuppressed = false;
 			for (uint32_t gamepad = 0; gamepad < k_MaxGamepads; ++gamepad)
+			{
 				StopRumble(gamepad);
+				Internal::PadRumble::Unpair(gamepad);
+			}
 			s_XInputUsers.fill(k_NoXInputUser);
 
 			// Input::Update never runs headless, so a snapshot left from the old window would read forever.
@@ -773,7 +799,7 @@ namespace Dingo
 			return;
 		}
 		ApplyCursorModeToWindow();
-		PairXInputJoysticks();
+		PairRumbleDevices();
 	}
 
 	void Input::OnWindowFocusChanged(bool focused)
