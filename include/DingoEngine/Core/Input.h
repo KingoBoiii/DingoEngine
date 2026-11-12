@@ -128,14 +128,15 @@ namespace Dingo
 		/// The current deadzone, 0 to 0.95.
 		static float GetGamepadDeadzone();
 
-		/// Rumble, on XInput (Xbox-compatible) pads under Windows only: on any other pad it does
+		/// Rumble, on XInput (Xbox-compatible) pads and wired DualShock 4 and DualSense pads under
+		/// Windows, and on any pad whose driver offers rumble under Linux: on any other pad it does
 		/// nothing and returns false. lowFrequency drives the heavy left motor, highFrequency the
 		/// light right one, each from 0 to 1. It stops after `seconds`, even while the app is
 		/// paused in the background, or when it is set again; 0 seconds stops it.
 		static bool SetGamepadRumble(float lowFrequency, float highFrequency, float seconds, uint32_t gamepad = 0);
 		/// Stops the pad's rumble at once; does nothing if it is not rumbling.
 		static void StopGamepadRumble(uint32_t gamepad = 0);
-		/// True for a connected XInput pad on Windows, the only kind SetGamepadRumble can drive.
+		/// True for a connected pad SetGamepadRumble can drive; false for a simulated slot.
 		static bool IsGamepadRumbleSupported(uint32_t gamepad = 0);
 
 		/// Feeds slot `gamepad` from code instead of a device, for tests and demos; it needs a window,

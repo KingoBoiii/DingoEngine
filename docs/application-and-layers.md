@@ -578,8 +578,12 @@ Input::SetSimulatedGamepadAxis(GamepadAxis::LeftX, 1.0f);        // raw; the dea
 Input::SetGamepadSimulated(0, false);
 ```
 
-GLFW's gamepad API is input only, so rumble goes through XInput: Xbox-compatible pads on Windows.
-On any other pad, or platform, it does nothing and returns false;
+GLFW's gamepad API is input only, so rumble goes around it. On Windows, Xbox-compatible pads rumble
+through XInput, and DualShock 4 and DualSense pads (Edge included) on a USB cable through their
+own output report (#326). On Linux any pad whose driver offers rumble does: `xpad` and the
+`hid-playstation` and `hid-sony` drivers all do, over USB and Bluetooth, if the user can write to
+the pad's `/dev/input/event*` node, which desktop systems allow the logged-in user. On any other pad,
+or platform, it does nothing and returns false;
 `Input::IsGamepadRumbleSupported(gamepad)` says which, e.g. to hide a VIBRATION setting. The F5
 Input tab has a button to try each motor.
 
@@ -644,8 +648,11 @@ bool OnFocus(WindowFocusEvent& e)
   app to change the back-end.
 - A headless app can't load GPU assets and has no `Input`; its loop averages 60 updates
   a second ([Headless](#headless)).
-- Rumble works on Xbox-compatible pads on Windows only ([Gamepads](#gamepads-v051)); up to 16 pads
-  are tracked.
+- Rumble works on Xbox-compatible pads and wired PlayStation pads on Windows, and on Linux
+  ([Gamepads](#gamepads-v051)). A PlayStation pad on Bluetooth gets none on Windows: its first output
+  report switches it to input reports DirectInput can't read, and two identical PlayStation pads
+  there may have their rumble swapped, since Windows names no link between a GLFW joystick and its
+  device. Up to 16 pads are tracked.
 - Both fullscreen modes are GLFW fullscreen windows, which an alt-tab minimizes. Exclusive
   fullscreen switches the display mode on the window's monitor only.
 - A crash report is a backtrace on Linux (none under AddressSanitizer) and a minidump on Windows;
