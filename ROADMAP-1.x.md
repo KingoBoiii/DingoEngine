@@ -13,7 +13,7 @@ it.
 ## Shipped so far
 
 Two minor releases came from other work before the milestones below started, so those moved down
-two numbers (the first planned one, engine layers and scenes on disk, is now 1.3). Their notes are
+two numbers (the first planned one, scenes on disk, is now 1.3). Their notes are
 in [ROADMAP.md](ROADMAP.md#v110--joints-ragdolls--fixed-tick).
 
 - **v1.1.0, Joints, Ragdolls & Fixed Tick**: constraints and motors, breakable constraints,
@@ -24,13 +24,14 @@ in [ROADMAP.md](ROADMAP.md#v110--joints-ragdolls--fixed-tick).
   every Release and Distribution build, and stop signals that end a windowed app through `Close()`.
   It covered most of that milestone's crash-report items.
 
-## Decisions (owner, 2026-10-18)
+## Decisions (owner)
 
 | # | Question | Decision |
 |---|---|---|
 | R1 | How does the editor (its own repo) get at ImGui? | **It builds against the engine's copy**, with an engine hook to host its panels. The engine's static library already links ImGui, so a second copy in the same executable would break the one-definition rule. The editor compiles against the same `vendor/` ImGui, and the engine exposes the context and a panel hook without putting ImGui types in a public header. The editor-support plan (now 1.5) settles the details. |
 | R2 | Does PBR stay opt-in for good? | **Opt-in through 1.x, the default in 2.0.** Two lighting models forever would double the shader work behind every lighting change. |
 | R3 | Where do engine-support APIs for the editor live? | **Ordinary public API under SemVer**, including editor-only hooks. There is no separate editor header set with a looser promise, so an editor need waits for a minor release like any other addition. |
+| R4 | Do the engine layers ship in 1.x? (2026-11-12) | **No, in 2.0.** It redesigns the architecture and drops includes games can lean on. 1.x adds only the hooks its milestones need: the component registry in 1.3 and the panel hook in 1.5. |
 
 ## Patch releases — Bug sweep
 
@@ -42,11 +43,15 @@ bug even when that changes the picture, with a **For games** note in the release
 [#277](https://github.com/KingoBoiii/DingoEngine/issues/277)), the `%TEMP%` reload race
 ([#274](https://github.com/KingoBoiii/DingoEngine/issues/274)), the D3D 1-px flakes
 ([#224](https://github.com/KingoBoiii/DingoEngine/issues/224)) and
-[#231](https://github.com/KingoBoiii/DingoEngine/issues/231) are closed. Still open:
+[#231](https://github.com/KingoBoiii/DingoEngine/issues/231) are closed.
 
-- The Linux Release hang on close ([#186](https://github.com/KingoBoiii/DingoEngine/issues/186)).
-  1.2.0's CI records show the app isn't deadlocked: the close event is lost. The smoke test resends
-  it and passes with a warning; the fix is still to find.
+**Next: v1.2.1**, the Linux hang on close
+([#186](https://github.com/KingoBoiii/DingoEngine/issues/186)), fixed on master after 1.2.0
+([#325](https://github.com/KingoBoiii/DingoEngine/pull/325)): an X11 window presents on its own xcb
+connection, so the close event is no longer lost.
+
+Still open:
+
 - The D3D Δ1 speckle ([#225](https://github.com/KingoBoiii/DingoEngine/issues/225)) and
   Marionette's unchecked memory growth
   ([#239](https://github.com/KingoBoiii/DingoEngine/issues/239)).
@@ -56,54 +61,10 @@ bug even when that changes the picture, with a **For games** note in the release
 - Linux on real GPUs and desktops ([#247](https://github.com/KingoBoiii/DingoEngine/issues/247),
   L26). It needs hardware, so it waits for the owner or a tester.
 
-## v1.3 — Engine Layers and Scenes on Disk
+## v1.3 — Scenes on Disk
 
-### Engine layers
-
-Games keep linking one library, `DingoEngine`. Inside it, each folder is laid out as if it were a
-library of its own: it uses only the layers below it, never one beside or above it. Today the
-bottom depends on the top. The public `Core/Application.h` includes the renderers,
-`SceneRenderer` and DingoUI. `AssetManager` creates textures, models, fonts and sounds itself.
-Physics includes `Graphics/Mesh.h`, and DingoUI and the ImGui panels include `Scene`.
-
-| Layer (bottom to top) | Folders | May use |
-|---|---|---|
-| Core | `Core/` (log, file system, VFS, saves, crash handler and reporter, timer, UUID), `Events/` | nothing |
-| Platform | `Windowing/`, input | Core |
-| Asset | `Asset/` | Core |
-| Graphics | `Graphics/` | Core, Platform, Asset |
-| Audio | `Audio/` | Core, Asset |
-| Physics | `Physics/2D/`, `Physics/3D/` | Core |
-| UI | `UI/` (DingoUI, ImGui) | Core, Platform, Asset, Graphics, Audio |
-| Scene | `Scene/` | every layer above |
-| Application | `Application`, `Layer`, `LayerStack`, the entry point | everything |
-
-- **Registration instead of reaching up.** A layer exposes a hook and the layer above fills it:
-  - Graphics and Audio register their loaders with the `AssetManager`.
-  - Scene registers its components and systems, plus its debug panels with UI. That is the same
-    panel hook the editor needs (R1).
-  - The Application layer starts the subsystems. 1.3's component reflection uses the same
-    registration.
-- **The cycles to break**:
-  - Asset ↔ Graphics, and Asset → Audio: loaders get registered from above.
-  - Physics → Graphics: a mesh collider takes vertices and indices.
-  - UI → Scene: world-space widgets take a position from the caller, and the scene panels move up
-    to Scene.
-  - Core → everything: `Application` and `Settings` move up a layer.
-- **Source compatible**: a public header that moves to its layer's folder (`Application.h`,
-  `Input.h`, the key codes, `PerspectiveCamera.h`, `Ray.h`) leaves a forwarding header at its old
-  path. Public calls stay as they are, so a 1.0 game compiles unchanged.
-- **Enforced**: a script in `lint.yml` checks every `#include` against the table above and fails
-  the PR on a forbidden one. Building each layer as an internal library merged into
-  `DingoEngine` would enforce it in the linker too. The plan weighs that against the extra build
-  steps.
-- **A side effect to measure, not a promise**: once nothing references a subsystem a game doesn't
-  use, the linker can leave it out. A 2D game, for example, would carry no Jolt.
-
-### Scenes on disk
-
-A scene can't be saved today: `SaveData` stores only what a game puts in it. This half of the
-milestone is what an editor needs first, and games want it on its own for level files and prefabs.
+A scene can't be saved today: `SaveData` stores only what a game puts in it. This is what an editor
+needs first, and games want it on its own for level files and prefabs.
 
 - **Scene serialization**: write and read a whole scene (entities, hierarchy, every built-in
   component, asset references by id) to a text format that diffs well, plus a packed form for
@@ -118,6 +79,10 @@ milestone is what an editor needs first, and games want it on its own for level 
 - **More than one script per entity** (today an entity holds one).
 - **Versioned scene files**: a file records its format version, and a newer engine reads an older
   file. The format is public behaviour from 1.3 on.
+- **Additive hooks only.** The component registry is new public API next to the existing code; no
+  header moves and no include goes away. The engine-layers restructuring that would make it the
+  general registration pattern waits for 2.0 (see below). The plan is
+  `.claude/plans/2026-11-12-v1.3-scenes-on-disk-plan.md`.
 
 **Example**: Hearthvale's valley, or one of the older examples' levels, loaded from scene files
 instead of built in code, with a `--check` that saves, reloads and compares.
@@ -195,7 +160,57 @@ Nothing here is scheduled. 2.0 happens when enough of this builds up to justify 
 - **Removing every API deprecated through 1.x.**
 - **A scene UBO and material binding layout redesigned** around PBR and clustered lighting,
   instead of growing by appending.
+- **Factories return `std::unique_ptr`** (`.claude/plans/2026-11-03-smart-pointers-plan.md`,
+  phase 3).
 - Anything else a 1.x milestone finds it can't do without breaking, added here as it comes up.
+
+### Engine layers (2.0)
+
+Games keep linking one library, `DingoEngine`. Inside it, each folder is laid out as if it were a
+library of its own: it uses only the layers below it, never one beside or above it. Today the
+bottom depends on the top. The public `Core/Application.h` includes the renderers,
+`SceneRenderer` and DingoUI. `AssetManager` creates textures, models, fonts and sounds itself.
+Physics includes `Graphics/Mesh.h`, and DingoUI and the ImGui panels include `Scene`.
+
+| Layer (bottom to top) | Folders | May use |
+|---|---|---|
+| Core | `Core/` (log, file system, VFS, saves, crash handler and reporter, timer, UUID), `Events/` | nothing |
+| Platform | `Windowing/`, input | Core |
+| Asset | `Asset/` | Core |
+| Graphics | `Graphics/` | Core, Platform, Asset |
+| Audio | `Audio/` | Core, Asset |
+| Physics | `Physics/2D/`, `Physics/3D/` | Core |
+| UI | `UI/` (DingoUI, ImGui) | Core, Platform, Asset, Graphics, Audio |
+| Scene | `Scene/` | every layer above |
+| Application | `Application`, `Layer`, `LayerStack`, the entry point | everything |
+
+- **Registration instead of reaching up.** A layer exposes a hook and the layer above fills it:
+  - Graphics and Audio register their loaders with the `AssetManager`.
+  - Scene registers its components and systems, plus its debug panels with UI. That is the same
+    panel hook the editor needs (R1).
+  - The Application layer starts the subsystems. 1.3's component registry and 1.5's panel hook
+    already exist by then; 2.0 makes them the general pattern.
+- **The cycles to break**:
+  - Asset ↔ Graphics, and Asset → Audio: loaders get registered from above.
+  - Physics → Graphics: a mesh collider takes vertices and indices.
+  - UI → Scene: world-space widgets take a position from the caller, and the scene panels move up
+    to Scene.
+  - Core → everything: `Application` and `Settings` move up a layer.
+- **Why 2.0 and not 1.x** (owner, 2026-11-12): it redesigns the engine's architecture, and it
+  breaks source in a way SemVer's letter misses. `Core/Application.h` includes the renderers,
+  `SceneRenderer`, `AssetManager` and DingoUI today, so a game that includes only it can use
+  `Renderer3D` without including that header. Dropping those includes breaks such a game. It also
+  rewrites start-up and teardown order (`Application` and `Settings` leave Core, loaders leave
+  `AssetManager`). In 2.0 it shares one migration guide with the other breaks.
+- **Moved headers**: a public header that moves to its layer's folder (`Application.h`, `Input.h`,
+  the key codes, `PerspectiveCamera.h`, `Ray.h`) leaves a forwarding header at its old path through
+  2.0, and `<DingoEngine.h>` keeps including everything.
+- **Enforced**: a script in `lint.yml` checks every `#include` against the table above and fails
+  the PR on a forbidden one. Building each layer as an internal library merged into
+  `DingoEngine` would enforce it in the linker too. The plan weighs that against the extra build
+  steps.
+- **A side effect to measure, not a promise**: once nothing references a subsystem a game doesn't
+  use, the linker can leave it out. A 2D game, for example, would carry no Jolt.
 
 ## Modules — shipped out of band
 
