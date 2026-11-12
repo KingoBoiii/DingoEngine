@@ -5,7 +5,7 @@ DingoEngine is a C++20 game engine on NVRHI, targeting Vulkan (primary), DirectX
 ## How we work
 
 - **Roles.** The owner (KingoBoiii) sets direction, decides design, merges every PR and runs the GPU checks on Windows (RX 7900 XTX, VS 2026, Vulkan/DX11/DX12). Claude writes most code in Linux cloud sessions without a GPU (llvmpipe under Xvfb).
-- **Where work comes from.** Plans in `.claude/plans/YYYY-MM-DD-<topic>-plan.md` (a `**Status**:` first line, the owner's decisions on top, "As built" notes override the design; one phase per session), or GitHub issues by label (`bug`, `enhancement`; skip `wontfix`, `routine:skip` and anything needing hardware the session lacks). The routine takes both through `routine-run`.
+- **Where work comes from.** Plans in `.claude/plans/YYYY-MM-DD-<topic>-plan.md` (a `**Status**:` first line, the owner's decisions on top, "As built" notes override the design; one phase per session; a plan marked done moves to `.claude/plans/done/`, read only when a task needs its history), or GitHub issues by label (`bug`, `enhancement`; skip `wontfix`, `routine:skip` and anything needing hardware the session lacks). The routine takes both through `routine-run`.
 - **Branches.** `feat/<topic>`, `fix/bug-<topic>`, `feat/enhancement-<topic>`, `vX.Y.Z` for point releases; a cloud session pushes to its assigned `claude/…` branch unless the owner names one in the prompt. Bring master in with a merge commit; never rebase or force-push a branch someone else has. Stack a PR only when both rewrite the same code, and say so at its top.
 - **Commits.** Conventional, lowercase `type(scope): summary`, one per issue ending in `(#N)` (scopes: the `commit` skill).
 - **PRs.** Only when the owner asks or a routine runs. Body via `pr-writeup`; the owner adds GPU results via `pr-gpu-test`.
@@ -101,5 +101,5 @@ Read the area's file before changing it. Each has one `##` or `###` heading per 
 | [ROADMAP-1.x.md](ROADMAP-1.x.md) | The plan after 1.0: what shipped, the patch sweep, 1.3–1.7 (engine layers first), 2.0 candidates, modules; decisions R1–R3 |
 | [LINUX-SUPPORT.md](LINUX-SUPPORT.md) | Linux status; why the toolchain is built from source |
 | `docs/` | One page per feature (`docs/README.md`) |
-| `.claude/plans/`, `.claude/reviews/` | As built notes win; trust a review's fix-status section, check `git log` |
+| `.claude/plans/` (open), `.claude/plans/done/`, `.claude/reviews/` | As built notes win; trust a review's fix-status section, check `git log` |
 

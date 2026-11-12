@@ -176,7 +176,7 @@ Sections (Grep `## <name>`):
 
 ## Asset packages
 
-- (`feat/asset-packing`, plan `.claude/plans/2026-10-11-asset-packing-plan.md`, docs/distribution.md): every engine file read (AssetManager, raw factories, shader `#include`s, assimp through `Internal::AssimpVfsIOSystem`, miniaudio through `MiniAudioVfs`) goes through `Internal::VirtualFileSystem`: ordered mounts, newest wins, UTF-8 root-relative logical keys; the asset root is a directory mount, a package an archive (`VfsArchive`).
+- (`feat/asset-packing`, plan `.claude/plans/done/2026-10-11-asset-packing-plan.md`, docs/distribution.md): every engine file read (AssetManager, raw factories, shader `#include`s, assimp through `Internal::AssimpVfsIOSystem`, miniaudio through `MiniAudioVfs`) goes through `Internal::VirtualFileSystem`: ordered mounts, newest wins, UTF-8 root-relative logical keys; the asset root is a directory mount, a package an archive (`VfsArchive`).
 - A path starting with the root folder's name (`"assets/x.png"`) has it stripped (Debug warns once); write paths root-relative.
 - `.dpak` (`src/DingoEngine/Asset/Pack/`): 64-byte header, entry blobs, then the table of contents; stb deflate (stored when it saves < 5%, never for png/jpg/ogg/mp3), CRC32 per entry and for the TOC, ChaCha20 (RFC 8439, in-house `Pack/ChaCha20`) with a nonce per entry from a random per-package salt (TOC and key-check use reserved indices).
 - `AssetManager::Package` (static, no app needed) / `Unpackage(path, key)` → `PackageHandle` (imports every entry, reloads what it overrides) / `GetPackageAssets` / `IsPackageMounted` / `ClosePackage` / `GetAssetSource` (F6's Source column).

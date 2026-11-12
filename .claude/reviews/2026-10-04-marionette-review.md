@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-04 · **Branch:** `claude/v0-8-animation-character-fidelity-7209eb` at `ae6d59b` · **Scope:** the
 whole example as committed in M1–M5 (`git diff 368caff..ae6d59b -- examples/Marionette`), plus its release job,
-the root premake include and the `.vscode` entries. Plan: `.claude/plans/2026-10-03-marionette-plan.md`.
+the root premake include and the `.vscode` entries. Plan: `.claude/plans/done/2026-10-03-marionette-plan.md`.
 
 **Method:** one fresh read-only Opus reviewer who wrote none of the code, after each phase (M1–M5) had already had
 its own fresh review and fixes (recorded in the plan's §11). This milestone pass looked for what phase reviews

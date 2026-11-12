@@ -3,8 +3,8 @@
 # P15 — *Marionette* on v0.9: VFX from the clips, impacts, moonlit shadows
 
 Drafted 2026-10-08 on branch `claude/dingo-v0-9-0-planning-ee00a9` @ `719df64` (v0.9 P1–P14 built,
-none of it run on a GPU yet). Scope source: §6 of `.claude/plans/2026-10-06-v0.9-shadows-post-vfx-plan.md`.
-The game's own design is `.claude/plans/2026-10-03-marionette-plan.md`, whose "As built" holds.
+none of it run on a GPU yet). Scope source: §6 of `.claude/plans/done/2026-10-06-v0.9-shadows-post-vfx-plan.md`.
+The game's own design is `.claude/plans/done/2026-10-03-marionette-plan.md`, whose "As built" holds.
 
 **Status**: V0–V4 built 2026-10-08 (§7 "As built"); decisions M1–M4 (§4) settled on the recommended
 options. None of it is built with MSVC or run: everything in §6 is owed on the GPU machine.

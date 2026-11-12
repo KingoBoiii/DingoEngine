@@ -4,7 +4,7 @@
 
 Drafted 2026-10-08 on `feat/v1` (base `master` @ `4ff48ea`, v0.9.0 plus the
 Linux merge). Every file:line below was read that day. This is P13 of
-`.claude/plans/2026-10-08-v1.0-plan.md` (its §6 and decision D1). *Hearthvale* is a working title;
+`.claude/plans/done/2026-10-08-v1.0-plan.md` (its §6 and decision D1). *Hearthvale* is a working title;
 HD9 settles the name.
 
 **Status**: **complete** (2026-10-20, the owner's call; §11.18). Earlier: refreshed 2026-10-15 (phase P0) on `feat/1-0-hearthvale` against master `f414ba0`
@@ -665,7 +665,7 @@ off.
   (`OnFixedUpdate`), U5 (DingoUI focus navigation, `docs/game-ui.md:236-291`), v1.0 P9 (the API pass:
   `OnFixedUpdate`, `Entity::SetActive`, `DirectionalLightComponent::Ambient` deprecated to 0,
   `EnableImGui`/`OnImGuiRender`, `CreateApplication` no longer calls `Initialize`;
-  `.claude/plans/2026-10-08-v1.0-plan.md:1746`).
+  `.claude/plans/done/2026-10-08-v1.0-plan.md:1746`).
 - **Assumptions that changed** (later phases must know):
   - The scene's static bake cell is a fixed 32 m, not the game's 16 × 16 (§1.4, E9).
   - Baked meshes never instance: per kind, `Static` or instanced (§3.3).

@@ -3,6 +3,7 @@
 
 #include <GLFW/glfw3.h>
 #include "VulkanGraphicsContext.h"
+#include "VulkanXcbSurface.h"
 
 #include <algorithm>
 
@@ -179,6 +180,9 @@ namespace Dingo
 			graphicsContext.m_VulkanInstance.destroySurfaceKHR(m_WindowSurface);
 			m_WindowSurface = nullptr;
 		}
+
+		CloseXcbConnection(m_XcbConnection);
+		m_XcbConnection = nullptr;
 	}
 
 	void VulkanSwapChain::Resize(int32_t width, int32_t height)
@@ -364,6 +368,14 @@ namespace Dingo
 	void VulkanSwapChain::CreateWindowSurface()
 	{
 		VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
+
+		const XcbSurface xcbSurface = CreateXcbSurface(graphicsContext.m_VulkanInstance, m_Params.NativeWindowHandle, graphicsContext.enabledExtensions.instance);
+		if (xcbSurface.Surface != VK_NULL_HANDLE)
+		{
+			m_WindowSurface = xcbSurface.Surface;
+			m_XcbConnection = xcbSurface.Connection;
+			return;
+		}
 
 		const VkResult result = glfwCreateWindowSurface(graphicsContext.m_VulkanInstance, m_Params.NativeWindowHandle, nullptr, (VkSurfaceKHR*)&m_WindowSurface);
 		if (result != VK_SUCCESS)

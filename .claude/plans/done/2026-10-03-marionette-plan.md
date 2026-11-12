@@ -4,7 +4,7 @@
 
 Drafted 2026-10-03 on branch `claude/v0-8-animation-character-fidelity-7209eb` @ `368caff` (v0.8
 P4–P12 done). Every `file:line` below was read on that date. Scope source: §6 of
-`.claude/plans/2026-10-01-v0.8-animation-plan.md`, which this plan replaces as the design.
+`.claude/plans/done/2026-10-01-v0.8-animation-plan.md`, which this plan replaces as the design.
 
 **Status**: planned. D1–D4 settled by the user on 2026-10-04 on the recommended options; D5 is
 proposed. A fresh Sonnet review (2026-10-04) found 2 High, 6 Medium and 4 Low in the animation

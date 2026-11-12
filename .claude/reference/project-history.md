@@ -78,7 +78,7 @@ docs/                      Per-feature docs (see Issues, docs and reviews below)
 
 - **Engine gaps no milestone takes are `enhancement` issues** too:
 - `ROADMAP-BACKLOG.md` is gone.
-- Its unplanned items were #98 (game UI layer, still open) and #99–#104 (Marionette's six, done on `feat/enhancement-physics3d-animation-loader` with #104's root-motion design in `.claude/plans/2026-10-09-enhancement-plan.md`); the rest shipped by v0.8.2 or sit in ROADMAP.md's v1.0.
+- Its unplanned items were #98 (game UI layer, still open) and #99–#104 (Marionette's six, done on `feat/enhancement-physics3d-animation-loader` with #104's root-motion design in `.claude/plans/done/2026-10-09-enhancement-plan.md`); the rest shipped by v0.8.2 or sit in ROADMAP.md's v1.0.
 - Plans cite its items as `#1b`, `#4a`… — the last full version is `git show 5c2e057:ROADMAP-BACKLOG.md`.
 
 ### docs
@@ -122,11 +122,11 @@ The plan is [ROADMAP.md](../../ROADMAP.md) (v0.1 → v1.0); below is what each r
 
 ### v0.7.0
 
-- (engine work and the *Candlewick* example done on the branch, P0–P8 of `.claude/plans/2026-09-26-v0.7-lighting-plan.md` and `.claude/plans/2026-10-01-candlewick-plan.md`, whose "As built" notes override their designs; reviewed in `.claude/reviews/2026-10-01-v0.7.0-review.md`; released 2026-10-01): the lighting above, the Lighting Test (`--test=light`, with PASS/FAIL checks), DungeonCrawler3D's opt-in `--night`, EchoVault's orbs and sentries as lit emissive materials carrying point lights, and `examples/Candlewick` (lantern radius = oil, warden spot-light cones, a game-side light LOD, braziers as checkpoints; flags `--room=1..4`, `--debug-cone`, `--no-light-lod`, `--light-budget=16..32`, `--freeze`, `--overview`).
+- (engine work and the *Candlewick* example done on the branch, P0–P8 of `.claude/plans/done/2026-09-26-v0.7-lighting-plan.md` and `.claude/plans/done/2026-10-01-candlewick-plan.md`, whose "As built" notes override their designs; reviewed in `.claude/reviews/2026-10-01-v0.7.0-review.md`; released 2026-10-01): the lighting above, the Lighting Test (`--test=light`, with PASS/FAIL checks), DungeonCrawler3D's opt-in `--night`, EchoVault's orbs and sentries as lit emissive materials carrying point lights, and `examples/Candlewick` (lantern radius = oil, warden spot-light cones, a game-side light LOD, braziers as checkpoints; flags `--room=1..4`, `--debug-cone`, `--no-light-lod`, `--light-budget=16..32`, `--freeze`, `--overview`).
 
 ### v0.7.1
 
-- (released 2026-10-01, branch `v0.7.1`): the transform hierarchy in scenes-ecs-physics.md, pulled forward from v0.8 (P1–P3 of `.claude/plans/2026-10-01-v0.8-animation-plan.md`) — 3D and 2D parenting, subtree destroy/duplicate, every reader on world values through a per-pass memo, the physics rules, the Hierarchy Test (`--test=hierarchy`, `--hierarchy=2d|probe2d|stress|stressflat`), DungeonCrawler3D's parented character rigs, and EchoVault's sentry eye parented (line of sight from the eye, so sentries now detect the player).
+- (released 2026-10-01, branch `v0.7.1`): the transform hierarchy in scenes-ecs-physics.md, pulled forward from v0.8 (P1–P3 of `.claude/plans/done/2026-10-01-v0.8-animation-plan.md`) — 3D and 2D parenting, subtree destroy/duplicate, every reader on world values through a per-pass memo, the physics rules, the Hierarchy Test (`--test=hierarchy`, `--hierarchy=2d|probe2d|stress|stressflat`), DungeonCrawler3D's parented character rigs, and EchoVault's sentry eye parented (line of sight from the eye, so sentries now detect the player).
 
 ### v0.7.2
 
@@ -135,12 +135,12 @@ The plan is [ROADMAP.md](../../ROADMAP.md) (v0.1 → v1.0); below is what each r
 ### v0.8.0
 
 - (released 2026-10-05, PR #71 → `2b834fc`; built on `claude/v0-8-animation-character-fidelity-7209eb`, on top of v0.7.1, with master's v0.7.2 merged in at P11): P4 loader (skeletons, skin weights, clips; the Model 3D Test takes `--model=` and `--model-angle=`) P5 GPU skinning (`SubmitSkinnedMesh`, `SkinnedMeshRendererComponent`, the Animation Test) P6 (the animator, retargeting, joint sockets, the ancestor collision filter) P7 (Blend1D, masked layers, one-shots, parameters) P8 (clip events, the `.events` sidecar, `OnAnimationEvent`) P9 (in-place model hot-reload), P10 (the F7 Animation tab, F4 skinning stats, the skeleton overlay), P11 (docs/animation.md, `VERSION` 0.8.0, master's v0.7.2 merged in) and P12 (the review pass: `.claude/reviews/2026-10-03-v0.8.0-review.md`, 15 findings fixed) done.
-- P13, the *Marionette* example (`examples/Marionette`, plan `.claude/plans/2026-10-03-marionette-plan.md`, whose "As built" notes override its design):
+- P13, the *Marionette* example (`examples/Marionette`, plan `.claude/plans/done/2026-10-03-marionette-plan.md`, whose "As built" notes override its design):
 - M0–M6 done (assets, scaffold, movement, combat from clip events, three AI tiers and bouts, audio, screens and live `.events` editing, then the milestone review, tuning, DX11/DX12 and docs; it found the retargeting fix `a81727f`).
 
 ### v0.8.1
 
-- (branch `v0.8.1`, plan `.claude/plans/2026-10-06-v0.8.1-winding-plan.md`): the winding fixes in rendering.md (GitHub #68 `Material` drops `FrontCounterClockwise`, #69 `CreateSphere` wound inward), the default flipped to `true`, `PipelineParams::SetFrontCounterClockwise`, and the Mesh 3D Test's flags and winding checks.
+- (branch `v0.8.1`, plan `.claude/plans/done/2026-10-06-v0.8.1-winding-plan.md`): the winding fixes in rendering.md (GitHub #68 `Material` drops `FrontCounterClockwise`, #69 `CreateSphere` wound inward), the default flipped to `true`, `PipelineParams::SetFrontCounterClockwise`, and the Mesh 3D Test's flags and winding checks.
 - The Model 3D Test's models no longer draw inside out.
 
 ### v0.8.2
@@ -164,7 +164,7 @@ The plan is [ROADMAP.md](../../ROADMAP.md) (v0.1 → v1.0); below is what each r
 
 ### v0.9.0
 
-- (released 2026-10-08, PR #106 → `c0c5539`, built on `claude/dingo-v0-9-0-planning-ee00a9`, plan `.claude/plans/2026-10-06-v0.9-shadows-post-vfx-plan.md`, whose §9 "As built" notes override its design): P1–P12 (profiling, render-target groundwork, the post chain with tone mapping, bloom and AO, cascaded and local shadows, shadow probes, compute and storage buffers, GPU particles and particles from animation events, panels, docs, `VERSION` 0.9.0); P13 done (the review, its High findings and six picked Mediums fixed); P14 (*Candlewick*, plan `.claude/plans/2026-10-08-candlewick-v0.9-plan.md`) and P15 (*Marionette*, plan `.claude/plans/2026-10-08-marionette-v0.9-plan.md`) built and reviewed, see below.
+- (released 2026-10-08, PR #106 → `c0c5539`, built on `claude/dingo-v0-9-0-planning-ee00a9`, plan `.claude/plans/done/2026-10-06-v0.9-shadows-post-vfx-plan.md`, whose §9 "As built" notes override its design): P1–P12 (profiling, render-target groundwork, the post chain with tone mapping, bloom and AO, cascaded and local shadows, shadow probes, compute and storage buffers, GPU particles and particles from animation events, panels, docs, `VERSION` 0.9.0); P13 done (the review, its High findings and six picked Mediums fixed); P14 (*Candlewick*, plan `.claude/plans/done/2026-10-08-candlewick-v0.9-plan.md`) and P15 (*Marionette*, plan `.claude/plans/done/2026-10-08-marionette-v0.9-plan.md`) built and reviewed, see below.
 - **Verified on the GPU machine** (RX 7900 XTX, 2026-10-08, plan §9 "GPU verification", PR #106's "Verified"): every check on Vulkan, DX11 and DX12, the 0 px gate, validation layers, timings and both examples; it fixed the skinned shadow layout (`6295be2`) and the uninitialised shadow probes that lost the Vulkan device in Release (`2d203b5`), and filed #145 (a missing vertex/index barrier, predating v0.9).
 - The always-on GPU timers cost Vulkan ~0.05 ms a frame (NVRHI's Vulkan timer queries end the render pass); kept on by the owner's decision.
 - The Tracy timeline capture was skipped.
@@ -201,7 +201,7 @@ The plan is [ROADMAP.md](../../ROADMAP.md) (v0.1 → v1.0); below is what each r
 
 ### v1.0.0
 
-- (released 2026-10-21, straight to master → `4145806f`): plan `.claude/plans/2026-10-08-v1.0-plan.md` (P1–P12; its §9 "As built" notes override the design), built on `feat/v1` in PR #147 and the PRs after it (#187, #222, #230, #233, #234, #240, #243, #246, #250, #253–#256, #259–#264, #269–#271, #278, #280, #282–#288, #291, #292, #294).
+- (released 2026-10-21, straight to master → `4145806f`): plan `.claude/plans/done/2026-10-08-v1.0-plan.md` (P1–P12; its §9 "As built" notes override the design), built on `feat/v1` in PR #147 and the PRs after it (#187, #222, #230, #233, #234, #240, #243, #246, #250, #253–#256, #259–#264, #269–#271, #278, #280, #282–#288, #291, #292, #294).
 - Renderer throughput (retained submission, culling, instancing, static geometry, the skin palette arena, surface overrides, then the render CPU cuts of #271–#287 under #231); per-user logs, the crash handler, `FatalError` and `Dingo-UnitTests`; `SaveData`, `SaveSlots`, `Settings` and display modes; engine-owned launch flags; notices, the Inter font and `exeMetadata`; the API pass (50 findings: 37 change, 4 deprecate, 9 keep) with `docs/versioning.md` and `docs/conventions.md`; the Doxygen reference and the 1.0 guides; DingoUI (#256, closes #98); and *Hearthvale* (#261, complete 2026-10-20).
 - `docs/migrating-to-1.0.md` lists every break.
 - Owner GPU runs on Vulkan, DX11 and DX12 (RX 7900 XTX): sign-off `4faaaf0`, step 3 `5f8b7c5`, soaks `b53f300` (20 minutes) and `c4d4875` (60 minutes).
