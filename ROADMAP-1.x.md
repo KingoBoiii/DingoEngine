@@ -84,7 +84,7 @@ needs first, and games want it on its own for level files and prefabs.
   general registration pattern waits for 2.0 (see below). The plan is
   `.claude/plans/2026-11-12-v1.3-scenes-on-disk-plan.md`.
 
-**Example**: Hearthvale's valley, or one of the older examples' levels, loaded from scene files
+**Example**: EchoVault's course (the plan's D15), loaded from scene files
 instead of built in code, with a `--check` that saves, reloads and compares.
 
 ## v1.4 — Physically Based Rendering
