@@ -134,6 +134,12 @@ The gaps games hit first, collected from the docs' Limits sections and the crash
   - Linux minidumps, alongside the text backtrace, so `SendAttachments` carries one on Linux too.
 - **Shipping**: a Linux window icon at run time, and the build-time hooks a store-integration
   module needs.
+- **A scene's own physics world**: append `Physics2D*`/`Physics3D*` members to `SceneParams`; null
+  (the default) keeps the engine's Box2D and Jolt worlds, so nothing changes for existing games.
+  `Physics3D` (`Physics/3D/Physics3D.h`) and `Physics2D` are already interfaces. It serves a
+  headless server for the networking module, a deterministic or mock world for tests, and a game's
+  own simple physics. If the networking module starts before 1.6, this ships in a minor release
+  ahead of it.
 
 **Example**: Angry Birds on 2D contact callbacks and ray casts instead of velocity checks.
 
@@ -196,6 +202,15 @@ Physics includes `Graphics/Mesh.h`, and DingoUI and the ImGui panels include `Sc
   - UI → Scene: world-space widgets take a position from the caller, and the scene panels move up
     to Scene.
   - Core → everything: `Application` and `Settings` move up a layer.
+- **The scene holds data; renderers read it.** Today `Scene.h` carries rendering entry points
+  (submitting lights, shadow views, overlay passes) that `SceneRenderer` wraps. In 2.0 those move
+  out: a scene is entities and components, and a renderer takes a scene, whether the default
+  `SceneRenderer`, a game's own, the editor viewport, or a null renderer for a server. The scene
+  doesn't call a renderer interface; the dependency points from the renderer to the scene.
+- **Null implementations** of physics, audio and the scene renderer for servers and CI, designed
+  with the layers. Interfaces only where a second implementation exists: a public interface a
+  game implements is frozen for the whole major series (it can only gain virtuals with default
+  bodies), so audio, windowing and assets stay concrete.
 - **Why 2.0 and not 1.x** (owner, 2026-11-12): it redesigns the engine's architecture, and it
   breaks source in a way SemVer's letter misses. `Core/Application.h` includes the renderers,
   `SceneRenderer`, `AssetManager` and DingoUI today, so a game that includes only it can use
