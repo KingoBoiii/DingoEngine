@@ -32,6 +32,7 @@ in [ROADMAP.md](ROADMAP.md#v110--joints-ragdolls--fixed-tick).
 | R2 | Does PBR stay opt-in for good? | **Opt-in through 1.x, the default in 2.0.** Two lighting models forever would double the shader work behind every lighting change. |
 | R3 | Where do engine-support APIs for the editor live? | **Ordinary public API under SemVer**, including editor-only hooks. There is no separate editor header set with a looser promise, so an editor need waits for a minor release like any other addition. |
 | R4 | Do the engine layers ship in 1.x? (2026-11-12) | **No, in 2.0.** It redesigns the architecture and drops includes games can lean on. 1.x adds only the hooks its milestones need: the component registry in 1.3 and the panel hook in 1.5. |
+| R5 | How modular is 2.0? (2026-11-14) | **Modular, through three extension points** (the shape is proposed, after a Fable review, and waits for the owner): replaceable physics backends through factories, game scene systems added at named phases (built-ins can be turned off, not replaced), and a replaceable scene renderer with a few named hooks. The engine ships the defaults. `.claude/plans/2026-11-14-v2.0-modular-engine-plan.md`. |
 
 ## Patch releases — Bug sweep
 
@@ -134,12 +135,13 @@ The gaps games hit first, collected from the docs' Limits sections and the crash
   - Linux minidumps, alongside the text backtrace, so `SendAttachments` carries one on Linux too.
 - **Shipping**: a Linux window icon at run time, and the build-time hooks a store-integration
   module needs.
-- **A scene's own physics world**: append `Physics2D*`/`Physics3D*` members to `SceneParams`; null
-  (the default) keeps the engine's Box2D and Jolt worlds, so nothing changes for existing games.
-  `Physics3D` (`Physics/3D/Physics3D.h`) and `Physics2D` are already interfaces. It serves a
-  headless server for the networking module, a deterministic or mock world for tests, and a game's
-  own simple physics. If the networking module starts before 1.6, this ships in a minor release
-  ahead of it.
+- **A scene's own physics world**: an appended `SceneParams` member takes a **factory** for the
+  scene's `Physics2D`/`Physics3D` world, not a world pointer, because a scene creates its worlds on
+  start and destroys them on stop. Empty (the default) keeps Box2D and Jolt, so nothing changes for
+  existing games. It serves a deterministic or mock world for tests and a game's own simple physics.
+  `docs/versioning.md` states that implementing these interfaces outside the engine isn't covered by
+  1.x's promise (they gain virtuals, starting with 1.6's own 2D queries); 2.0 makes them safe to grow
+  (R5). If the networking module starts before 1.6, this ships in a minor release ahead of it.
 
 **Example**: Angry Birds on 2D contact callbacks and ray casts instead of velocity checks.
 
@@ -169,6 +171,29 @@ Nothing here is scheduled. 2.0 happens when enough of this builds up to justify 
 - **Factories return `std::unique_ptr`** (`.claude/plans/2026-11-03-smart-pointers-plan.md`,
   phase 3).
 - Anything else a 1.x milestone finds it can't do without breaking, added here as it comes up.
+
+### Modular engine (the 2.0 theme, R5)
+
+Games build their own engine modules on interfaces the engine provides, and the engine ships a
+default for each, so a game that writes none behaves as today. The design is
+`.claude/plans/2026-11-14-v2.0-modular-engine-plan.md`.
+
+| Extension point | A game may | What stays frozen for 2.x |
+|---|---|---|
+| Physics backends (`Physics2D`, `Physics3D`) | replace them through an application-level factory | the interfaces, every virtual with a default body, checked by a conformance test |
+| Scene systems | add its own at four named phases (pre-tick, post-tick, update, late update); turn built-ins off through `SceneParams::Features` | the phases and one small `SceneSystem` base class |
+| Scene renderer | replace it whole; hook a few named points once PBR and the UBO redesign have settled the passes | `Render(scene, view)` and the hook points |
+
+- **Built-in systems stay concrete.** Animation, ragdolls, interpolation and the shared transform
+  memos depend on each other, so a game turns physics or audio off and adds its own system instead
+  of replacing a built-in one.
+- **A module is a registration function**: `RegisterX(Application&)` registers components, scripts,
+  systems, loaders and panels, and may push a `Layer` for anything with a lifetime.
+- **Audio stays engine-implemented**, with a null device selected through `ApplicationParams` for
+  servers and CI. Windowing and the graphics context stay concrete too.
+- **Order of the work**: the mechanical breaks first (deprecations, fixed tick by default, factories
+  to `unique_ptr`), then the engine layers below, then the scene holding only data, then backends,
+  then public systems (the networking module is the proof), then render hooks.
 
 ### Engine layers (2.0)
 
@@ -204,13 +229,10 @@ Physics includes `Graphics/Mesh.h`, and DingoUI and the ImGui panels include `Sc
   - Core → everything: `Application` and `Settings` move up a layer.
 - **The scene holds data; renderers read it.** Today `Scene.h` carries rendering entry points
   (submitting lights, shadow views, overlay passes) that `SceneRenderer` wraps. In 2.0 those move
-  out: a scene is entities and components, and a renderer takes a scene, whether the default
-  `SceneRenderer`, a game's own, the editor viewport, or a null renderer for a server. The scene
-  doesn't call a renderer interface; the dependency points from the renderer to the scene.
-- **Null implementations** of physics, audio and the scene renderer for servers and CI, designed
-  with the layers. Interfaces only where a second implementation exists: a public interface a
-  game implements is frozen for the whole major series (it can only gain virtuals with default
-  bodies), so audio, windowing and assets stay concrete.
+  out, along with the render-side state the scene keeps today (sort buffers, mesh memos, shadow
+  probes, static bakes): a scene is entities and components, and a renderer takes a scene, whether
+  the default `SceneRenderer`, a game's own or the editor viewport. The scene doesn't call a
+  renderer interface; the dependency points from the renderer to the scene.
 - **Why 2.0 and not 1.x** (owner, 2026-11-12): it redesigns the engine's architecture, and it
   breaks source in a way SemVer's letter misses. `Core/Application.h` includes the renderers,
   `SceneRenderer`, `AssetManager` and DingoUI today, so a game that includes only it can use
