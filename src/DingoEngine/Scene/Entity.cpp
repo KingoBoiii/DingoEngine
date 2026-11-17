@@ -7,6 +7,8 @@
 #include "DingoEngine/Scene/SceneData.h"
 #include "DingoEngine/Scene/Systems/HierarchySystem.h"
 
+#include <atomic>
+
 namespace Dingo
 {
 
@@ -92,12 +94,37 @@ namespace Dingo
 
 	}
 
-	// All EnTT access is confined to this .cpp. The component methods are declared
+	// All EnTT access is confined to this .cpp. The built-in component methods are declared
 	// in the (EnTT-free) header and explicitly instantiated below for the built-in
 	// component types, so client translation units never need EnTT.
 
+	static_assert(entt::entt_traits<entt::entity>::entity_mask == Internal::k_EntitySlotMask, "CustomComponentPool assumes EnTT's default slot bits");
+	static_assert(static_cast<std::uint32_t>(entt::entity{ entt::null }) == Internal::k_RemovedHandle, "No live entity may have the removed-entry marker as its handle");
+
+	namespace Internal
+	{
+
+		std::uint32_t NextCustomComponentIndex()
+		{
+			static std::atomic<std::uint32_t> s_Next = 0;
+			return s_Next++;
+		}
+
+		void ReportCustomComponentError(const char* message)
+		{
+			DE_CORE_ERROR("{}", message);
+			DE_CORE_ASSERT(false, "Game component misuse (see the error above)");
+		}
+
+		void LogCustomComponentError(const char* message)
+		{
+			DE_CORE_ERROR("{}", message);
+		}
+
+	}
+
 	template<typename T>
-	T& Entity::AddComponent(const T& component)
+	T& Entity::AddBuiltinComponent(const T& component)
 	{
 		DE_CORE_ASSERT(IsValid(), "AddComponent on a null or destroyed entity");
 		entt::registry& registry = m_Scene->m_Data->Registry;
@@ -108,21 +135,21 @@ namespace Dingo
 	}
 
 	template<typename T>
-	T& Entity::GetComponent()
+	T& Entity::GetBuiltinComponent()
 	{
 		DE_CORE_ASSERT(IsValid(), "GetComponent on a null or destroyed entity");
-		DE_CORE_ASSERT(HasComponent<T>(), "GetComponent: the entity has no component of this type (HasComponent first)");
+		DE_CORE_ASSERT(HasBuiltinComponent<T>(), "GetComponent: the entity has no component of this type (HasComponent first)");
 		return m_Scene->m_Data->Registry.get<T>(static_cast<entt::entity>(m_Handle));
 	}
 
 	template<typename T>
-	bool Entity::HasComponent() const
+	bool Entity::HasBuiltinComponent() const
 	{
 		return IsValid() && m_Scene->m_Data->Registry.all_of<T>(static_cast<entt::entity>(m_Handle));
 	}
 
 	template<typename T>
-	void Entity::RemoveComponent()
+	void Entity::RemoveBuiltinComponent()
 	{
 		if (IsValid())
 			m_Scene->m_Data->Registry.remove<T>(static_cast<entt::entity>(m_Handle));
@@ -453,16 +480,17 @@ namespace Dingo
 	// --- Explicit instantiations for the built-in component types ---------------
 
 #define DE_INSTANTIATE_COMPONENT(T) \
-	template T& Entity::AddComponent<T>(const T&); \
-	template T& Entity::GetComponent<T>(); \
-	template bool Entity::HasComponent<T>() const; \
-	template void Entity::RemoveComponent<T>();
+	static_assert(Internal::IsBuiltinComponent<T>, #T " is missing from Internal::BuiltinComponents"); \
+	template T& Entity::AddBuiltinComponent<T>(const T&); \
+	template T& Entity::GetBuiltinComponent<T>(); \
+	template bool Entity::HasBuiltinComponent<T>() const; \
+	template void Entity::RemoveBuiltinComponent<T>();
 
 	// Identity and name are the scene's to manage: read them, never add, remove or swap them.
-	template IDComponent& Entity::GetComponent<IDComponent>();
-	template bool Entity::HasComponent<IDComponent>() const;
-	template TagComponent& Entity::GetComponent<TagComponent>();
-	template bool Entity::HasComponent<TagComponent>() const;
+	template IDComponent& Entity::GetBuiltinComponent<IDComponent>();
+	template bool Entity::HasBuiltinComponent<IDComponent>() const;
+	template TagComponent& Entity::GetBuiltinComponent<TagComponent>();
+	template bool Entity::HasBuiltinComponent<TagComponent>() const;
 	DE_INSTANTIATE_COMPONENT(TransformComponent)
 	DE_INSTANTIATE_COMPONENT(SpriteRendererComponent)
 	DE_INSTANTIATE_COMPONENT(CircleRendererComponent)
@@ -493,7 +521,7 @@ namespace Dingo
 	DE_INSTANTIATE_COMPONENT(FogComponent)
 	DE_INSTANTIATE_COMPONENT(AudioSourceComponent)
 	DE_INSTANTIATE_COMPONENT(AudioListenerComponent)
-
+	static_assert(Internal::BuiltinComponents::Size == 30 + 2, "Internal::BuiltinComponents lists a type DE_INSTANTIATE_COMPONENT does not");
 #undef DE_INSTANTIATE_COMPONENT
 
 }

@@ -9,7 +9,7 @@ paths:
 ---
 
 **Engine invariants**
-- A new built-in component is registered with `DE_INSTANTIATE_COMPONENT` in `src/DingoEngine/Scene/Entity.cpp`, or clients can't use it, and added to `Scene::DuplicateSubtree`'s `CopyComponentIfExists` list (`Scene.cpp`), or duplicates silently drop it. Engine-internal components (`RuntimeComponents.h`, `HierarchyComponent`, `SocketComponent`) are never registered there.
+- A new built-in component is registered with `DE_INSTANTIATE_COMPONENT` in `src/DingoEngine/Scene/Entity.cpp` and listed in `Internal::BuiltinComponents` (`include/DingoEngine/Scene/ComponentStorage.h`), or clients can't use it (or it lands in a game-component pool the engine never reads), and added to `Scene::DuplicateSubtree`'s `CopyComponentIfExists` list (`Scene.cpp`), or duplicates silently drop it. Engine-internal components (`RuntimeComponents.h`, `HierarchyComponent`, `SocketComponent`) are never registered there.
 - Public components hold settings only. Never put a live handle (body, controller, sound) on one; those live in `Scene/Systems/RuntimeComponents.h`.
 - Caches and lookups key on never-reused ids (`Mesh::GetId()`, `Material::GetId()`, `Framebuffer::GetId()`, `Texture::GetId()`, `Sampler::GetId()`, `Skeleton::GetId()`, `AnimationClip::GetId()`), never on addresses: a freed object's address gets reused.
 - The 3D "no body" handle is `k_InvalidBody3D` (0xFFFFFFFF), not 0.

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "DingoEngine/Core/UUID.h"
-#include "DingoEngine/Scene/Components.h"
+#include "DingoEngine/Scene/ComponentStorage.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/quaternion.hpp>
@@ -31,17 +31,29 @@ namespace Dingo
 		/// A null handle: IsValid is false, and no component call is safe on it.
 		Entity() = default;
 
-		// --- Components (built-in component types only) ---
+		// --- Components ---
 		//
-		// AddComponent replaces a component the entity already has (with a warning). GetComponent
-		// asserts the entity has it; HasComponent is false and RemoveComponent a no-op on a null
-		// or destroyed entity. IDComponent and TagComponent can be read, not added or removed:
-		// rename with SetName.
+		// T is a built-in component (Components.h) or any type the game defines: a game type needs
+		// no registration, and must be move-constructible and move-assignable. AddComponent replaces
+		// a component the entity already has (with a warning for a built-in one). GetComponent
+		// asserts the entity has it; HasComponent is false and RemoveComponent a no-op on a null or
+		// destroyed entity. IDComponent and TagComponent can be read, not added or removed: rename
+		// with SetName. A game component lives in the scene's storage for T (see Scene::View), dies
+		// with its entity, and is copied by Scene::DuplicateEntity when T is copy-constructible.
 
-		/// Adds a copy of `component` (default-constructed by default) and returns the stored one;
-		/// the reference stays valid until the component is removed or the entity destroyed.
+		/// Adds a default-constructed T and returns the stored one. A built-in component's reference
+		/// stays valid until it is removed or the entity destroyed; a game component's until any T in
+		/// the scene is removed or Scene::SortComponents<T> runs.
 		template<typename T>
-		T& AddComponent(const T& component = T{});
+		T& AddComponent();
+
+		/// The same with a copy of `component`.
+		template<typename T>
+		T& AddComponent(const T& component);
+
+		/// The same, moving `component` in: for a game type that can't be copied.
+		template<typename T, typename = std::enable_if_t<!std::is_lvalue_reference_v<T> && !std::is_const_v<std::remove_reference_t<T>>>>
+		T& AddComponent(T&& component);
 
 		/// The entity's T; asserts the entity has one (check HasComponent when unsure).
 		template<typename T>
@@ -51,7 +63,8 @@ namespace Dingo
 		template<typename T>
 		bool HasComponent() const;
 
-		/// Removes the entity's T; does nothing if it has none.
+		/// Removes the entity's T; does nothing if it has none. Inside a Scene::View's Each over T
+		/// the component is gone at once for HasComponent and the view, and freed when that Each ends.
 		template<typename T>
 		void RemoveComponent();
 
@@ -203,6 +216,16 @@ namespace Dingo
 		void AttachScript(ScriptableEntity* instance);
 		ScriptableEntity* GetScriptInstance();
 
+		// Defined in Entity.cpp for the types in Internal::BuiltinComponents only.
+		template<typename T>
+		T& AddBuiltinComponent(const T& component);
+		template<typename T>
+		T& GetBuiltinComponent();
+		template<typename T>
+		bool HasBuiltinComponent() const;
+		template<typename T>
+		void RemoveBuiltinComponent();
+
 	private:
 		static constexpr std::uint32_t k_InvalidHandle = 0xFFFFFFFFu;
 
@@ -210,6 +233,11 @@ namespace Dingo
 		Scene* m_Scene = nullptr;
 
 		friend class Scene;
+		template<typename... Ts>
+		friend class ComponentView;
 	};
 
 }
+
+// The component templates need the complete Scene; they are defined at the end of Scene.h.
+#include "DingoEngine/Scene/Scene.h"

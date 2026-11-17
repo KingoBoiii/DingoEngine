@@ -5,14 +5,20 @@
 #include "DingoEngine/Physics/2D/PhysicsTypes2D.h"
 #include "DingoEngine/Physics/3D/PhysicsTypes3D.h"
 #include "DingoEngine/Audio/AudioTypes.h"
+#include "DingoEngine/Scene/ComponentStorage.h"
+#include "DingoEngine/Scene/Entity.h"
 
 #include <glm/glm.hpp>
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
+#include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace Dingo
@@ -29,6 +35,53 @@ namespace Dingo
 	class ScriptableEntity;
 
 	namespace Internal { struct SceneData; class ScriptSystem; }
+
+	/// The entities of a Scene that hold every one of the game component types Ts, from
+	/// Scene::View. Built-in components can't be viewed. Cheap to copy; it stays usable while the
+	/// scene lives.
+	///
+	/// Each visits the entities in the order of the first type's storage, so put the rarest type
+	/// first: a pass costs one step per entity holding the first type. That order is the order the
+	/// first type's components were added, except that a removal moves the last one into the gap,
+	/// and Scene::SortComponents rearranges it. It depends on nothing but that sequence of calls,
+	/// so the same calls visit the same order on every platform and every run. Inactive entities
+	/// are visited too (Entity::IsActiveInHierarchy tells them apart).
+	template<typename... Ts>
+	class ComponentView
+	{
+		static_assert(sizeof...(Ts) > 0, "View needs at least one component type");
+		static_assert((!Internal::IsBuiltinComponent<Ts> && ...), "View takes game components only, not built-in ones");
+		static_assert((!std::is_const_v<Ts> && ...), "View takes the component types without const");
+
+	public:
+		/// Calls fn(Entity, Ts&...) or fn(Ts&...) for each entity holding every Ts. fn may add and
+		/// remove components and create and destroy entities: an entity whose first type is added during
+		/// the pass is not visited by it, a component removed is skipped from then on, and an entity
+		/// destroyed stays valid until the outermost Each ends (or the scene's update pass, inside one),
+		/// as a script's destroys do. Scene::SortComponents of a viewed type does nothing until it returns; never Clear inside one.
+		template<typename Fn>
+		void Each(Fn&& fn);
+
+		/// The number of entities holding the first type: what an Each costs, and the most it visits.
+		std::size_t SizeHint() const { return std::get<0>(m_Pools)->Count(); }
+
+	private:
+		ComponentView(Scene* scene, Internal::CustomComponentPool<Ts>*... pools) : m_Scene(scene), m_Pools(pools...) {}
+
+		template<std::size_t... I, typename Fn>
+		void EachImpl(std::index_sequence<I...>, Fn& fn);
+
+		void Begin();
+		void End();
+
+		Scene* m_Scene;
+		std::tuple<Internal::CustomComponentPool<Ts>*...> m_Pools;
+
+		friend class Scene;
+	};
+
+	/// Identifies a system added with Scene::AddFixedSystem.
+	using FixedSystemId = std::uint32_t;
 
 	/// Options fixed when a Scene is made.
 	struct SceneParams
@@ -282,6 +335,62 @@ namespace Dingo
 		/// The entity with this UUID, or a null Entity if there is none.
 		Entity GetEntityByUUID(UUID uuid);
 
+		// --- Game components and systems ---------------------------------------
+		//
+		// Entity::AddComponent takes any game type: these iterate them without visiting the rest of
+		// the scene. Saving game components is the game's job: the engine doesn't serialise them.
+
+		/// The entities that hold every one of the game components Ts. See ComponentView for the
+		/// order and the cost.
+		template<typename... Ts>
+		ComponentView<Ts...> View()
+		{
+			return ComponentView<Ts...>(this, &GetCustomPool<Ts>()...);
+		}
+
+		/// View<Ts...>().Each(fn).
+		template<typename... Ts, typename Fn>
+		void Each(Fn&& fn)
+		{
+			View<Ts...>().Each(std::forward<Fn>(fn));
+		}
+
+		/// Reorders the scene's storage of the game component T by `less(const T&, const T&)`, a
+		/// strict weak ordering. The sort is stable, so the result depends only on the components and
+		/// their order before, the same on every platform. Views led by T visit in the new order;
+		/// references to T components are invalidated. Logs an error and does nothing inside an Each
+		/// over T.
+		template<typename T, typename Compare>
+		void SortComponents(Compare less)
+		{
+			static_assert(!Internal::IsBuiltinComponent<T>, "SortComponents takes a game component, not a built-in one");
+			Internal::CustomComponentPool<T>& pool = GetCustomPool<T>();
+			if (pool.IsLocked())
+			{
+				Internal::LogCustomComponentError("SortComponents inside an Each over the same component type; nothing was sorted");
+				return;
+			}
+			pool.Sort(less);
+		}
+
+		/// How many entities hold the game component T.
+		template<typename T>
+		std::size_t GetComponentCount() const
+		{
+			static_assert(!Internal::IsBuiltinComponent<T>, "GetComponentCount takes a game component, not a built-in one");
+			const Internal::CustomComponentPool<T>* pool = FindCustomPool<T>();
+			return pool ? pool->Count() : 0;
+		}
+
+		/// Runs `system(scene, fixedStep)` on every fixed step, right after the scripts'
+		/// OnFixedUpdate and, with SceneParams::FixedTick, before that tick's physics step. Systems
+		/// run in the order they were added. As in a script, a destroy waits for the end of the pass.
+		/// A system added during a step first runs on the next one. Clear keeps the systems.
+		FixedSystemId AddFixedSystem(std::function<void(Scene&, float)> system);
+		/// Stops the system from running; it is not called again, even later in the same step. An
+		/// unknown id does nothing.
+		void RemoveFixedSystem(FixedSystemId id);
+
 		// --- Animation --------------------------------------------------------
 
 		/// The entity's Animator, for playing clips from a script; created on first use. Null
@@ -467,6 +576,30 @@ namespace Dingo
 		// Re-derives the active state of `root`'s subtree and starts or stops what changed with it.
 		void RefreshActive(std::uint32_t root);
 
+		template<typename T>
+		Internal::CustomComponentPool<T>& GetCustomPool()
+		{
+			const std::uint32_t index = Internal::CustomComponentIndex<T>();
+			if (index >= m_CustomPools.size())
+				m_CustomPools.resize(static_cast<std::size_t>(index) + 1);
+			std::unique_ptr<Internal::CustomComponentPoolBase>& pool = m_CustomPools[index];
+			if (!pool)
+				pool = std::make_unique<Internal::CustomComponentPool<T>>();
+			return static_cast<Internal::CustomComponentPool<T>&>(*pool);
+		}
+
+		template<typename T>
+		Internal::CustomComponentPool<T>* FindCustomPool() const
+		{
+			const std::uint32_t index = Internal::CustomComponentIndex<T>();
+			return index < m_CustomPools.size() ? static_cast<Internal::CustomComponentPool<T>*>(m_CustomPools[index].get()) : nullptr;
+		}
+
+		// An entity destroyed while an Each runs waits for the outermost one to end.
+		void BeginEach() { ++m_EachDepth; }
+		void EndEach();
+		void RunFixedSystems(float step);
+
 	private:
 		Internal::SceneData* m_Data = nullptr;
 
@@ -479,9 +612,168 @@ namespace Dingo
 
 		std::string m_PendingTransition;
 
+		std::vector<std::unique_ptr<Internal::CustomComponentPoolBase>> m_CustomPools;
+		std::uint32_t m_EachDepth = 0;
+
 		friend class Entity;
+		template<typename... Ts>
+		friend class ComponentView;
 		friend class SceneManager;
 		friend class SceneRenderer;
 	};
+
+	template<typename T>
+	T& Entity::AddComponent()
+	{
+		if constexpr (Internal::IsBuiltinComponent<T>)
+		{
+			static_assert(!std::is_same_v<T, IDComponent> && !std::is_same_v<T, TagComponent>, "IDComponent and TagComponent are added by CreateEntity; rename with SetName");
+			return AddBuiltinComponent<T>(T{});
+		}
+		else
+		{
+			if (!IsValid())
+			{
+				Internal::ReportCustomComponentError("AddComponent on a null or destroyed entity; nothing was added");
+				return Internal::ScratchComponent<T>();
+			}
+			return m_Scene->GetCustomPool<T>().Emplace(m_Handle);
+		}
+	}
+
+	template<typename T>
+	T& Entity::AddComponent(const T& component)
+	{
+		if constexpr (Internal::IsBuiltinComponent<T>)
+		{
+			static_assert(!std::is_same_v<T, IDComponent> && !std::is_same_v<T, TagComponent>, "IDComponent and TagComponent are added by CreateEntity; rename with SetName");
+			return AddBuiltinComponent<T>(component);
+		}
+		else
+		{
+			if (!IsValid())
+			{
+				Internal::ReportCustomComponentError("AddComponent on a null or destroyed entity; nothing was added");
+				return Internal::ScratchComponent<T>(component);
+			}
+			return m_Scene->GetCustomPool<T>().Emplace(m_Handle, component);
+		}
+	}
+
+	template<typename T, typename>
+	T& Entity::AddComponent(T&& component)
+	{
+		if constexpr (Internal::IsBuiltinComponent<T>)
+		{
+			static_assert(!std::is_same_v<T, IDComponent> && !std::is_same_v<T, TagComponent>, "IDComponent and TagComponent are added by CreateEntity; rename with SetName");
+			return AddBuiltinComponent<T>(component);
+		}
+		else
+		{
+			if (!IsValid())
+			{
+				Internal::ReportCustomComponentError("AddComponent on a null or destroyed entity; nothing was added");
+				return Internal::ScratchComponent<T>(std::move(component));
+			}
+			return m_Scene->GetCustomPool<T>().Emplace(m_Handle, std::move(component));
+		}
+	}
+
+	template<typename T>
+	T& Entity::GetComponent()
+	{
+		if constexpr (Internal::IsBuiltinComponent<T>)
+			return GetBuiltinComponent<T>();
+		else
+		{
+			if (!HasComponent<T>())
+			{
+				Internal::ReportCustomComponentError("GetComponent: the entity has no component of this type (HasComponent first)");
+				if constexpr (std::is_default_constructible_v<T>)
+					return Internal::ScratchComponent<T>();
+			}
+			return m_Scene->GetCustomPool<T>().Get(m_Handle);
+		}
+	}
+
+	template<typename T>
+	bool Entity::HasComponent() const
+	{
+		if constexpr (Internal::IsBuiltinComponent<T>)
+			return HasBuiltinComponent<T>();
+		else
+		{
+			if (!m_Scene)
+				return false;
+			const Internal::CustomComponentPool<T>* pool = m_Scene->FindCustomPool<T>();
+			return pool && pool->Contains(m_Handle);
+		}
+	}
+
+	template<typename T>
+	void Entity::RemoveComponent()
+	{
+		if constexpr (Internal::IsBuiltinComponent<T>)
+		{
+			static_assert(!std::is_same_v<T, IDComponent> && !std::is_same_v<T, TagComponent>, "IDComponent and TagComponent can't be removed");
+			RemoveBuiltinComponent<T>();
+		}
+		else if (m_Scene)
+		{
+			if (Internal::CustomComponentPool<T>* pool = m_Scene->FindCustomPool<T>())
+				pool->Remove(m_Handle);
+		}
+	}
+
+	template<typename... Ts>
+	void ComponentView<Ts...>::Begin()
+	{
+		m_Scene->BeginEach();
+		std::apply([](auto*... pools) { (pools->Lock(), ...); }, m_Pools);
+	}
+
+	template<typename... Ts>
+	void ComponentView<Ts...>::End()
+	{
+		std::apply([](auto*... pools) { (pools->Unlock(), ...); }, m_Pools);
+		m_Scene->EndEach();
+	}
+
+	template<typename... Ts>
+	template<typename Fn>
+	void ComponentView<Ts...>::Each(Fn&& fn)
+	{
+		EachImpl(std::index_sequence_for<Ts...>{}, fn);
+	}
+
+	template<typename... Ts>
+	template<std::size_t... I, typename Fn>
+	void ComponentView<Ts...>::EachImpl(std::index_sequence<I...>, Fn& fn)
+	{
+		static_assert(std::is_invocable_v<Fn&, Entity, Ts&...> || std::is_invocable_v<Fn&, Ts&...>, "Each takes fn(Entity, Ts&...) or fn(Ts&...)");
+
+		struct Guard
+		{
+			ComponentView& View;
+			explicit Guard(ComponentView& view) : View(view) { View.Begin(); }
+			~Guard() { View.End(); }
+		} guard(*this);
+
+		Internal::CustomComponentPool<std::tuple_element_t<0, std::tuple<Ts...>>>& lead = *std::get<0>(m_Pools);
+		const std::size_t count = lead.DenseSize();
+		for (std::size_t index = 0; index < count; ++index)
+		{
+			const std::uint32_t handle = lead.HandleAt(index);
+			if (handle == Internal::k_RemovedHandle)
+				continue;
+			if (!(std::get<I>(m_Pools)->Contains(handle) && ...))
+				continue;
+
+			if constexpr (std::is_invocable_v<Fn&, Entity, Ts&...>)
+				fn(Entity(handle, m_Scene), std::get<I>(m_Pools)->Get(handle)...);
+			else
+				fn(std::get<I>(m_Pools)->Get(handle)...);
+		}
+	}
 
 }

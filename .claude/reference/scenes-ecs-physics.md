@@ -42,7 +42,7 @@ Index of `##` headings (Grep the heading, then Read just that range):
 - **Fixed tick** (#299, v1.1):
 - `Scene(name, SceneParams{ FixedTick, InterpolatePhysics })`.
 - Per tick in `Scene::OnUpdate`:
-- `Scripts.FixedUpdate` → `FlushPendingDestroys` → `Interpolation.BeforeTick` → `Physics.Step(step)` → `Interpolation.AfterTick` → `++Tick`; the per-frame physics step is skipped.
+- `Scripts.FixedUpdate` → `RunFixedSystems` (`Scene::AddFixedSystem`, #328) → `FlushPendingDestroys` → `Interpolation.BeforeTick` → `Physics.Step(step)` → `Interpolation.AfterTick` → `++Tick`; the per-frame physics step is skipped.
 - `PhysicsInterpolation` (`Scene/Systems/`) keeps `InterpolatedPose3D/2D` (runtime components) with the local pose physics wrote on the last two ticks; the RAII `Scene::InterpolatedView` (nests by depth) writes the blended pose into the transforms for drawing and restores the latest tick on exit.
 - Every scene call that draws or reads a transform for the camera (render, lights, `GetCameraViewProjection`, ray/screen helpers, `AudioSync`) opens one, and a new such call must too.
 - A pose differing from the stored one (game write, teleport via body/controller) drops the record so the next tick snaps.
@@ -51,7 +51,9 @@ Index of `##` headings (Grep the heading, then Read just that range):
 ## Components
 
 - 3D mirrors 2D — `Transform3DComponent` (pos, quat, scale), `MeshRendererComponent` (`Mesh*` + color + optional `Material*`; `Static` bakes it, v1.0 P5), `RigidBody3DComponent`, `Box/Sphere/CapsuleCollider3DComponent` (collider size = fraction of transform scale), `MeshCollider3DComponent` (v0.6.2: the mesh at the FULL transform scale, like the renderer; null `Mesh` = the entity's `MeshRendererComponent::Mesh`).
-- New built-in components must be registered via `DE_INSTANTIATE_COMPONENT` in `src/.../Entity.cpp` or clients can't use them.
+- New built-in components must be registered via `DE_INSTANTIATE_COMPONENT` in `src/.../Entity.cpp` and listed in `Internal::BuiltinComponents` (`Scene/ComponentStorage.h`); a static_assert checks the two agree. A type missing from the list goes to a game-component pool, where the engine never sees it.
+- **Game components** (#328, v1.3): any other `T` in `Entity::AddComponent<T>` lives in a header-only `Internal::CustomComponentPool<T>` (sparse set over `Internal::PagedStorage<T>`, fixed pages so an append never moves a component; `ComponentTraits<T>::Copyable` opts a type out of duplication), one per type in `Scene::m_CustomPools`, indexed by `Internal::CustomComponentIndex<T>()`. EnTT stays out of the headers: the pool keys on the entity handle's slot bits (`k_EntitySlotMask`, static_asserted against EnTT's in `Entity.cpp`). `DestroyEntityNow` removes the entity from every pool, `Clear` clears them, `DuplicateSubtree` copies the copy-constructible ones.
+- `Scene::View<Ts...>()` / `Each<Ts...>(fn)` walk the first type's dense array and test the others. While an Each runs its pools are locked: a removal marks the entry (`k_RemovedHandle`) and the erase lands at unlock, highest index first; additions append. `Scene::m_EachDepth` defers `DestroyEntity` like `Updating` does, flushed by the outermost `EndEach` outside an update pass; `FlushPendingDestroys` drains in batches and ignores a nested call (`FlushingDestroys`), since a script's `OnDestroy` can queue more from inside an Each. `SortComponents<T>` is a stable sort, so the order is the same on every standard library.
 
 ## Lights
 
