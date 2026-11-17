@@ -3049,6 +3049,7 @@ namespace Dingo
 		m_LiveInput.PointerAvailable = TestViewportPanel::IsImageHovered();
 		m_LiveInput.KeyboardAvailable = true;
 		Internal::ReadNavInput(m_LiveInput.Nav, true, UINavParams(), Internal::FindNavGamepad());
+		Internal::ReadTextInput(m_LiveInput);
 		m_LiveInput.DeltaTime = 1.0f / 60.0f;
 		m_LiveTime += m_LiveInput.DeltaTime;
 		context->SetDebugOrigin(output ? TestViewportPanel::GetImageOrigin() : glm::vec2(0.0f));

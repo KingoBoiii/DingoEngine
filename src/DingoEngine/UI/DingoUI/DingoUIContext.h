@@ -308,4 +308,7 @@ namespace Dingo::Internal
 	// the application's lifetime).
 	DingoUIContext* GetDingoUIContext();
 
+	// Fills Typed and TextKeys from Input; every UIInputState that may drive a text field needs it.
+	void ReadTextInput(UIInputState& input);
+
 }

@@ -660,20 +660,7 @@ namespace Dingo
 		if (m_Params.DingoUI.Nav.Enabled)
 			Internal::ReadNavInput(input.Nav, input.KeyboardAvailable, m_Params.DingoUI.Nav, Internal::FindNavGamepad());
 		if (input.KeyboardAvailable)
-		{
-			using Internal::InputBackend;
-			using Internal::UITextKey;
-			input.Typed = InputBackend::GetTypedText();
-			const auto hold = [&](UITextKey key, bool down) { input.TextKeys[static_cast<size_t>(key)] = down; };
-			hold(UITextKey::Backspace, InputBackend::IsKeyDownUnconsumed(Key::Backspace));
-			hold(UITextKey::Delete, InputBackend::IsKeyDownUnconsumed(Key::Delete));
-			hold(UITextKey::Left, InputBackend::IsKeyDownUnconsumed(Key::Left));
-			hold(UITextKey::Right, InputBackend::IsKeyDownUnconsumed(Key::Right));
-			hold(UITextKey::Home, InputBackend::IsKeyDownUnconsumed(Key::Home));
-			hold(UITextKey::End, InputBackend::IsKeyDownUnconsumed(Key::End));
-			hold(UITextKey::Enter, InputBackend::IsKeyDownUnconsumed(Key::Enter) || InputBackend::IsKeyDownUnconsumed(Key::KPEnter));
-			hold(UITextKey::Escape, InputBackend::IsKeyDownUnconsumed(Key::Escape));
-		}
+			Internal::ReadTextInput(input);
 		input.DeltaTime = m_DeltaTime;
 		m_DingoUIContext->BeginFrame(input);
 	}
