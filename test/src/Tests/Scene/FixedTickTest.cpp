@@ -183,6 +183,7 @@ namespace Dingo
 		RunDeterminismChecks();
 		RunCounterChecks();
 		RunInterpolationChecks();
+		RunSystemChecks();
 		BuildShowcase();
 	}
 
@@ -250,6 +251,48 @@ namespace Dingo
 				std::format("an update owing 16 ticks runs {} and counts the 8 dropped (ran {}, dropped {})", Scene::k_MaxFixedStepsPerUpdate,
 					scene.GetFixedStepsLastUpdate(), scene.GetDroppedFixedSteps()));
 		}
+	}
+
+	void FixedTickTest::RunSystemChecks()
+	{
+		struct Counter { int Steps = 0; };
+
+		SceneParams params;
+		params.FixedTick = true;
+		Scene scene("Fixed Systems", params);
+		scene.SetFixedTimeStep(1.0f / 60.0f);
+		Entity ticker = scene.CreateEntity("Ticker");
+		ticker.AddComponent<Counter>();
+		scene.OnStart();
+
+		std::vector<int> calls;
+		bool stepSeen = true;
+		bool destroyDeferred = true;
+		const FixedSystemId first = scene.AddFixedSystem([&](Scene& s, float step)
+		{
+			calls.push_back(1);
+			stepSeen = stepSeen && step == 1.0f / 60.0f;
+			s.Each<Counter>([&](Entity entity, Counter& counter)
+			{
+				if (++counter.Steps == 2)
+				{
+					entity.Destroy();
+					destroyDeferred = destroyDeferred && entity.IsValid();
+				}
+			});
+		});
+		scene.AddFixedSystem([&](Scene&, float) { calls.push_back(2); });
+
+		scene.OnUpdate(2.5f / 60.0f);
+		Check(calls == std::vector<int>{ 1, 2, 1, 2 } && stepSeen && scene.GetTick() == 2,
+			"fixed systems run once per tick, in the order added, with the fixed step");
+		Check(destroyDeferred && !ticker.IsValid(), "a destroy from a fixed system lands at the end of its tick");
+
+		scene.RemoveFixedSystem(first);
+		scene.RemoveFixedSystem(12345);
+		calls.clear();
+		scene.OnUpdate(1.0f / 60.0f);
+		Check(calls == std::vector<int>{ 2 }, "RemoveFixedSystem stops a system; an unknown id changes nothing");
 	}
 
 	void FixedTickTest::RunInterpolationChecks()

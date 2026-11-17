@@ -38,7 +38,7 @@ An entity destroyed from a script keeps its UUID until the end of that update pa
 
 | Call | Effect |
 |---|---|
-| `AddComponent<T>(value)` | Attach a built-in component `T`. Returns `T&`. An entity that already has a `T` gets it replaced, with a warning. |
+| `AddComponent<T>(value)` | Attach a built-in component `T`, or any game type (v1.3, see [Game components](#game-components-views-and-systems-v13)). Returns `T&`. An entity that already has a `T` gets it replaced (with a warning for a built-in one). |
 | `GetComponent<T>()` | Reference to the entity's `T`. |
 | `HasComponent<T>()` | `true` if the entity has a `T`. |
 | `RemoveComponent<T>()` | Detach the `T`. |
@@ -56,9 +56,9 @@ An entity destroyed from a script keeps its UUID until the end of that update pa
 | `SetWorldPosition(p)` / `SetWorldRotation(q)` (v0.7.1) | Write the 3D local value that gives this world value. |
 | `GetWorldPosition2D()` / `SetWorldPosition2D(p)` / `GetWorldRotation2D()` / `SetWorldRotation2D(degrees)` (v0.7.1) | The same for the 2D `TransformComponent`: position with z, rotation in degrees. |
 
-> The component methods support the **built-in component types** (below). To carry
-> game-specific data, put it in a `ScriptableEntity` subclass rather than defining new
-> component types — that's what keeps the ECS backend hidden.
+> Since v1.3 the component methods take the **built-in component types** (below) and any type
+> the game defines, with no registration: see
+> [Game components, views and systems](#game-components-views-and-systems-v13).
 
 ## Built-in components
 
@@ -857,7 +857,8 @@ act over that.
 A scene made with `SceneParams::FixedTick` steps physics on the fixed step too, so the whole
 simulation advances in ticks that don't depend on the frame rate: the same inputs give bitwise the
 same bodies at 30, 60 or 144 frames a second, as long as the game moves them from `OnFixedUpdate`.
-Each tick runs every `OnFixedUpdate(step)`, then the entities destroyed during it are removed, then
+Each tick runs every `OnFixedUpdate(step)` and then every fixed system (v1.3,
+`Scene::AddFixedSystem`), then the entities destroyed during it are removed, then
 one physics step of exactly `step` (3D in `ceil(step * 60 - 0.1)` collision steps however long the
 step is, 2D with 4 substeps). `OnUpdate`, the animators and audio then run once with the frame's
 delta, so velocities set in `OnUpdate`, root motion and bodies on sockets still depend on the frame
@@ -934,7 +935,65 @@ for (InvaderScript* invader : GetScene().GetScriptsOfType<InvaderScript>())
 }
 ```
 
-`Scene::ForEachEntity(callback)` visits every entity if you need a raw sweep.
+`Scene::ForEachEntity(callback)` visits every entity if you need a raw sweep. For many small,
+uniform entities, game components and a view do the same without a script per entity (below).
+
+### Game components, views and systems (v1.3)
+
+Any type the game defines can be a component: `AddComponent`, `GetComponent`, `HasComponent` and
+`RemoveComponent` take it like a built-in one, with no registration. It must be move-constructible
+and move-assignable. One that can't be copied is added with `AddComponent<T>()` or by moving it in.
+
+```cpp
+struct Listener { int Rate = 1; };
+struct Queue { std::vector<int> Items; };
+
+Entity node = scene.CreateEntity("Node");
+node.AddComponent<Listener>(Listener{ 4 });
+node.AddComponent<Queue>();
+
+scene.Each<Listener, Queue>([](Entity entity, Listener& listener, Queue& queue)
+{
+    queue.Items.push_back(listener.Rate);
+});
+```
+
+| Call | Effect |
+|---|---|
+| `scene.View<A, B...>()` | The entities holding every one of the types; `Each(fn)` visits them, `SizeHint()` is how many hold `A`. |
+| `scene.Each<A, B...>(fn)` | `View<A, B...>().Each(fn)`. `fn` takes `(Entity, A&, B&...)` or `(A&, B&...)`. |
+| `scene.SortComponents<A>(less)` | Reorders the storage of `A` by `less(const A&, const A&)`; views led by `A` follow it. |
+| `scene.GetComponentCount<A>()` | How many entities hold an `A`. |
+| `scene.AddFixedSystem(fn)` / `RemoveFixedSystem(id)` | Run `fn(Scene&, float fixedStep)` on every fixed step. |
+
+- **Cost.** A view walks the entities holding its first type and skips those missing the others,
+  so put the rarest type first. Nothing else in the scene is visited, and there is no
+  `std::function` per entity.
+- **Order.** A view visits in the order of its first type's storage: the order the components were
+  added, except that a removal moves the last one into the gap. `SortComponents` rearranges it with a
+  stable sort. The order depends only on that sequence of calls, never on addresses or hashing, so
+  the same calls give the same order on Windows and Linux and on every run. For a lockstep game, sort
+  by an id of your own after spawning (`SortComponents<Node>([](const Node& a, const Node& b) { return a.Id < b.Id; })`).
+- **Changes during `Each`.** `fn` may add and remove components and create and destroy entities. An
+  entity given the view's first type during the pass isn't visited by it. A removed component is gone at once
+  for `HasComponent` and the view, and freed when the `Each` ends. A destroyed entity stays valid
+  until the outermost `Each` ends, or until the end of the update pass when the `Each` runs inside
+  one, as a script's destroys do. `SortComponents` for the same type logs an error and does nothing until
+  it returns; don't `Clear` the scene from inside one.
+- **References.** A game component's reference stays valid until any component of that type in the
+  scene is removed, or `SortComponents` runs for it. Hold the `Entity` across frames, not the
+  reference.
+- **Systems.** A fixed system runs right after the scripts' `OnFixedUpdate`, in the order systems
+  were added; with `SceneParams::FixedTick` that is before the tick's physics step. Destroys wait for
+  the end of the pass as in a script. A system added during a step first runs on the next one, and
+  `Clear` keeps the systems.
+- **Lifetime.** A game component dies with its entity and with `Clear`. `DuplicateEntity` copies it
+  when the type is copy-constructible. A type whose copy constructor exists but can't compile (a
+  struct holding a `std::vector<std::unique_ptr<Item>>`) opts out with
+  `template<> struct Dingo::ComponentTraits<Inventory> { static constexpr bool Copyable = false; };`.
+- Views include inactive entities; filter with `entity.IsActiveInHierarchy()` when it matters.
+- Built-in components can't be viewed or sorted, and saving game components is the game's job: the
+  engine doesn't enumerate or serialise them.
 
 ### Lifetime: what the engine handles for you
 
@@ -1087,3 +1146,5 @@ in a real game.
 - A settings component is read when the object it describes is built; editing it on a live body
   changes nothing until the body is rebuilt.
 - 2D and 3D transforms don't convert into each other in a mixed hierarchy.
+- A view takes game components only, never a built-in one, and the engine neither enumerates nor
+  saves game components.

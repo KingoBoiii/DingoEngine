@@ -30,6 +30,7 @@ namespace Dingo
 		void RunDeterminismChecks();
 		void RunCounterChecks();
 		void RunInterpolationChecks();
+		void RunSystemChecks();
 		void BuildShowcase();
 
 	private:

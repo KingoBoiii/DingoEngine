@@ -21,6 +21,7 @@
 #include <glm/gtc/quaternion.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <utility>
@@ -28,6 +29,8 @@
 
 namespace Dingo
 {
+
+	class Scene;
 
 	namespace Internal
 	{
@@ -54,6 +57,18 @@ namespace Dingo
 			// destroy its own (or another) entity mid-update.
 			bool Updating = false;
 			std::vector<entt::entity> PendingDestroy;
+			bool FlushingDestroys = false;
+
+			// Scene::AddFixedSystem, in the order they run. A removed one is emptied in place while the
+			// systems run and erased after.
+			struct FixedSystem
+			{
+				std::uint32_t Id;
+				std::function<void(Scene&, float)> Run;
+			};
+			std::vector<FixedSystem> FixedSystems;
+			std::uint32_t NextFixedSystemId = 1;
+			bool RunningFixedSystems = false;
 
 			// Joined to SceneDebug's live-scene list (the F7 and F9 tabs) at the first OnUpdate, on the main thread, so a scene built on
 			// a loading thread isn't read while it is filled.

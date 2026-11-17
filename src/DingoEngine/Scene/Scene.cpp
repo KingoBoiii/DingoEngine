@@ -216,6 +216,12 @@ namespace Dingo
 			CopyComponentIfExists<Internal::SocketComponent>(registry, dst, src);
 		}
 
+		for (const std::unique_ptr<Internal::CustomComponentPoolBase>& pool : m_CustomPools)
+		{
+			if (pool)
+				pool->Copy(source.m_Handle, clone.m_Handle);
+		}
+
 		if (registry.all_of<Internal::InactiveSelfComponent>(src))
 			registry.emplace<Internal::InactiveSelfComponent>(dst);
 		if (registry.all_of<Internal::InactiveSelfComponent>(dst) || (parent && Internal::HierarchySystem::IsInactive(registry, static_cast<entt::entity>(parent.m_Handle))))
@@ -237,7 +243,7 @@ namespace Dingo
 		if (!IsValid(entity))
 			return;
 
-		if (m_Data->Updating)
+		if (m_Data->Updating || m_EachDepth > 0)
 		{
 			m_Data->PendingDestroy.push_back(static_cast<entt::entity>(entity.m_Handle));
 			return;
@@ -290,6 +296,12 @@ namespace Dingo
 		// (and transform) is gone.
 		Internal::AudioSync::StopSource(m_Data->Registry, e);
 
+		for (const std::unique_ptr<Internal::CustomComponentPoolBase>& pool : m_CustomPools)
+		{
+			if (pool)
+				pool->Remove(handle);
+		}
+
 		Internal::HierarchySystem::Unlink(m_Data->Registry, e);
 		m_Data->Registry.destroy(e);
 	}
@@ -316,6 +328,13 @@ namespace Dingo
 		m_Data->Registry.clear();
 		m_Data->EntityMap.clear();
 		m_Data->PendingDestroy.clear();
+		if (m_EachDepth > 0)
+			DE_CORE_ERROR("Scene '{}': Clear inside a View's Each; the visit goes on over entities that no longer exist", m_Name);
+		for (const std::unique_ptr<Internal::CustomComponentPoolBase>& pool : m_CustomPools)
+		{
+			if (pool)
+				pool->Clear();
+		}
 
 		ClearPendingSceneTransition();
 	}
@@ -359,6 +378,7 @@ namespace Dingo
 				carried -= step;
 				++steps;
 				m_Data->Scripts.FixedUpdate(step);
+				RunFixedSystems(step);
 				if (fixedTick)
 				{
 					// A tick is whole: the destroys its scripts asked for land before its physics step.
@@ -454,11 +474,69 @@ namespace Dingo
 			FlushPendingDestroys();
 	}
 
+	void Scene::EndEach()
+	{
+		if (--m_EachDepth == 0 && !m_Data->Updating)
+			FlushPendingDestroys();
+	}
+
+	FixedSystemId Scene::AddFixedSystem(std::function<void(Scene&, float)> system)
+	{
+		if (!system)
+		{
+			DE_CORE_WARN("Scene '{}': AddFixedSystem was given an empty function; nothing was added", m_Name);
+			return 0;
+		}
+		const FixedSystemId id = m_Data->NextFixedSystemId++;
+		m_Data->FixedSystems.push_back({ id, std::move(system) });
+		return id;
+	}
+
+	void Scene::RemoveFixedSystem(FixedSystemId id)
+	{
+		std::vector<Internal::SceneData::FixedSystem>& systems = m_Data->FixedSystems;
+		auto it = std::find_if(systems.begin(), systems.end(), [id](const Internal::SceneData::FixedSystem& system) { return system.Id == id; });
+		if (it == systems.end())
+			return;
+		if (m_Data->RunningFixedSystems)
+			it->Run = nullptr;
+		else
+			systems.erase(it);
+	}
+
+	void Scene::RunFixedSystems(float step)
+	{
+		std::vector<Internal::SceneData::FixedSystem>& systems = m_Data->FixedSystems;
+		if (systems.empty() || m_Data->RunningFixedSystems)
+			return;
+
+		DE_PROFILE_SCOPE("Scene::RunFixedSystems");
+		m_Data->RunningFixedSystems = true;
+		const std::size_t count = systems.size();
+		for (std::size_t index = 0; index < count; ++index)
+		{
+			// Copied out: the system may add another, which can reallocate the vector.
+			std::function<void(Scene&, float)> run = systems[index].Run;
+			if (run)
+				run(*this, step);
+		}
+		m_Data->RunningFixedSystems = false;
+		std::erase_if(systems, [](const Internal::SceneData::FixedSystem& system) { return !system.Run; });
+	}
+
 	void Scene::FlushPendingDestroys()
 	{
-		for (entt::entity handle : m_Data->PendingDestroy)
-			DestroyEntityNow(static_cast<std::uint32_t>(handle));
-		m_Data->PendingDestroy.clear();
+		if (m_Data->FlushingDestroys)
+			return;
+		// A script's OnDestroy may queue more (from inside an Each); they are taken by the next batch.
+		m_Data->FlushingDestroys = true;
+		while (!m_Data->PendingDestroy.empty())
+		{
+			const std::vector<entt::entity> batch = std::exchange(m_Data->PendingDestroy, {});
+			for (entt::entity handle : batch)
+				DestroyEntityNow(static_cast<std::uint32_t>(handle));
+		}
+		m_Data->FlushingDestroys = false;
 	}
 
 	Scene::InterpolatedView::InterpolatedView(const Scene& scene)
