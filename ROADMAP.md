@@ -662,6 +662,42 @@ run on real hardware.
 
 ---
 
+## v1.2.1 — Game Components, Pad Rumble and an X11 Fix
+**Status**: released on 2026-11-17 (tag on `a18833cf`).
+
+A point release: additions and fixes only, so a game built against 1.2.0 compiles unchanged. Games can
+keep their own data in the Scene ECS, PlayStation pads rumble, and the Linux X11 close hang
+([#186](https://github.com/KingoBoiii/DingoEngine/issues/186)) has a fix attempt.
+
+- **Game components, typed views and fixed systems** ([#329](https://github.com/KingoBoiii/DingoEngine/pull/329),
+  [#328](https://github.com/KingoBoiii/DingoEngine/issues/328)): `Entity::AddComponent`/`GetComponent`/`HasComponent`/`RemoveComponent`
+  take any game type with no registration, stored in a header-only paged sparse set so EnTT stays out
+  of the public headers. New `Scene::View<Ts...>()` and `Each<Ts...>(fn)`, `SortComponents<T>(less)`
+  (stable, the same order on every platform), `GetComponentCount<T>()`,
+  `AddFixedSystem`/`RemoveFixedSystem` (run after `OnFixedUpdate`, before the tick's physics step) and
+  `ComponentTraits<T>::Copyable`. `DestroyEntity` now also defers while an `Each` runs.
+  [Scenes and ECS](docs/scenes-and-ecs.md).
+- **Rumble on PlayStation pads and on Linux** ([#327](https://github.com/KingoBoiii/DingoEngine/pull/327), [#326](https://github.com/KingoBoiii/DingoEngine/issues/326)):
+  `Input::SetGamepadRumble` now drives DualShock 4, DualSense and DualSense Edge on a USB cable on
+  Windows, and any pad with an evdev `FF_RUMBLE` driver on Linux. No new API. Bluetooth PlayStation
+  pads on Windows are not rumbled, because the output report would stop their input reaching GLFW.
+  [Application and layers](docs/application-and-layers.md).
+- **X11 present on its own connection** ([#325](https://github.com/KingoBoiii/DingoEngine/pull/325), [#186](https://github.com/KingoBoiii/DingoEngine/issues/186)): each Vulkan
+  swap chain's X11 surface gets its own xcb connection, so Mesa's present thread no longer shares a
+  socket with the one GLFW reads events from. Linux X11 only; #186 stays open until master's Linux CI
+  shows no `the close needed N sends` warnings for a while.
+- **Docs**: a smart pointers plan ([#323](https://github.com/KingoBoiii/DingoEngine/pull/323)) and done plans moved to
+  `.claude/plans/done/` ([#324](https://github.com/KingoBoiii/DingoEngine/pull/324)).
+
+**Test**: the cloud sessions ran Linux, GCC 13, Debug, on Mesa llvmpipe under Xvfb: `Dingo-UnitTests`
+201/201 for #329, `--test=fixed` 17 and `--test=hierarchy` 94 PASS, `--test=Lighting`, `Pack`, `Mesh`,
+`display` and `background` for #325, and `--test=DingoUI` 489 PASS for #327. Build Windows and Build
+Linux passed on the tagged commit. No MSVC build, no GPU run and no real pad run is recorded for these
+PRs, and the DualShock/DualSense report layouts were checked against SDL and the kernel drivers, not
+against a pad. Linux has not run on real hardware.
+
+---
+
 ## Modules — shipped out of band
 Not every system earns a slot in the version train. Some ship as optional **modules**: separately
 versioned add-ons that layer onto a released engine, so they neither block a milestone nor force
