@@ -41,6 +41,7 @@ namespace Dingo
 		glm::vec2 s_MousePosition{ 0.0f };
 		glm::vec2 s_PreviousMousePosition{ 0.0f };
 		glm::vec2 s_MouseScrollDelta{ 0.0f };
+		std::u32string s_TypedText;
 
 		std::array<GamepadState, k_MaxGamepads> s_CurrentGamepads{};
 		std::array<GamepadState, k_MaxGamepads> s_PreviousGamepads{};
@@ -264,6 +265,7 @@ namespace Dingo
 		s_PreviousMouseButtons = s_CurrentMouseButtons;
 		s_PreviousMousePosition = s_MousePosition;
 		s_MouseScrollDelta = glm::vec2(0.0f); // refilled by scroll callbacks during event polling
+		s_TypedText.clear();
 
 		s_MouseDeltaSuppressed = s_MouseDeltaSuppressFrames > 0;
 		if (s_MouseDeltaSuppressFrames > 0)
@@ -292,6 +294,7 @@ namespace Dingo
 		// the scroll and cursor motion an inactive window collected while paused are dropped.
 		PollGamepads();
 		s_MouseScrollDelta = glm::vec2(0.0f);
+		s_TypedText.clear();
 		s_ScrollConsumed = false;
 		s_PreviousMousePosition = s_MousePosition;
 	}
@@ -758,6 +761,16 @@ namespace Dingo
 		s_MouseScrollDelta += glm::vec2(xOffset, yOffset);
 	}
 
+	void Input::AccumulateTypedChar(uint32_t codepoint)
+	{
+		s_TypedText.push_back(static_cast<char32_t>(codepoint));
+	}
+
+	std::u32string_view Input::GetTypedText()
+	{
+		return s_TypedText;
+	}
+
 	void Input::SeedMousePosition(float x, float y)
 	{
 		s_MousePosition = { x, y };
@@ -789,6 +802,7 @@ namespace Dingo
 			s_MousePosition = glm::vec2(0.0f);
 			s_PreviousMousePosition = glm::vec2(0.0f);
 			s_MouseScrollDelta = glm::vec2(0.0f);
+			s_TypedText.clear();
 			s_CurrentGamepads.fill(GamepadState{});
 			s_PreviousGamepads.fill(GamepadState{});
 			s_GamepadNames.fill(std::string{});

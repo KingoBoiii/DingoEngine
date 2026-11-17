@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <limits>
+#include <string>
 #include <string_view>
 #include <vector>
 
@@ -633,7 +634,9 @@ namespace Dingo
 		bool Pressed = false; ///< The left button went down on it this frame.
 		bool Down = false;    ///< It took a press and the button is still held, wherever the pointer went.
 		bool Clicked = false; ///< The button was released over it after going down on it.
-		bool Changed = false; ///< A Toggle, Slider or SliderInt changed its value this frame.
+		bool Changed = false; ///< A Toggle, Slider, SliderInt or TextField changed its value this frame.
+		bool Submitted = false; ///< A TextField's edit was ended with Enter this frame.
+		bool Cancelled = false; ///< A TextField's edit was ended with Escape this frame, putting the text back.
 		bool Focused = false; ///< It has keyboard or gamepad focus and the player is navigating (see DingoUI::IsFocusVisible).
 	};
 
@@ -705,6 +708,38 @@ namespace Dingo
 		UISliderParams& SetFocusable(bool focusable) { Focusable = focusable; return *this; }
 		/// Sets DefaultFocus.
 		UISliderParams& SetDefaultFocus(bool defaultFocus = true) { DefaultFocus = defaultFocus; return *this; }
+	};
+
+	/// A single-line TextField. Chain the setters.
+	struct UITextFieldParams
+	{
+		UISize Width = UISize::Fixed(200.0f); ///< Width of the field; text past it scrolls to keep the caret in view.
+		/// Most characters (Unicode codepoints) the player can type in; 0 for no limit. Text the game
+		/// sets longer is kept, and typing stops until it is shorter.
+		uint32_t MaxLength = 0;
+		/// Drawn dimmed while the text is empty; only needs to live for the call.
+		std::string_view Placeholder;
+		bool Enabled = true;   ///< Off, the field is drawn dimmed, ignores the pointer and focus, and an edit in it ends.
+		bool Focusable = true; ///< Off, keyboard and gamepad focus skips the field (a click still edits it).
+		/// The field takes the focus when it appears, unless it was declared last frame too.
+		bool DefaultFocus = false;
+		/// A style for this field alone, instead of the current one; only needs to live for the call.
+		const UIStyle* Style = nullptr;
+
+		/// Sets Width.
+		UITextFieldParams& SetWidth(const UISize& width) { Width = width; return *this; }
+		/// Sets MaxLength.
+		UITextFieldParams& SetMaxLength(uint32_t maxLength) { MaxLength = maxLength; return *this; }
+		/// Sets Placeholder.
+		UITextFieldParams& SetPlaceholder(std::string_view placeholder) { Placeholder = placeholder; return *this; }
+		/// Sets Enabled.
+		UITextFieldParams& SetEnabled(bool enabled) { Enabled = enabled; return *this; }
+		/// Sets Focusable.
+		UITextFieldParams& SetFocusable(bool focusable) { Focusable = focusable; return *this; }
+		/// Sets DefaultFocus.
+		UITextFieldParams& SetDefaultFocus(bool defaultFocus = true) { DefaultFocus = defaultFocus; return *this; }
+		/// Sets Style.
+		UITextFieldParams& SetStyle(const UIStyle* style) { Style = style; return *this; }
 	};
 
 	/// A vertically scrolling area. Chain the setters.
@@ -796,6 +831,13 @@ namespace Dingo
 		/// Adds a list row showing `label`, highlighted while `selected`. The game stores the
 		/// selection: set it when Clicked is true.
 		static UIInteraction Selectable(std::string_view label, bool selected, const UIWidgetParams& params = {});
+		/// A single-line text field editing `text` (UTF-8) in place. A click on it, or the accept input
+		/// while it has the focus, starts an edit: typed characters go in at the caret; Backspace,
+		/// Delete, the arrows, Home and End edit and move; Enter ends it with Submitted, Escape with
+		/// Cancelled and the text it had when the edit began, and a press elsewhere ends it keeping the
+		/// text. While it edits, WantsTextInput is true and every new key press is hidden from the game.
+		/// `label` names the field and is not drawn (use a `##` suffix for two fields with one label).
+		static UIInteraction TextField(std::string_view label, std::string* text, const UITextFieldParams& params = {});
 		/// Opens a vertically scrolling, clipped container named `label` inside the current
 		/// container. The mouse wheel over it scrolls it and is taken from the game. Returns false,
 		/// and EndScrollArea must not be called, when no root is open.
@@ -854,6 +896,10 @@ namespace Dingo
 		/// alone. The left stick is never hidden from Input::GetGamepadLeftStick, so a game that
 		/// does not want its character to walk while the stick moves the focus checks this first.
 		static bool IsCapturingInput();
+		/// True while a TextField is being edited: the game should skip its key shortcuts. New key presses
+		/// are hidden from Input then and KeyPressedEvent and KeyTypedEvent are marked handled, so a
+		/// game that only polls Input or handles events below the UI needs no check.
+		static bool WantsTextInput();
 
 		/// Gives the focus to the widget `label` names, declared in the container this is called
 		/// from (it hashes to the same id the widget has, PushId included). Takes effect next

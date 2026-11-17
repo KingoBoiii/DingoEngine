@@ -106,6 +106,12 @@ namespace Dingo
 		return context ? context->Selectable(label, selected, params) : UIInteraction{};
 	}
 
+	UIInteraction DingoUI::TextField(std::string_view label, std::string* text, const UITextFieldParams& params)
+	{
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context ? context->TextField(label, text, params) : UIInteraction{};
+	}
+
 	bool DingoUI::BeginScrollArea(std::string_view label, const UIScrollParams& params)
 	{
 		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
@@ -212,6 +218,12 @@ namespace Dingo
 	{
 		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
 		return context && context->IsCapturingInput();
+	}
+
+	bool DingoUI::WantsTextInput()
+	{
+		const Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		return context && context->IsEditingText();
 	}
 
 	void DingoUI::SetFocus(std::string_view label)

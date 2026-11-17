@@ -30,6 +30,8 @@ namespace Dingo::Internal
 		static bool IsGamepadButtonDownUnconsumed(GamepadButton button, uint32_t gamepad) { return Input::IsGamepadButtonDownUnconsumed(button, gamepad); }
 		static bool IsGamepadButtonPressedUnconsumed(GamepadButton button, uint32_t gamepad) { return Input::IsGamepadButtonPressedUnconsumed(button, gamepad); }
 
+		static std::u32string_view GetTypedText() { return Input::GetTypedText(); }
+
 		// The test app's simulated devices: sets the live state the window callbacks would.
 		static void SimulateMouseButton(MouseButton button, bool pressed) { Input::UpdateMouseButtonState(button, pressed); }
 		static void SimulateScroll(float x, float y) { Input::AccumulateMouseScroll(x, y); }

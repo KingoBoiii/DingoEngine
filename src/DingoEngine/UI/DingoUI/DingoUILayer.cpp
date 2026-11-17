@@ -10,6 +10,12 @@ namespace Dingo::Internal
 	void DingoUILayer::OnEvent(Event& e)
 	{
 		const EventType type = e.GetEventType();
+		if (type == EventType::KeyPressed || type == EventType::KeyTyped)
+		{
+			if (m_Context.IsEditingText())
+				e.Handled = true;
+			return;
+		}
 		if (type != EventType::MouseButtonPressed && type != EventType::MouseScrolled)
 			return;
 

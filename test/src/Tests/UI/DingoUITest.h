@@ -64,6 +64,7 @@ namespace Dingo
 		bool StepTransitions(Framebuffer* output);
 		bool StepTextureFree();
 		bool StepWorld(Framebuffer* output);
+		bool StepTextField(Framebuffer* output);
 		bool StepStress(Framebuffer* output);
 		void SampleStress(Internal::DingoUIContext& context);
 		void FinishStress(Internal::DingoUIContext& context, Framebuffer* output);
@@ -193,6 +194,12 @@ namespace Dingo
 		Entity m_WorldCamera;
 		uint32_t m_WorldStage = 0;
 		bool m_WorldDone = false;
+		uint32_t m_TextStage = 0;
+		bool m_TextDone = false;
+		std::string m_TextTitle;
+		std::string m_TextOther;
+		UIInteraction m_TextResult, m_TextOtherResult;
+		std::string m_LiveName;
 		float m_LiveTime = 0.0f;
 		bool m_StressMode = false;
 		bool m_StressDone = false;

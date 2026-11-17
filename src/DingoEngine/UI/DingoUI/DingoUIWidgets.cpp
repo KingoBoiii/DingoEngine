@@ -12,6 +12,73 @@ namespace Dingo::Internal
 	{
 
 		constexpr float k_ValueWidth = 56.0f;
+		constexpr float k_CaretWidth = 2.0f;
+		constexpr float k_CaretBlinkPeriod = 1.0f;
+
+		bool IsContinuation(char byte)
+		{
+			return (static_cast<uint8_t>(byte) & 0xC0) == 0x80;
+		}
+
+		size_t PrevBoundary(std::string_view text, size_t at)
+		{
+			if (at == 0)
+				return 0;
+			--at;
+			while (at > 0 && IsContinuation(text[at]))
+				--at;
+			return at;
+		}
+
+		size_t NextBoundary(std::string_view text, size_t at)
+		{
+			if (at >= text.size())
+				return text.size();
+			++at;
+			while (at < text.size() && IsContinuation(text[at]))
+				++at;
+			return at;
+		}
+
+		size_t CountCodepoints(std::string_view text)
+		{
+			size_t count = 0;
+			for (const char byte : text)
+				count += IsContinuation(byte) ? 0 : 1;
+			return count;
+		}
+
+		bool IsTypeable(char32_t codepoint)
+		{
+			return codepoint >= 0x20 && !(codepoint >= 0x7F && codepoint <= 0x9F) && codepoint <= 0x10FFFF && !(codepoint >= 0xD800 && codepoint <= 0xDFFF);
+		}
+
+		size_t EncodeUtf8(char32_t codepoint, char* out)
+		{
+			if (codepoint < 0x80)
+			{
+				out[0] = static_cast<char>(codepoint);
+				return 1;
+			}
+			if (codepoint < 0x800)
+			{
+				out[0] = static_cast<char>(0xC0 | (codepoint >> 6));
+				out[1] = static_cast<char>(0x80 | (codepoint & 0x3F));
+				return 2;
+			}
+			if (codepoint < 0x10000)
+			{
+				out[0] = static_cast<char>(0xE0 | (codepoint >> 12));
+				out[1] = static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+				out[2] = static_cast<char>(0x80 | (codepoint & 0x3F));
+				return 3;
+			}
+			out[0] = static_cast<char>(0xF0 | (codepoint >> 18));
+			out[1] = static_cast<char>(0x80 | ((codepoint >> 12) & 0x3F));
+			out[2] = static_cast<char>(0x80 | ((codepoint >> 6) & 0x3F));
+			out[3] = static_cast<char>(0x80 | (codepoint & 0x3F));
+			return 4;
+		}
 
 		std::string_view VisibleLabel(std::string_view label)
 		{
@@ -411,6 +478,182 @@ namespace Dingo::Internal
 		m_WidgetFocus = { params.Enabled && params.Focusable, params.DefaultFocus, false };
 		BeginWidgetBox(id, state, label, box, params.Enabled);
 		Text(VisibleLabel(label), LabelStyle(style, params.Enabled));
+		m_Tree.EndBox();
+		return result;
+	}
+
+	UIInteraction DingoUIContext::TextField(std::string_view label, std::string* text, const UITextFieldParams& params)
+	{
+		const uint64_t id = WidgetId(label);
+		if (id == 0)
+			return {};
+
+		std::string fallback;
+		std::string& value = text ? *text : fallback;
+
+		UIWidgetState* state = nullptr;
+		UIInteraction result = Interact(id, label, params.Enabled, state);
+		const UIStyle& style = Resolve(params.Style);
+		const Font* font = style.TextFont ? style.TextFont : m_DefaultFont;
+		const float scale = m_Tree.GetRootScale();
+		const float textSize = style.TextSize * scale;
+		const float padding = style.Padding.x * scale;
+		const auto measure = [&](std::string_view part) { return m_Measure(font, part, textSize, 0.0f).x; };
+
+		if (m_EditId == id && !params.Enabled)
+			m_EditId = 0;
+		bool editing = m_EditId == id;
+		const bool readKeys = editing && m_EditStartFrame != m_FrameIndex;
+		if (!editing && params.Enabled && (result.Pressed || id == m_NavAcceptId))
+		{
+			m_EditId = id;
+			m_EditStartFrame = m_FrameIndex;
+			m_EditOriginal = value;
+			m_EditCaret = value.size();
+			m_EditBlink = 0.0f;
+			editing = true;
+		}
+
+		size_t caret = value.size();
+		if (editing)
+		{
+			caret = (std::min)(m_EditCaret, value.size());
+			while (caret > 0 && caret < value.size() && IsContinuation(value[caret]))
+				--caret;
+
+			bool moved = false;
+			if (result.Pressed && state->LastRect.Max.x > state->LastRect.Min.x)
+			{
+				const float x = m_Input.PointerPosition.x - (state->LastRect.Min.x + padding) + state->ScrollOffset.x;
+				size_t best = 0;
+				float bestDistance = std::abs(x);
+				for (size_t at = NextBoundary(value, 0); at > 0; at = at < value.size() ? NextBoundary(value, at) : 0)
+				{
+					const float width = measure(std::string_view(value).substr(0, at));
+					if (std::abs(x - width) < bestDistance)
+					{
+						best = at;
+						bestDistance = std::abs(x - width);
+					}
+					if (width > x)
+						break;
+				}
+				caret = best;
+				moved = true;
+			}
+
+			if (readKeys)
+			{
+				const auto pulse = [this](UITextKey key) { return m_TextKeyPulse[static_cast<size_t>(key)]; };
+				bool changed = false;
+				for (const char32_t codepoint : m_Input.Typed)
+				{
+					if (!IsTypeable(codepoint))
+						continue;
+					if (params.MaxLength > 0 && CountCodepoints(value) >= params.MaxLength)
+						break;
+					char bytes[4];
+					const size_t length = EncodeUtf8(codepoint, bytes);
+					value.insert(caret, bytes, length);
+					caret += length;
+					changed = true;
+				}
+				if (pulse(UITextKey::Backspace) && caret > 0)
+				{
+					const size_t from = PrevBoundary(value, caret);
+					value.erase(from, caret - from);
+					caret = from;
+					changed = true;
+				}
+				if (pulse(UITextKey::Delete) && caret < value.size())
+				{
+					value.erase(caret, NextBoundary(value, caret) - caret);
+					changed = true;
+				}
+				if (pulse(UITextKey::Left))
+				{
+					caret = PrevBoundary(value, caret);
+					moved = true;
+				}
+				if (pulse(UITextKey::Right))
+				{
+					caret = NextBoundary(value, caret);
+					moved = true;
+				}
+				if (pulse(UITextKey::Home))
+				{
+					caret = 0;
+					moved = true;
+				}
+				if (pulse(UITextKey::End))
+				{
+					caret = value.size();
+					moved = true;
+				}
+
+				if (pulse(UITextKey::Escape) || m_EditPadBack)
+				{
+					if (value != m_EditOriginal)
+					{
+						value = m_EditOriginal;
+						changed = true;
+					}
+					result.Cancelled = true;
+				}
+				else if (pulse(UITextKey::Enter) || m_EditPadAccept)
+					result.Submitted = true;
+				if (result.Cancelled || result.Submitted)
+				{
+					m_EditId = 0;
+					editing = false;
+					caret = value.size();
+				}
+				result.Changed = changed;
+				if (changed || moved)
+					m_EditBlink = 0.0f;
+			}
+			else if (moved)
+				m_EditBlink = 0.0f;
+			if (editing)
+				m_EditCaret = caret;
+		}
+
+		float scroll = 0.0f;
+		const float inner = (state->LastRect.Max.x - state->LastRect.Min.x) - 2.0f * padding - k_CaretWidth * scale;
+		if (editing && inner > 0.0f)
+		{
+			const float caretX = measure(std::string_view(value).substr(0, caret));
+			scroll = state->ScrollOffset.x;
+			if (caretX - scroll > inner)
+				scroll = caretX - inner;
+			if (caretX < scroll)
+				scroll = caretX;
+			scroll = std::clamp(scroll, 0.0f, (std::max)(0.0f, measure(value) - inner));
+		}
+		state->ScrollOffset.x = scroll;
+
+		UIBoxParams box;
+		box.Width = params.Width;
+		box.Direction = UIDirection::Row;
+		box.Align = UIAlign::Center;
+		box.Padding = { style.Padding.x, style.Padding.y, style.Padding.x, style.Padding.y };
+		box.ClipChildren = true;
+		ApplyFace(box, style, !params.Enabled ? Face::Disabled : (result.Hovered ? Face::Hover : Face::Idle));
+		ApplyRing(box, style, editing || result.Focused ? 1.0f : 0.0f);
+		m_WidgetFocus = { params.Enabled && params.Focusable, params.DefaultFocus, false };
+		BeginWidgetBox(id, state, label, box, params.Enabled, false, glm::vec2(scroll, 0.0f));
+
+		const UITextParams look = LabelStyle(style, params.Enabled);
+		const std::string_view shown = value;
+		if (caret > 0)
+			Text(shown.substr(0, caret), look);
+		const bool caretOn = editing && std::fmod(m_EditBlink, k_CaretBlinkPeriod) < k_CaretBlinkPeriod * 0.5f;
+		m_Tree.BeginBox(Solid(UISize::Fixed(k_CaretWidth), UISize::Fixed(style.TextSize), caretOn ? style.TextColor : glm::vec4(0.0f), 0.0f));
+		m_Tree.EndBox();
+		if (caret < shown.size())
+			Text(shown.substr(caret), look);
+		else if (shown.empty() && !params.Placeholder.empty())
+			Text(params.Placeholder, LabelStyle(style, false));
 		m_Tree.EndBox();
 		return result;
 	}

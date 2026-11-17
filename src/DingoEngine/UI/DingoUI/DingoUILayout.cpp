@@ -683,7 +683,7 @@ namespace Dingo::Internal
 				glm::vec2 offset;
 				offset[mainAxis] = cursor;
 				offset[crossAxis] = cross;
-				item.Origin = element.Origin + padMin + offset - (element.Scroll ? element.ScrollOffset : glm::vec2(0.0f));
+				item.Origin = element.Origin + padMin + offset - element.ScrollOffset;
 				cursor += item.Resolved[mainAxis] + element.Gap + extraGap;
 			}
 		}

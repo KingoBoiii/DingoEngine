@@ -140,10 +140,11 @@ take their look from the current style (see [Styles and themes](#styles-and-them
 | `SliderInt(label, &int, min, max, params)` | The same, whole numbers. |
 | `ProgressBar(id, value, params)` | A 0 to 1 bar; takes no input. |
 | `Selectable(label, selected, params)` | A row that is `Clicked` to pick it; you keep the selection. |
+| `TextField(label, &std::string, params)` | A single-line field editing UTF-8 text in place; see [Text fields](#text-fields). |
 | `BeginScrollArea(label, params)` / `EndScrollArea()` | A clipped column that scrolls with the wheel (and by dragging with `DragScroll`); `BeginScrollArea` returns `true`, and every `true` gets its `EndScrollArea`. |
 
 `UIInteraction` has `Hovered`, `Pressed` (the press frame), `Down` (held), `Clicked`, `Changed`
-(the value was changed by the player this call) and `Focused` (the widget has keyboard or gamepad focus and the ring is showing; see [Keyboard and gamepad focus](#keyboard-and-gamepad-focus)).
+(the value was changed by the player this call), `Submitted` and `Cancelled` (a `TextField` edit ended with Enter or Escape) and `Focused` (the widget has keyboard or gamepad focus and the ring is showing; see [Keyboard and gamepad focus](#keyboard-and-gamepad-focus)).
 A disabled widget (`UIWidgetParams::Enabled = false`) is drawn dimmed and reports nothing.
 
 ```cpp
@@ -154,6 +155,42 @@ DingoUI::Toggle("Music", &m_Music);
 DingoUI::Slider("Volume", &m_Volume, 0.0f, 1.0f);
 DingoUI::EndBox();
 ```
+
+### Text fields
+
+`TextField(label, &text, params)` edits a `std::string` in place. A click on the field, or the accept
+input while it has the focus, starts an edit; typed characters go in at the caret as UTF-8, from the
+platform's text input, so keyboard layouts, dead keys and IME input type what the player sees.
+Backspace, Delete, the arrows, Home and End edit and move (the first four repeat while held), and a
+click inside the field puts the caret under the pointer. Text wider than the field scrolls to keep the
+caret in view. The label names the field and is not drawn.
+
+The edit ends with **Enter** (`Submitted`; pad A too), **Escape** (`Cancelled`, and the text goes back
+to what it was when the edit began; pad B too), or a press anywhere else, which keeps the text.
+`Changed` is set on every frame the text changed, including a cancel that put it back.
+
+| `UITextFieldParams` | |
+|---|---|
+| `Width` | Default 200 design pixels. |
+| `MaxLength` | Most codepoints the player can type; 0 for no limit. Longer text set by the game is kept. |
+| `Placeholder` | Drawn dimmed while the text is empty. |
+| `Enabled`, `Focusable`, `DefaultFocus`, `Style` | As for the other widgets; disabling a field ends its edit. |
+
+While a field edits, `DingoUI::WantsTextInput()` is `true` (and so is `IsCapturingInput()`): every
+new key press is hidden from `Input`, navigation keys don't move the focus, and `KeyPressedEvent` and
+`KeyTypedEvent` are marked handled before they reach the game's layers. A key already held when the
+edit starts stays visible until it is released, and the press that starts an edit (the click, or the
+accept key) is not typed into the field. Skip single-key shortcuts while it is `true` if you read keys
+any other way.
+
+```cpp
+const UIInteraction title = DingoUI::TextField("Title", &m_GroupTitle,
+    UITextFieldParams().SetMaxLength(32).SetPlaceholder("Group title"));
+if (title.Submitted)
+    RenameGroup(m_GroupTitle);
+```
+
+There is no selection, clipboard or multi-line editing yet, and no on-screen keyboard for a pad.
 
 ### Ids
 
@@ -231,7 +268,8 @@ never turns into a game click on the way out. A root with `BlocksInput = false` 
 
 - `DingoUI::IsPointerOverUI()`: the pointer is over a blocking element (or a modal is up).
 - `DingoUI::IsCapturingInput()`: the UI holds the input: a press it took is still held, a modal
-  is up, or the focus ring is showing. Keep game drag-and-drop and camera input off while it is `true`.
+  is up, the focus ring is showing, or a text field edits. Keep game drag-and-drop and camera input off while it is `true`.
+- `DingoUI::WantsTextInput()`: a [text field](#text-fields) edits; skip key shortcuts.
 
 ## Keyboard and gamepad focus
 

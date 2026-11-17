@@ -23,6 +23,7 @@ Sections (Grep `## <name>`):
 - Layout and draw run after all layers' `OnUpdate`.
 - Input it takes goes through `Internal::InputBackend` (`Core/InputBackend.h`): the consume mask makes presses, scroll and navigation keys read as not happening in `Input` until released; engine F-keys and the UI itself read the `...Unconsumed` queries.
 - `DingoUI::IsPointerOverUI/IsCapturingInput` are the game's side.
+- `TextField` (#331): one edit at a time, `m_EditId`. `ResolveTextEditing` (in `BeginFrame`, before navigation) turns `UIInputState::TextKeys` (held, filled from `IsKeyDownUnconsumed`) into pulses with repeat, ends the edit on a left press elsewhere, clears `Nav` and calls `ConsumeNewPresses(false, true)` while editing; keys are read only from the frame after the edit started. `DingoUILayer` marks `KeyPressed`/`KeyTyped` handled while editing. Typed text comes from `Input::GetTypedText()` (the GLFW char callback, cleared in `Input::Update`). The field scrolls by `UIElement::ScrollOffset`, which the layout applies to any element, not only scroll areas.
 - Navigation is opt-in per root (modal, or `SetNavigable(true)`).
 - Test: `--test=dingoui` (`--dingoui=stress`).
 - Checks read the UI through `DingoUI::GetId(label)` (inside a frame, same hash as the widget), `GetFocusedId()` and `GetRect(id|name, UILayoutRect&)` (#266), which look in `m_LastTree`, the last finished frame, and give the rect clipped to its container as `VisibleMin/Max`.

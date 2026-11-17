@@ -82,11 +82,11 @@ namespace Dingo::Internal
 		// Widgets
 		UIWidgetState* State = nullptr;  // the widget's state; only valid until the frame's state eviction
 		bool Interactive = false;        // takes the pointer: hover, press, click
-		bool Scroll = false;             // a scroll area: wheel target, children move by ScrollOffset
+		bool Scroll = false;             // a scroll area: wheel target and thumb
 		bool Focusable = false;          // can take keyboard and gamepad focus
 		bool DefaultFocus = false;       // takes the focus when it first appears
 		bool AdjustsHorizontally = false; // left and right change its value instead of moving the focus
-		glm::vec2 ScrollOffset{ 0.0f };  // pixels
+		glm::vec2 ScrollOffset{ 0.0f };  // pixels the children move up and left: a scroll area's offset, a text field's
 		glm::vec4 ScrollThumbColor{ 0.0f };
 		float ScrollThumbWidth = 0.0f;   // design pixels
 

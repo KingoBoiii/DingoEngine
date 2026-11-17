@@ -28,6 +28,20 @@ namespace Dingo::Internal
 
 	class DingoUIBatcher;
 
+	enum class UITextKey : uint8_t
+	{
+		Backspace,
+		Delete,
+		Left,
+		Right,
+		Home,
+		End,
+		Enter,
+		Escape
+	};
+
+	inline constexpr size_t k_UITextKeyCount = 8;
+
 	// One frame of pointer and keyboard input as the game UI sees it. The Application fills it
 	// from Input after a capturing ImGui has taken its share; the test app passes its own.
 	struct UIInputState
@@ -45,6 +59,9 @@ namespace Dingo::Internal
 		// False while ImGui holds the keyboard.
 		bool KeyboardAvailable = false;
 		UINavInput Nav;
+		// Keys held, not pressed: the context derives the presses and their repeats.
+		std::u32string Typed;
+		std::array<bool, k_UITextKeyCount> TextKeys{};
 		float DeltaTime = 0.0f;
 	};
 
@@ -109,6 +126,7 @@ namespace Dingo::Internal
 		UIInteraction SliderInt(std::string_view label, int* value, int min, int max, const UISliderParams& params);
 		void ProgressBar(std::string_view id, float value, const UIWidgetParams& params);
 		UIInteraction Selectable(std::string_view label, bool selected, const UIWidgetParams& params);
+		UIInteraction TextField(std::string_view label, std::string* text, const UITextFieldParams& params);
 		bool BeginScrollArea(std::string_view label, const UIScrollParams& params);
 		void EndScrollArea();
 		bool BeginPanel(const UIBoxParams& params);
@@ -147,6 +165,9 @@ namespace Dingo::Internal
 		bool HitTestBlocking(const glm::vec2& point) const;
 		bool IsPointerOverUI() const { return m_PointerOverUI; }
 		bool IsCapturingInput() const { return m_CapturingInput; }
+		bool IsEditingText() const { return m_EditId != 0; }
+		uint64_t GetEditId() const { return m_EditId; }
+		size_t GetEditCaret() const { return m_EditCaret; }
 
 		// Interaction as BeginFrame resolved it; 0 for none.
 		uint64_t GetHoverId() const { return m_HoverId; }
@@ -190,6 +211,7 @@ namespace Dingo::Internal
 		// Steps the widget's looks toward `hover`, `press`, `focus` and `on` by the style's transition and returns them eased.
 		std::array<float, 4> StepLook(UIWidgetState& state, const UIStyle& style, bool hover, bool press, bool focus, bool on) const;
 		void BuildDrawList(bool draw);
+		void ResolveTextEditing();
 		UIInteraction SliderImpl(std::string_view label, double* value, double min, double max, double step, bool integer, const UISliderParams& params);
 
 	private:
@@ -269,6 +291,17 @@ namespace Dingo::Internal
 		bool m_NavigableRootUp = false;
 		int m_NavAdjust = 0;
 		uint64_t m_NavAcceptId = 0;
+
+		uint64_t m_EditId = 0;
+		uint64_t m_EditStartFrame = 0;
+		size_t m_EditCaret = 0;
+		std::string m_EditOriginal;
+		float m_EditBlink = 0.0f;
+		bool m_EditPadAccept = false;
+		bool m_EditPadBack = false;
+		std::array<bool, k_UITextKeyCount> m_TextKeysHeld{};
+		std::array<bool, k_UITextKeyCount> m_TextKeyPulse{};
+		std::array<UINavRepeater, k_UITextKeyCount> m_TextKeyRepeaters;
 	};
 
 	// The Application's context, or nullptr (headless, DingoUIParams::Enabled false, or outside

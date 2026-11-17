@@ -6,7 +6,9 @@
 
 #include <glm/glm.hpp>
 
+#include <cstdint>
 #include <string>
+#include <string_view>
 
 struct GLFWwindow;
 
@@ -184,6 +186,8 @@ namespace Dingo
 		static void UpdateMouseButtonState(MouseButton button, bool pressed);
 		static void UpdateMousePosition(float x, float y);
 		static void AccumulateMouseScroll(float xOffset, float yOffset);
+		static void AccumulateTypedChar(uint32_t codepoint);
+		static std::u32string_view GetTypedText();
 		static void SeedMousePosition(float x, float y);
 
 		// Applies the stored cursor mode, so SetCursorMode works before the window exists.
