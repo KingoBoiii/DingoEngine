@@ -30,6 +30,20 @@ namespace Dingo::Internal
 		return s_Context;
 	}
 
+	void ReadTextInput(UIInputState& input)
+	{
+		input.Typed = InputBackend::GetTypedText();
+		const auto hold = [&](UITextKey key, bool down) { input.TextKeys[static_cast<size_t>(key)] = down; };
+		hold(UITextKey::Backspace, InputBackend::IsKeyDownUnconsumed(Key::Backspace));
+		hold(UITextKey::Delete, InputBackend::IsKeyDownUnconsumed(Key::Delete));
+		hold(UITextKey::Left, InputBackend::IsKeyDownUnconsumed(Key::Left));
+		hold(UITextKey::Right, InputBackend::IsKeyDownUnconsumed(Key::Right));
+		hold(UITextKey::Home, InputBackend::IsKeyDownUnconsumed(Key::Home));
+		hold(UITextKey::End, InputBackend::IsKeyDownUnconsumed(Key::End));
+		hold(UITextKey::Enter, InputBackend::IsKeyDownUnconsumed(Key::Enter) || InputBackend::IsKeyDownUnconsumed(Key::KPEnter));
+		hold(UITextKey::Escape, InputBackend::IsKeyDownUnconsumed(Key::Escape));
+	}
+
 	void DingoUIOnTextureDestroyed(const Texture* texture)
 	{
 		if (s_Context && texture)
@@ -79,8 +93,9 @@ namespace Dingo::Internal
 		m_Input.ViewportSize = m_TargetSize;
 
 		ResolveInteraction();
+		ResolveTextEditing();
 		ResolveNavigation();
-		if (m_FocusVisible && m_FocusId != 0)
+		if ((m_FocusVisible && m_FocusId != 0) || m_EditId != 0)
 			m_CapturingInput = true;
 
 		m_Tree.Begin(m_TargetSize);
@@ -136,6 +151,48 @@ namespace Dingo::Internal
 		}
 
 		m_CapturingInput = m_ModalActive || anyConsumed;
+	}
+
+	void DingoUIContext::ResolveTextEditing()
+	{
+		constexpr float k_RepeatDelay = 0.4f;
+		constexpr float k_RepeatInterval = 0.035f;
+		constexpr size_t k_LastRepeating = static_cast<size_t>(UITextKey::Right);
+
+		const float dt = m_Input.DeltaTime > 0.0f && m_Input.DeltaTime < 1.0e6f ? m_Input.DeltaTime : 0.0f;
+		for (size_t key = 0; key < k_UITextKeyCount; ++key)
+		{
+			const bool held = m_Input.KeyboardAvailable && m_Input.TextKeys[key];
+			m_TextKeyPulse[key] = key <= k_LastRepeating ? m_TextKeyRepeaters[key].Step(held, dt, k_RepeatDelay, k_RepeatInterval) : (held && !m_TextKeysHeld[key]);
+			m_TextKeysHeld[key] = held;
+		}
+
+		m_EditPadAccept = false;
+		m_EditPadBack = false;
+		if (m_EditId == 0)
+			return;
+		if (m_Input.PointerAvailable && m_Input.PointerPressed[0] && m_PressedId != m_EditId)
+		{
+			m_EditId = 0;
+			return;
+		}
+
+		const UINavInput& nav = m_Input.Nav;
+		m_EditPadAccept = nav.Accept && nav.AcceptPad;
+		m_EditPadBack = nav.Back && nav.BackPad;
+		if (m_EditPadAccept || m_EditPadBack)
+		{
+			UINavInput taken;
+			taken.Accept = m_EditPadAccept;
+			taken.AcceptPad = m_EditPadAccept;
+			taken.Back = m_EditPadBack;
+			taken.BackPad = m_EditPadBack;
+			taken.Gamepad = nav.Gamepad;
+			ConsumeNavInput(taken, false, m_Params.Nav);
+		}
+		m_Input.Nav = {};
+		m_EditBlink += dt;
+		InputBackend::ConsumeNewPresses(false, true);
 	}
 
 	void DingoUIContext::SetFocus(std::string_view label)
@@ -768,6 +825,12 @@ namespace Dingo::Internal
 		}
 
 		m_DrawList.Clear();
+		if (m_EditId != 0)
+		{
+			const UIWidgetState* edited = m_States.Find(m_EditId);
+			if (!edited || edited->LastSeenFrame != m_FrameIndex)
+				m_EditId = 0;
+		}
 		m_States.Evict(m_FrameIndex);
 		m_Tweens.Evict(m_FrameIndex);
 		++m_FrameIndex;

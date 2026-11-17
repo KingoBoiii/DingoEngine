@@ -117,6 +117,8 @@ namespace Dingo
 		m_WorldChild.SetParent(m_WorldParent, false);
 		m_WorldStage = 0;
 		m_WorldDone = false;
+		m_TextStage = 0;
+		m_TextDone = false;
 		m_LiveTime = 0.0f;
 
 		m_StressDone = false;
@@ -2865,12 +2867,127 @@ namespace Dingo
 		m_LiveInput = {};
 	}
 
+	bool DingoUITest::StepTextField(Framebuffer* output)
+	{
+		using Internal::UITextKey;
+		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
+		if (m_TextDone || !m_WorldDone || !context || !m_LayoutTarget || !m_Font || !m_Font->IsValid())
+			return false;
+
+		const uint32_t stage = m_TextStage++;
+		if (stage == 0)
+		{
+			context->SetTarget(m_LayoutTarget);
+			context->SetInputOverride(&m_WidgetInput);
+			m_TextTitle.clear();
+			m_TextOther = "Notes";
+		}
+		SetPointer(k_WidgetEmpty);
+
+		DingoUI::BeginRoot("t_main", UIRootParams().SetOffset({ 20.0f, 20.0f }).SetLayout(UIBoxParams()
+			.SetGap(10.0f).SetPadding(10.0f).SetBackground({ 0.08f, 0.1f, 0.16f, 0.9f })));
+		m_TextResult = DingoUI::TextField("Title", &m_TextTitle, UITextFieldParams().SetMaxLength(12).SetPlaceholder("Group title"));
+		m_TextOtherResult = DingoUI::TextField("Other", &m_TextOther, UITextFieldParams().SetWidth(UISize::Fixed(80.0f)));
+		DingoUI::EndRoot();
+
+		const std::string typed = "\xC3\x86" "ble 200";
+		const auto press = [&](const char* name) { SetPointer(CenterOf(name), true, true); };
+		const auto hold = [&](UITextKey key) { m_WidgetInput.TextKeys[static_cast<size_t>(key)] = true; };
+		const auto handled = [](Event&& e)
+		{
+			Application::Get().OnEvent(e);
+			return e.Handled;
+		};
+
+		switch (stage)
+		{
+		case 0:
+			break;
+		case 1:
+			Check(LastElement("Title") && !DingoUI::WantsTextInput(), "TextField: a field is laid out and nothing edits before a click");
+			press("Title");
+			break;
+		case 2:
+			Check(m_TextResult.Pressed && DingoUI::WantsTextInput() && DingoUI::IsCapturingInput(), "TextField: a click starts an edit, which captures input");
+			m_WidgetInput.Typed = U"\u00C6ble 200";
+			break;
+		case 3:
+			Check(m_TextTitle == typed && m_TextResult.Changed, "TextField: typed codepoints go in as UTF-8, got \"" + m_TextTitle + "\"");
+			Check(handled(KeyTypedEvent('g')) && handled(KeyPressedEvent(Key::G, false)), "TextField: key events are marked handled while editing");
+			m_WidgetInput.Typed = U"abcdefgh";
+			break;
+		case 4:
+			Check(m_TextTitle == typed + "abcd", "TextField: MaxLength counts codepoints and stops typing, got \"" + m_TextTitle + "\"");
+			hold(UITextKey::Backspace);
+			break;
+		case 5:
+			Check(m_TextTitle == typed + "abc", "TextField: Backspace removes the character before the caret");
+			hold(UITextKey::Home);
+			break;
+		case 6:
+			Check(context->GetEditCaret() == 0, "TextField: Home moves the caret to the start");
+			hold(UITextKey::Delete);
+			break;
+		case 7:
+			Check(m_TextTitle == "ble 200abc", "TextField: Delete removes a whole two-byte character after the caret, got \"" + m_TextTitle + "\"");
+			m_WidgetInput.Typed = U"\u00C6";
+			hold(UITextKey::Right);
+			break;
+		case 8:
+			Check(m_TextTitle == typed + "abc" && context->GetEditCaret() == 3, "TextField: typing goes in at the caret and Right steps one character");
+			hold(UITextKey::Escape);
+			break;
+		case 9:
+			Check(m_TextResult.Cancelled && m_TextResult.Changed && m_TextTitle.empty() && !DingoUI::WantsTextInput(), "TextField: Escape ends the edit and puts back the text it began with");
+			press("Title");
+			break;
+		case 10:
+			Check(DingoUI::WantsTextInput(), "TextField: a click edits again");
+			m_WidgetInput.Typed = U"\u00C6ble 200";
+			break;
+		case 11:
+			hold(UITextKey::Enter);
+			break;
+		case 12:
+			Check(m_TextResult.Submitted && m_TextTitle == typed && !DingoUI::WantsTextInput(), "TextField: Enter submits the typed text");
+			Check(!handled(KeyTypedEvent('g')), "TextField: key events pass once no field edits");
+			press("Other");
+			break;
+		case 13:
+			Check(m_TextOtherResult.Pressed && DingoUI::WantsTextInput() && !m_TextResult.Submitted, "TextField: a click on another field moves the edit to it");
+			Check(context->GetEditCaret() > 0, "TextField: a click puts the caret under the pointer");
+			hold(UITextKey::End);
+			break;
+		case 14:
+			Check(context->GetEditCaret() == m_TextOther.size(), "TextField: End moves the caret to the end");
+			m_WidgetInput.Typed = U" and more text here";
+			break;
+		case 15:
+		{
+			const Internal::UIWidgetState* state = context->GetStates().Find(context->GetEditId());
+			Check(state && state->ScrollOffset.x > 0.0f, "TextField: text wider than the field scrolls to keep the caret in view");
+			SetPointer(k_WidgetEmpty, true, true);
+			break;
+		}
+		case 16:
+			Check(!DingoUI::WantsTextInput() && m_TextOther == "Notes and more text here" && !m_TextOtherResult.Cancelled, "TextField: a press elsewhere ends the edit and keeps the text");
+			break;
+		default:
+			m_TextDone = true;
+			context->SetTarget(output);
+			context->SetInputOverride(&m_LiveInput);
+			m_LiveInput = {};
+			break;
+		}
+		return true;
+	}
+
 	bool DingoUITest::StepStress(Framebuffer* output)
 	{
 		Internal::DingoUIContext* context = Internal::GetDingoUIContext();
 		if (m_StressDone || !context || !m_LayoutTarget)
 			return false;
-		if (!m_StressMode && !m_WorldDone)
+		if (!m_StressMode && !m_TextDone)
 			return false;
 
 		const uint32_t step = m_StressStep++;
@@ -2932,6 +3049,7 @@ namespace Dingo
 		m_LiveInput.PointerAvailable = TestViewportPanel::IsImageHovered();
 		m_LiveInput.KeyboardAvailable = true;
 		Internal::ReadNavInput(m_LiveInput.Nav, true, UINavParams(), Internal::FindNavGamepad());
+		Internal::ReadTextInput(m_LiveInput);
 		m_LiveInput.DeltaTime = 1.0f / 60.0f;
 		m_LiveTime += m_LiveInput.DeltaTime;
 		context->SetDebugOrigin(output ? TestViewportPanel::GetImageOrigin() : glm::vec2(0.0f));
@@ -2961,6 +3079,7 @@ namespace Dingo
 
 		DingoUI::Toggle("Sound", &m_LiveToggle);
 		DingoUI::Slider("Volume", &m_LiveSlider, 0.0f, 1.0f);
+		DingoUI::TextField("Name", &m_LiveName, UITextFieldParams().SetPlaceholder("Type a name").SetMaxLength(24));
 		DingoUI::SliderInt("Lives", &m_LiveInt, 1, 9, UISliderParams().SetWidth(UISize::Fixed(120.0f)));
 		DingoUI::ProgressBar("progress", m_LiveSlider);
 
@@ -3029,7 +3148,7 @@ namespace Dingo
 		StepConsumeMask();
 		Framebuffer* output = Renderer::GetRenderTarget();
 		const bool busy = m_StressMode ? StepStress(output)
-			: (StepBatcher() || StepLayout(output) || StepWidgets(output) || StepNavigation(output) || StepTransitions(output) || StepTextureFree() || StepWorld(output) || StepStress(output));
+			: (StepBatcher() || StepLayout(output) || StepWidgets(output) || StepNavigation(output) || StepTransitions(output) || StepTextureFree() || StepWorld(output) || StepTextField(output) || StepStress(output));
 		if (!busy)
 		{
 			UpdateLiveInput(output);

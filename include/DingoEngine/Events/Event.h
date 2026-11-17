@@ -17,7 +17,8 @@ namespace Dingo
 		KeyPressed, KeyReleased,
 		MouseButtonPressed, MouseButtonReleased,
 		MouseMoved, MouseScrolled,
-		GamepadConnected, GamepadDisconnected
+		GamepadConnected, GamepadDisconnected,
+		KeyTyped
 	};
 
 	/// Bit flags that group event types; one event can be in several (see Event::IsInCategory).

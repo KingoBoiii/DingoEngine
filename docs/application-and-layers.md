@@ -617,7 +617,10 @@ bool OnKeyPressed(KeyPressedEvent& e)
 
 `DE_BIND_EVENT_FN(fn)` wraps a member function as the callback. Event types include
 `WindowResizeEvent`, `WindowFocusEvent` (v0.6.2), `KeyPressedEvent`,
-`KeyReleasedEvent`, `MouseButtonPressedEvent`, and `MouseButtonReleasedEvent`. The application
+`KeyReleasedEvent`, `KeyTypedEvent`, `MouseButtonPressedEvent`, and `MouseButtonReleasedEvent`.
+`KeyTypedEvent::GetCodepoint()` is one typed character (UTF-32) after the keyboard layout, dead keys and
+IME, also for a held key's repeats: use it for text, and `KeyPressedEvent` for keys. A DingoUI
+[text field](game-ui.md#text-fields) that is being edited marks both handled. The application
 handles `WindowCloseEvent` itself (it stops the loop) and marks it handled, so layers never see it;
 finish up in `OnDetach`. Ctrl+C in the terminal, `SIGTERM` (Linux) and a console close (Windows)
 stop a windowed app the same way, through `Close()`, as they do a [headless](#headless) one.

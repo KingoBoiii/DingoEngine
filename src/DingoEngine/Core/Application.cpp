@@ -659,6 +659,8 @@ namespace Dingo
 		input.KeyboardAvailable = !imguiKeyboard;
 		if (m_Params.DingoUI.Nav.Enabled)
 			Internal::ReadNavInput(input.Nav, input.KeyboardAvailable, m_Params.DingoUI.Nav, Internal::FindNavGamepad());
+		if (input.KeyboardAvailable)
+			Internal::ReadTextInput(input);
 		input.DeltaTime = m_DeltaTime;
 		m_DingoUIContext->BeginFrame(input);
 	}

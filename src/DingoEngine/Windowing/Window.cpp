@@ -346,6 +346,15 @@ namespace Dingo
 			windowData.EventCallback(resizeEvent);
 		});
 
+		glfwSetCharCallback(m_WindowHandle, [](GLFWwindow* window, unsigned int codepoint)
+		{
+			Input::AccumulateTypedChar(codepoint);
+
+			const WindowData& windowData = *((WindowData*)glfwGetWindowUserPointer(window));
+			KeyTypedEvent keyTypedEvent(codepoint);
+			windowData.EventCallback(keyTypedEvent);
+		});
+
 		glfwSetKeyCallback(m_WindowHandle, [](GLFWwindow* window, int key, int scancode, int action, int mods)
 		{
 			if (key < 0 || key > GLFW_KEY_LAST) // GLFW_KEY_UNKNOWN
