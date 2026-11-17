@@ -315,8 +315,10 @@ settings.Save();
   and runs by hand.
 - **No icon on a Linux window at run time.** The desktop entry's icon shows in menus and launchers,
   but the engine doesn't pass the window an icon. On Windows the icon is the executable's.
-- **Crash reports stay on the player's machine.** Nothing is uploaded; the player sends the files.
-  Linux has no minidump, only a backtrace and the system's core dump.
+- **Crash reports stay on the player's machine** unless the game sets up
+  [crash and error reports](application-and-layers.md#crash-and-error-reports) and the player opts
+  in; otherwise the player sends the files. Linux has no minidump, only a backtrace and the
+  system's core dump.
 - **The release scripts cover `examples/*`.** A game elsewhere repeats their steps by hand.
 - **An asset package is deterrence, not protection.** The key ships with the game. See the
   [threat model](distribution.md#threat-model).

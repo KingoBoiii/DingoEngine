@@ -1,4 +1,4 @@
-**Status**: open
+**Status**: done (v1.1.0)
 
 # physics-coop: active ragdolls (#298)
 

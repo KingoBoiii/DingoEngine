@@ -128,7 +128,7 @@ Index of `##` headings (Grep the heading, then Read just that range):
 - Ragdoll Test `--test=ragdoll` (`RunRecipeChecks` edits a copy in the temp dir; P3 push, stairs and an 8-ragdoll crowd budget).
 - A mesh collider added after `OnStart` needs `Scene::CreateRigidBody(entity)`.
 - Plan:
-- `.claude/plans/2026-10-27-physics-coop-plan.md`.
+- `.claude/plans/done/2026-10-27-physics-coop-plan.md`.
 
 ## Character controllers
 

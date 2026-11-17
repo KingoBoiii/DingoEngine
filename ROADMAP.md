@@ -1,5 +1,8 @@
 # DingoEngine Roadmap
 
+The plan from v0.1 to v1.0, and the notes of every release since. The plan after 1.0 is in
+[ROADMAP-1.x.md](ROADMAP-1.x.md).
+
 ## v0.1 — Core Foundation
 Core components, windowing, input, and a basic rendering pipeline. ImGui for debugging UI.
 
@@ -569,7 +572,7 @@ run on real hardware.
 The first minor release under [versioning](docs/versioning.md): it only adds API, so a game built
 against 1.0 compiles and behaves the same, and a scene made the 1.0 way (`FixedTick = false`) steps
 physics exactly as before. It closes the `physics-coop` issue group, what a physics-driven co-op game
-needs from the engine. The ragdoll plan is `.claude/plans/2026-10-27-physics-coop-plan.md`.
+needs from the engine. The ragdoll plan is `.claude/plans/done/2026-10-27-physics-coop-plan.md`.
 
 - **Constraints and motors** ([#295](https://github.com/KingoBoiii/DingoEngine/issues/295),
   [#296](https://github.com/KingoBoiii/DingoEngine/issues/296), PR
