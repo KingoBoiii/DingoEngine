@@ -62,6 +62,28 @@ namespace Dingo
 			return available.front();
 		}
 
+		// currentExtent is the surface's real size in pixels. On Windows it is always defined
+		// and authoritative, so using it (rather than the window size in screen coordinates)
+		// is what makes rendering correct on monitors with per-monitor DPI scaling. Only when
+		// it is the "deferred" sentinel (0xFFFFFFFF) do we fall back to the requested size.
+		static vk::Extent2D ChooseExtent(const vk::SurfaceCapabilitiesKHR& surfaceCaps, int32_t width, int32_t height)
+		{
+			vk::Extent2D extent;
+			if (surfaceCaps.currentExtent.width != std::numeric_limits<uint32_t>::max())
+			{
+				extent = surfaceCaps.currentExtent;
+			}
+			else
+			{
+				extent.width = std::clamp(uint32_t(width), surfaceCaps.minImageExtent.width, surfaceCaps.maxImageExtent.width);
+				extent.height = std::clamp(uint32_t(height), surfaceCaps.minImageExtent.height, surfaceCaps.maxImageExtent.height);
+			}
+			// A zero extent (e.g. a minimized window) is invalid for swap-chain creation.
+			extent.width = std::max(extent.width, 1u);
+			extent.height = std::max(extent.height, 1u);
+			return extent;
+		}
+
 		// FIFO is the only present mode guaranteed to exist; anything else must be confirmed
 		// against the surface (eImmediate in particular is optional and absent on some drivers).
 		static vk::PresentModeKHR ChoosePresentMode(const std::vector<vk::PresentModeKHR>& available, bool vsync)
@@ -195,6 +217,18 @@ namespace Dingo
 
 		m_Params.Width = width;
 		m_Params.Height = height;
+
+		// Restoring a minimized window resizes it back to the size it had (#333). Re-creating the
+		// swap chain in that moment crashed inside AMD's driver under the Steam overlay layer, and
+		// a chain of the right size and present mode needs no re-create. A chain the driver marks
+		// stale still reports out of date or suboptimal on acquire or present, and is re-created there.
+		if (m_SwapChain && m_SwapChainVSync == m_Params.VSync)
+		{
+			VulkanGraphicsContext& graphicsContext = (VulkanGraphicsContext&)GraphicsContext::Get();
+			const vk::SurfaceCapabilitiesKHR surfaceCaps = graphicsContext.m_VulkanPhysicalDevice.getSurfaceCapabilitiesKHR(m_WindowSurface);
+			if (Utils::ChooseExtent(surfaceCaps, width, height) == m_SwapChainExtent)
+				return;
+		}
 
 		RecreateSwapChain();
 	}
@@ -422,24 +456,9 @@ namespace Dingo
 
 		const vk::PresentModeKHR presentMode = Utils::ChoosePresentMode(availablePresentModes, m_Params.VSync);
 
-		// currentExtent is the surface's real size in pixels. On Windows it is always defined
-		// and authoritative, so using it (rather than the window size in screen coordinates)
-		// is what makes rendering correct on monitors with per-monitor DPI scaling. Only when
-		// it is the "deferred" sentinel (0xFFFFFFFF) do we fall back to the requested size.
-		vk::Extent2D extent;
-		if (surfaceCaps.currentExtent.width != std::numeric_limits<uint32_t>::max())
-		{
-			extent = surfaceCaps.currentExtent;
-		}
-		else
-		{
-			extent.width = std::clamp(uint32_t(m_Params.Width), surfaceCaps.minImageExtent.width, surfaceCaps.maxImageExtent.width);
-			extent.height = std::clamp(uint32_t(m_Params.Height), surfaceCaps.minImageExtent.height, surfaceCaps.maxImageExtent.height);
-		}
-		// A zero extent (e.g. a minimized window) is invalid for swap-chain creation.
-		extent.width = std::max(extent.width, 1u);
-		extent.height = std::max(extent.height, 1u);
+		const vk::Extent2D extent = Utils::ChooseExtent(surfaceCaps, m_Params.Width, m_Params.Height);
 		m_SwapChainExtent = extent;
+		m_SwapChainVSync = m_Params.VSync;
 
 		// Respect the surface's supported image-count range.
 		uint32_t imageCount = std::max(2u, surfaceCaps.minImageCount);

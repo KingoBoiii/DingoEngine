@@ -51,6 +51,7 @@ namespace Dingo
 		vk::SurfaceFormatKHR m_SwapChainFormat;
 		nvrhi::Format m_SwapChainTextureFormat = nvrhi::Format::RGBA8_UNORM;
 		vk::Extent2D m_SwapChainExtent = {};
+		bool m_SwapChainVSync = false;
 		bool m_ImageAcquired = false;
 		bool m_ImageWaitPending = false;
 		bool m_AcquireSignalPending = false;
