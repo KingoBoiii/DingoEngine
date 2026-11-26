@@ -140,7 +140,8 @@ namespace Dingo
 		/// Releases the GPU object early; the destructor releases everything anyway.
 		virtual void Destroy() = 0;
 		/// The whole image: Width x Height pixels of the format, packed, first row first. Joins the
-		/// frame's command list when one is recording, else uploads at once.
+		/// frame's command list when one is recording, else uploads at once; between frames (an event
+		/// handler, a post-execution callback) it copies the pixels and uploads them at the next frame's start.
 		virtual void Upload(const void* data) = 0;
 
 		/// Recreates the GPU texture in place from new params (uploading InitialData if

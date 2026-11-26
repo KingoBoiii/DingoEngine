@@ -269,7 +269,7 @@ namespace Dingo
 
 	bool Renderer::IsRenderThreadParked()
 	{
-		return s_Data && s_Data->RenderThreadParked;
+		return !s_Data || s_Data->RenderThreadParked;
 	}
 
 	bool Renderer::IsShuttingDown()

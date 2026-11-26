@@ -181,6 +181,10 @@ void main()
 			.SetFormat(TextureFormat::RGBA8_UNORM)
 			.SetDimension(TextureDimension::Texture2D)
 			.SetIsStorage(true));
+		{
+			const std::vector<uint32_t> black(k_UploadSize * k_UploadSize, 0xFF000000u);
+			m_BetweenFrames = Texture::CreateFromData(k_UploadSize, k_UploadSize, black.data(), TextureFormat::RGBA, "ComputeTest between frames");
+		}
 
 		m_FillPass = ComputePass::Create(ComputePassParams().SetDebugName("ComputeTest fill").SetShader(m_FillShader));
 		m_FillPass->SetUniformBuffer(0, m_Params);
@@ -310,6 +314,45 @@ void main()
 				wrong += value != expected ? 1 : 0;
 			}
 			Check(wrong == 0, std::format("a storage buffer holds its initial data and a later GraphicsBuffer::Upload ({} of {} wrong)", wrong, k_ValueCount));
+		});
+
+		// After EndFrame the render thread may be submitting: the upload must wait for it and must not
+		// keep a pointer to pixels that are gone by then (#337).
+		Application::Get().SubmitPostExecution([this, alive]()
+		{
+			if (alive.expired())
+				return;
+			std::vector<uint32_t> pattern(k_UploadSize * k_UploadSize);
+			for (uint32_t i = 0; i < pattern.size(); ++i)
+				pattern[i] = 0xFF000000u | (i * 0x0B0D11u & 0x00FFFFFFu);
+			m_BetweenFrames->ReadPixels([this, alive](const TexturePixels& pixels)
+			{
+				if (alive.expired())
+					return;
+				uint32_t wrong = pixels.Data.size() == k_UploadSize * k_UploadSize * 4 ? 0 : k_UploadSize * k_UploadSize;
+				for (uint32_t i = 0; wrong == 0 && i < k_UploadSize * k_UploadSize; ++i)
+				{
+					uint32_t value = 0;
+					std::memcpy(&value, pixels.Data.data() + i * 4, sizeof(value));
+					wrong += value != 0xFF000000u ? 1 : 0;
+				}
+				Check(wrong == 0, std::format("a ReadPixels queued between frames before a Texture::Upload reads the pixels from before it ({} of {} wrong)", wrong, k_UploadSize * k_UploadSize));
+			});
+			m_BetweenFrames->Upload(pattern.data());
+			std::fill(pattern.begin(), pattern.end(), 0u);
+			m_BetweenFrames->ReadPixels([this, alive](const TexturePixels& pixels)
+			{
+				if (alive.expired())
+					return;
+				uint32_t wrong = pixels.Width == k_UploadSize && pixels.Height == k_UploadSize && pixels.Data.size() == k_UploadSize * k_UploadSize * 4 ? 0 : k_UploadSize * k_UploadSize;
+				for (uint32_t i = 0; wrong == 0 && i < k_UploadSize * k_UploadSize; ++i)
+				{
+					uint32_t value = 0;
+					std::memcpy(&value, pixels.Data.data() + i * 4, sizeof(value));
+					wrong += value != (0xFF000000u | (i * 0x0B0D11u & 0x00FFFFFFu)) ? 1 : 0;
+				}
+				Check(wrong == 0, std::format("Texture::Upload between frames waits for the render thread and keeps its own copy of the pixels ({} of {} wrong)", wrong, k_UploadSize * k_UploadSize));
+			});
 		});
 
 		const std::vector<uint32_t> zeros(k_DeferredCount, 0u);
@@ -532,6 +575,7 @@ void main()
 		DestroyAndDelete(m_Seeded);
 		DestroyAndDelete(m_Deferred);
 		DestroyAndDelete(m_Image);
+		DestroyAndDelete(m_BetweenFrames);
 		DestroyAndDelete(m_Strip);
 		DestroyAndDelete(m_SwapStrip);
 		DestroyAndDelete(m_Instanced);
