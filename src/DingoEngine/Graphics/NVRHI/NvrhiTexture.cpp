@@ -134,6 +134,7 @@ namespace Dingo
 	void NvrhiTexture::Upload(const void* data)
 	{
 		DE_CORE_ASSERT(data, "Texture::Upload needs pixels");
+		DE_CORE_ASSERT(m_Handle, "Texture::Upload after Destroy");
 		const uint64_t rowPitch = Utils::GetImageMemoryRowPitch(m_Params.Format, m_Params.Width);
 
 		// Join the frame's command list whenever one is open. A list of our own would be
@@ -148,20 +149,30 @@ namespace Dingo
 			return;
 		}
 
-		// Outside a frame (asset loads during OnAttach, the white texture during
-		// Renderer::Initialize) there is no list to join, so open a short-lived one.
-		nvrhi::CommandListParameters commandListParameters = nvrhi::CommandListParameters()
-			.setQueueType(nvrhi::CommandQueue::Graphics);
+		auto uploadNow = [](nvrhi::ITexture* texture, const void* pixels, uint64_t pitch)
+		{
+			nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
+			nvrhi::CommandListHandle commandList = device->createCommandList(nvrhi::CommandListParameters().setQueueType(nvrhi::CommandQueue::Graphics));
+			commandList->open();
+			commandList->writeTexture(texture, 0, 0, pixels, pitch);
+			commandList->close();
+			device->executeCommandList(commandList);
+		};
 
-		nvrhi::CommandListHandle commandList = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->createCommandList(commandListParameters);
+		// As in ReadPixels: between frames the render thread may be submitting on the same queue,
+		// so a list of our own waits for the next frame's start, when it is parked.
+		if (Renderer::IsRenderThreadParked())
+		{
+			uploadNow(m_Handle, data, rowPitch);
+			return;
+		}
 
-		commandList->open();
-
-		commandList->writeTexture(m_Handle, 0, 0, data, rowPitch);
-
-		commandList->close();
-
-		GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle()->executeCommandList(commandList);
+		const uint64_t byteCount = rowPitch * (std::max)(m_Params.Height, 1u);
+		std::vector<uint8_t> copy(static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + byteCount);
+		Renderer::RunAfterFrame([texture = m_Handle, copy = std::move(copy), rowPitch, uploadNow]()
+		{
+			uploadNow(texture, copy.data(), rowPitch);
+		});
 	}
 
 	void NvrhiTexture::ReadPixels(std::function<void(const TexturePixels&)> done)

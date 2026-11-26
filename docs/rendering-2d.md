@@ -219,6 +219,10 @@ iconTarget->GetAttachment(0)->SaveToFile("icons/sword.png", [](bool saved)
 - **Paused and skipped frames.** A paused app (unfocused, `UpdateInBackground` off) has no next
   frame until it resumes, so `done` waits that long. A frame that renders nothing
   (`Renderer::IsFrameSkipped()`) reads back what the texture last held.
+- **`Texture::Upload` keeps the same order.** Inside a frame it joins the frame's commands; from an
+  event handler or a post-execution callback it copies the pixels and uploads them at the next
+  frame's start, so a paused app shows them when it resumes. A `ReadPixels` and an `Upload` made
+  between frames run in the order they were called.
 - **Which way up.** `ReadPixels` gives rows as the texture stores them: a render target's first
   row is the top of its picture, an image `CreateFromFile` loaded is stored bottom row first.
   `SaveToFile` writes either so the file looks right: a render target as it is, any other texture

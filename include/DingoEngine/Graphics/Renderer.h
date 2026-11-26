@@ -281,7 +281,7 @@ namespace Dingo
 		static void RunAfterFrame(std::function<void()> fn);
 		static void RunPendingAfterFrame();
 		// While true the main thread may submit a command list of its own: the render thread waits
-		// for the next frame. False from EndFrame until the next BeginFrame or SkipFrame.
+		// for the next frame. False from EndFrame until the next BeginFrame or SkipFrame; true with no renderer.
 		static bool IsRenderThreadParked();
 		// True in Shutdown's last run of the RunAfterFrame callbacks, after which none run.
 		static bool IsShuttingDown();
