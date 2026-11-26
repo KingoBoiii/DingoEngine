@@ -100,13 +100,13 @@ namespace Dingo
 		UploadBuffer(buffer, nvrhiBuffer->m_Data, nvrhiBuffer->m_DataSize, nvrhiBuffer->m_DataOffset);
 	}
 
-	void NvrhiCommandList::UploadTexture(Texture* texture, const void* data, uint64_t rowPitch)
+	void NvrhiCommandList::UploadTexture(Texture* texture, const void* data, uint32_t mip, uint32_t layer, uint64_t rowPitch, uint64_t depthPitch)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before uploading a texture.");
 		DE_CORE_ASSERT(texture, "Texture is null.");
 
 		nvrhi::ITexture* handle = static_cast<NvrhiTexture*>(texture)->m_Handle;
-		m_CommandListHandle->writeTexture(handle, 0, 0, data, rowPitch);
+		m_CommandListHandle->writeTexture(handle, layer, mip, data, rowPitch, depthPitch);
 		m_UploadedSinceDraw = m_LastDrawFramebuffer != nullptr;
 
 		// NVRHI requires a binding set's states only when the bound sets change, so a draw that keeps
@@ -115,7 +115,7 @@ namespace Dingo
 		const nvrhi::TextureDesc& desc = handle->getDesc();
 		if (desc.initialState != nvrhi::ResourceStates::Unknown)
 		{
-			m_CommandListHandle->setTextureState(handle, nvrhi::AllSubresources, desc.initialState);
+			m_CommandListHandle->setTextureState(handle, nvrhi::TextureSubresourceSet(mip, 1, layer, 1), desc.initialState);
 			m_CommandListHandle->commitBarriers();
 		}
 	}
@@ -364,6 +364,9 @@ namespace Dingo
 					break;
 				case nvrhi::ResourceType::Texture_UAV:
 					m_CommandListHandle->setTextureState(static_cast<nvrhi::ITexture*>(item.resourceHandle), item.subresources, nvrhi::ResourceStates::UnorderedAccess);
+					break;
+				case nvrhi::ResourceType::Texture_SRV:
+					m_CommandListHandle->setTextureState(static_cast<nvrhi::ITexture*>(item.resourceHandle), item.subresources, nvrhi::ResourceStates::ShaderResource);
 					break;
 				default:
 					break;

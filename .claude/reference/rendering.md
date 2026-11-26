@@ -5,8 +5,8 @@ Read on demand from CLAUDE.md. Shaders, Renderer2D/3D, lighting, skinning and an
 - DingoUI renderer · Shaders and cache · Renderer2D · Renderer3D and batching · Culling.
 - Upload arena and instancing · Static batches · Translucency · Lighting and fog · Lit materials.
 - Pipeline state and winding · Skinning · Animator · Animation events · Root motion · Model reload.
-- Render targets and readback · Post chain · Bloom and ambient occlusion · Shadows and probes.
-- Compute · Particles · Vulkan and NVRHI rules.
+- Render targets and readback (incl. texture mips, arrays, cubes, volumes, HDR) · Post chain · Bloom and ambient occlusion · Shadows and probes.
+- Compute (incl. mip, cube and 3D bindings) · Particles · Vulkan and NVRHI rules.
 
 ## DingoUI renderer
 
@@ -260,13 +260,20 @@ Read on demand from CLAUDE.md. Shaders, Renderer2D/3D, lighting, skinning and an
 - `Renderer::Draw(Material*, n)` / `Draw(RenderPass*, n)` draw without vertex buffers (no input layout: D3D11 has none with zero elements); `DrawIndexed` takes an `instanceCount` and (Headstone #91) a `firstIndex` (`NvrhiCommandList` → `startIndexLocation`; `indexCount = 0` is then the rest of the buffer, `Renderer::GetIndexCount(buffer, firstIndex)`, which the Mesh 3D Test checks as a number since D3D reads past the end as index 0, #156).
 - `Texture::ReadPixels` reads every colour format (`TexturePixels::Format`, `GetPixel` decodes halves and R11G11B10F); `SaveToFile` stays RGBA8.
 - Tests share `Tests/TestChecks.h`; the Render Target Test (`--test=target`) checks the groundwork by readback.
-- **Readback** (v0.8.3, #90): `Texture::ReadPixels(done)` (RGBA8 2D only) records a copy into a staging texture.
+- **Readback** (v0.8.3, #90): `Texture::ReadPixels(done)` records a copy into a staging texture.
 - Inside a frame it joins the frame list (never a list of its own mid-frame: D3D11's `ClearState`), puts back the texture's previous resource state (D3D12 caches the state a framebuffer or binding set left it in) and `done` runs through the private `Renderer::RunAfterFrame` at the next `BeginFrame`/`SkipFrame` (before `Begin`, render thread parked) or at `Shutdown`.
 - Outside a frame it executes its own list and resolves at once, but only while `Renderer::IsRenderThreadParked()` (from `BeginFrame`/`SkipFrame` to `EndFrame`, and before the first frame); between frames (event handlers, post-execution callbacks, `OnDestroy`) the render thread may be submitting, so the whole copy waits in `RunAfterFrame`.
 - NVRHI's `mapStagingTexture` waits for the copy on every backend.
 - Row 0 is the texture's first row: the top of a render target, the bottom of a file image (`ReadImage` flips on load).
 - `SaveToFile` flips non-render-targets back, and `FileSystem::WriteImage` (stb_image_write v1.16, `vendor/stb/include`, encoded to memory and written through `std::ofstream` for Unicode paths) takes its own `flipVertically`.
 - A render target drawn on a Renderer2D quad needs a negative height to stand upright.
+- **Texture foundations** (v1.3 P1, docs/textures.md): `TextureDimension::TextureCube` (faces +X -X +Y -Y +Z -Z = layers 0..5), `TextureParams::Depth/MipLevels/ArrayLayers` (+ setters; `MipLevels` 0 = full chain, `GetMipLevelCount(w, h, d)` in `Texture.h`; `ArrayLayers` > 1 on `Texture2D` = `Texture2DArray`).
+- `Graphics/TextureLayout.h` (`GetMipExtent`, `GetSubresourceBytes`, `GetTextureArrayLayers`, `NormalizeTextureParams`): `Texture::Create` and `NvrhiTexture::Reinitialize` validate first (cube square + 6 layers; Depth > 1 only 3D; layers > 1 only 2D/cube; render target and D32 single-layer 2D, D32 one mip); a bad set logs and `Create` returns nullptr.
+- `Texture::Upload`/`InitialData` = mip 0 of every layer in order; `UploadSubresource(data, mip, layer)` (3D: all slices of the mip, layer 0). Both go through `NvrhiTexture::UploadLayers` and `CommandList::UploadTexture(tex, data, mip, layer, rowPitch, depthPitch)`, which restores only that subresource's state (#154 rule).
+- `ReadSubresource(mip, layer, done)` (layer = array layer, cube face or 3D z slice); `ReadPixels` = `ReadSubresource(0, 0)` on every dimension but 1D. Shared `DescribeSubresource`/`RecordSubresourceCopy` (2D staging of the mip extent, 3D `w*h*1` staging + `setOrigin(0,0,z)`) put back only that subresource's prior state; `NvrhiTextureReadback` uses them for mip 0 layer 0.
+- `Texture::CreateFromHdrFile(path, RGBA16F|RGBA32F)`: `Internal::ReadImageHdr[FromMemory]` (`stbi_loadf` under `s_StbMutex`, flipped like `ReadImage`) through the VFS (packs work); `Internal::FloatToHalf` in `Graphics/HalfFloat.h` (RNE, NaN/negative -> 0, clamp 65504). `CreateFromFile` and the AssetManager still load `.hdr` as RGBA8 until Phase 3.
+- Cube and 3D textures can't go to Renderer2D, ImGui or DingoUI (their views are 2D).
+- Texture Subresource Test (`--test=subresource`), doctests in `test/UnitTests/src/TextureLayoutTests.cpp`.
 
 ## Post chain
 
@@ -334,6 +341,10 @@ Read on demand from CLAUDE.md. Shaders, Renderer2D/3D, lighting, skinning and an
 - Writes belong in compute (D3D11: no vertex-stage UAVs, 8 compute UAV slots).
 - NVRHI places a binding set's barriers only when the bound sets change, so `NvrhiCommandList::Dispatch`, and a draw whose `RenderPass` has storage items, require every storage item's state (`RequireStorageStates`) before setting the state, and `GraphicsBuffer::ReadBack` puts the buffer's state back after its copy (#114).
 - Instancing needed nothing new (P2's `instanceCount`).
+- **Mips, cubes, volumes** (v1.3 P1): `SetTexture(binding, tex, baseMip = 0, mipCount = 0)` gives the SRV `TextureSubresourceSet(baseMip, mipCount or AllMipLevels, 0, AllArraySlices)`; `SetStorageTexture(binding, tex, mip = 0)` the UAV `(mip, 1, 0, All)`, with `Texture2DArray` dimension for a cube (else Vulkan makes an `eCube` storage view). `NvrhiComputePass::Binding` keeps `BaseMip/MipCount`; an out-of-range request logs and binds nothing, and `Prepare` drops a binding a `Reinitialize` made too big.
+- A compute pass also collects `Texture_SRV` items into `m_StorageItems`, and `RequireStorageStates` moves them to `ShaderResource`, so a mip written by one dispatch is a readable SRV in the next, and tracking per mip lets one pass read mip N-1 and write N.
+- Shader rules: cube mip = `writeonly image2DArray` (z = face), 3D = `writeonly image3D`; no `imageLoad` on `rgba16f/rgba32f/rgba8` (FXC X3676 on SM5.0/5.1; `r32f` is fine); `GL_EXT_samplerless_texture_functions` for `texelFetch/textureSize` on a bare `texture2D/3D`.
+- Engine include `<DingoEngine/CubeMap.glsl>` (`DE_CubeFaceDirection(face, uv)`, D3D/Vulkan convention) is in `EngineShaders.cpp`'s embedded list.
 - Compute Test (`--test=compute`).
 
 ## Particles

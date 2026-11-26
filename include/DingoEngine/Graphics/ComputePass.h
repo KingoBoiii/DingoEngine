@@ -70,10 +70,18 @@ namespace Dingo
 		/// Binds a storage buffer (BufferType::StorageBuffer); readonly or writable as the shader
 		/// declares the block.
 		virtual void SetStorageBuffer(uint32_t binding, GraphicsBuffer* buffer) = 0;
-		/// Binds a texture the shader samples or reads.
-		virtual void SetTexture(uint32_t binding, Texture* texture) = 0;
-		/// A texture made with TextureParams::IsStorage, as an image the shader writes.
-		virtual void SetStorageTexture(uint32_t binding, Texture* texture) = 0;
+		/// Binds a texture the shader samples or reads. `baseMip` and `mipCount` pick the mip range
+		/// the shader sees; mipCount 0 means every mip from baseMip. A range that doesn't fit the
+		/// texture is kept as an invalid binding: Renderer::Dispatch logs an error and skips the pass
+		/// until the slot is set again with valid arguments. One texture bound both here and with
+		/// SetStorageTexture needs the sampled range and the storage mip to be disjoint, or the
+		/// dispatch is skipped the same way.
+		virtual void SetTexture(uint32_t binding, Texture* texture, uint32_t baseMip = 0, uint32_t mipCount = 0) = 0;
+		/// A texture made with TextureParams::IsStorage, as an image the shader writes, at `mipLevel`
+		/// (all array layers or cube faces). An out-of-range mip, or any mip above 0 of a Texture3D
+		/// (D3D builds a 3D storage view over mip 0's depth), is kept as an invalid binding that
+		/// makes Renderer::Dispatch log an error and skip the pass until the slot is set again.
+		virtual void SetStorageTexture(uint32_t binding, Texture* texture, uint32_t mipLevel = 0) = 0;
 		/// Binds a sampler at the shader's `binding`.
 		virtual void SetSampler(uint32_t binding, Sampler* sampler) = 0;
 		/// Copies `size` bytes to the start of the shader's push-constant block and zeroes the rest;

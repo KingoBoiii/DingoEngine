@@ -29,7 +29,7 @@ namespace Dingo
 
 		virtual void UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0) override;
 		virtual void UploadKeptData(GraphicsBuffer* buffer) override;
-		virtual void UploadTexture(Texture* texture, const void* data, uint64_t rowPitch) override;
+		virtual void UploadTexture(Texture* texture, const void* data, uint32_t mip, uint32_t layer, uint64_t rowPitch, uint64_t depthPitch) override;
 
 		virtual void SetFramebuffer(Framebuffer* framebuffer) override;
 		virtual void SetViewport(const Viewport& viewport) override;

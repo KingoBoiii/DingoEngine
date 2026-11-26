@@ -49,7 +49,7 @@ namespace Dingo::Internal
 		virtual void UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0) = 0;
 		// Re-sends the range the buffer's last Upload named, from the pointer it kept.
 		virtual void UploadKeptData(GraphicsBuffer* buffer) = 0;
-		virtual void UploadTexture(Texture* texture, const void* data, uint64_t rowPitch) = 0;
+		virtual void UploadTexture(Texture* texture, const void* data, uint32_t mip, uint32_t layer, uint64_t rowPitch, uint64_t depthPitch) = 0;
 
 		// Binds the framebuffer with a viewport covering all of it.
 		virtual void SetFramebuffer(Framebuffer* framebuffer) = 0;
