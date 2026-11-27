@@ -108,6 +108,7 @@ Asset types are inferred from the file extension:
 | `Model` | `.obj` `.gltf` `.glb` `.fbx` |
 | `Font` | `.ttf` `.otf` |
 | `AudioClip` | `.wav` `.ogg` `.mp3` |
+| `Environment` | `.hdr` (v1.3: a panorama baked to a cube map, see [Environment](environment.md); packs like any file) |
 
 A submesh's `DiffuseTexture` is its material's first diffuse image, from a file
 beside the model or embedded in it (a GLB's images, an FBX's embedded files);
@@ -311,10 +312,10 @@ frees the object while game code may still hold the pointer it was handed.
 | `Import(path)` | Register only (no load). `k_InvalidAsset` for unknown extensions. |
 | `Load(path)` | Register + load now (unless a background load is already in flight). |
 | `LoadAsync(path)` | Register + load in the background. |
-| `Reload(handle)` | Synchronous reload. Textures, shaders and models refresh **in place** (pointers stay valid); fonts and audio clips are recreated. No-op while a load is in flight. |
+| `Reload(handle)` | Synchronous reload. Textures, shaders, models and environments refresh **in place** (pointers stay valid); fonts and audio clips are recreated. No-op while a load is in flight. |
 | `Unload(handle)` | Free the object, keep the registration. Invalidates borrowed pointers. |
 | `Remove(handle)` | Free + forget. |
-| `GetTexture/GetShader/GetModel/GetFont/GetAudioClip(handle)` | Typed access; `nullptr`/empty until the asset has a loaded object. An in-place reload keeps serving the live pointer. |
+| `GetTexture/GetShader/GetModel/GetFont/GetEnvironment/GetAudioClip(handle)` | Typed access; `nullptr`/empty until the asset has a loaded object. An in-place reload keeps serving the live pointer. |
 | `Get<T>(handle)` | Template form of the above (not for `AudioClip`). |
 | `IsReady/GetState/GetMetadata(handle)`, `FindByPath(path)` | Queries. `IsReady` stays true across an in-place reload. |
 | `GetRegisteredCount/GetLoadedCount/GetPendingCount/GetReloadingCount()` | Stats (debug/loading UI). |
@@ -333,7 +334,7 @@ live shader + texture editing.
 - The manager is main-thread-only (`GetPendingCount()` and `GetReloadingCount()` aside). Only
   textures and audio clips decode on the loader thread; shaders, models and fonts load on the main
   thread, one per frame when loaded asynchronously.
-- Hot-reload watches textures, shaders, and models with their `.events` and `.ragdoll` files. Fonts and audio
+- Hot-reload watches textures, shaders, environments (`.hdr`, reloaded in place and baked again at the next use) and models with their `.events` and `.ragdoll` files. Fonts and audio
   clips are not watched, `Reload` recreates them (invalidating borrowed pointers), a glTF's `.bin`
   is not watched, and a file read from a package never reloads.
 - Inline shaders (`Shader::CreateFromSource`) have no file to watch.

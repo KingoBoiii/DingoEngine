@@ -4,7 +4,8 @@
 
 A `Texture` is more than one image. It can have a mip chain, several array layers, six cube faces
 or a 3D volume. This page covers creating them, filling and reading one mip or layer at a time,
-and loading an HDR image. Writing them from a shader is in [Compute](compute.md).
+and loading an HDR image. Writing them from a shader is in [Compute](compute.md). A cube made from
+a panorama and drawn as a sky is an [Environment](environment.md).
 
 ## Creating one
 

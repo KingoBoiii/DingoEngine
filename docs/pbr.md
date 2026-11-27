@@ -1,8 +1,8 @@
 # PBR materials
 
-Status: v1.3. Analytic lights (directional, point, spot) with shadows, fog and AO. Image-based
-lighting and a skybox follow in a later v1.3 phase; until then the ambient term is the scene's
-ambient colour.
+Status: v1.3. Analytic lights (directional, point, spot) with shadows, fog and AO. A skybox is
+in ([Environment and skybox](environment.md)); image-based lighting follows in a later v1.3 phase, and
+until then the ambient term is the scene's ambient colour.
 
 Lighting is GGX with height-correlated Smith visibility and Schlick Fresnel. Albedo and emissive maps,
 the mesh colour, the ambient colour and every light's colour are authored in sRGB, as for lit

@@ -182,7 +182,9 @@ More than one candidate at step 2 (or, with none there, at step 3) warns once.
 - **What it covers:** the lit shader's static and skinned draws, emissive and highlights included,
   before the post chain's tone curve. Particles, custom material shaders (unless they mirror the
   fog members, see [below](#custom-material-shaders)) and the 2D overlay aren't fogged, and the
-  background is the clear colour, not fog: match the two, as `UseClearColor` does.
+  background is the clear colour, not fog: match the two, as `UseClearColor` does. A
+  [skybox](environment.md) isn't fogged either: set `UseClearColor` to false and `Fog.Color` to the
+  sky's horizon colour.
 - **Blend modes:** a lit material with `BlendMode::Additive` fogs toward black and one with
   `BlendMode::Multiply` toward white, so the fog hides a glow instead of lighting it up; `Alpha` and
   `Opaque` fog toward the fog's colour.

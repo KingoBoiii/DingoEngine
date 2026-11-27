@@ -4,7 +4,7 @@ Read on demand from CLAUDE.md. Shaders, Renderer2D/3D, lighting, skinning and an
 
 - DingoUI renderer · Shaders and cache · Renderer2D · Renderer3D and batching · Culling.
 - Upload arena and instancing · Static batches · Translucency · Lighting and fog · Lit materials.
-- Pipeline state and winding · Skinning · Animator · Animation events · Root motion · Model reload.
+- Environment and skybox · Pipeline state and winding · Skinning · Animator · Animation events · Root motion · Model reload.
 - Render targets and readback (incl. texture mips, arrays, cubes, volumes, HDR) · Post chain · Bloom and ambient occlusion · Shadows and probes.
 - Compute (incl. mip, cube and 3D bindings) · Particles · Vulkan and NVRHI rules.
 
@@ -187,6 +187,17 @@ PBR materials were added in v1.3 Phase 2 (`docs/pbr.md`).
 - `ModelLoadParams::SetPbrMaterials(true)` turns on the glTF import (`Model.cpp` `LoadMaterialTexture`, `CreateImportedPbrMaterial`, `CopyPbrMaterial` on reload).
 - assimp 6.0.4 stores the occlusion strength as `"$tex.file.strength"`, not `AI_MATKEY_GLTF_TEXTURE_STRENGTH`.
 - CPU mip chains come from `Graphics/MipChain.h`; normal maps are renormalised.
+
+## Environment and skybox
+
+- `Environment` (`Graphics/Environment.cpp`, `EnvironmentAccess.h` for the asset manager, `EnvironmentLayout.h` for the face-size rule): the `.hdr` is decoded to RGBA16F halves at `Create`, a cube (RGBA16F, storage, full mips) and a 2D equirect texture are made, nothing is uploaded yet. `AssetManager` uses it through `AssetType::Environment` (load, async decode, `ReloadInPlace` via `EnvironmentAccess::Reload`, which `Reinitialize`s the cube so its `GetId()` stays).
+- **Bake** (`Environment::Prepare`, needs a recording command list and not `IsFrameSkipped`): `UploadSubresource` of the halves into the equirect in the frame's list, then `Shaders/EnvironmentBake.glsl` compute: `DE_ENV_EQUIRECT` writes mip 0 (2 x 2 taps, repeat-U/clamp-V sampler), then `DE_ENV_DOWNSAMPLE` per mip reads mip N-1 as a `textureCube` at the shared texel corner and writes mip N (one pass each; push constant x = mip size; z = face). The temporary equirect and `ComputePass`es go to `Renderer::RunAfterFrame`. The conventions (`DE_EquirectUv`, `DE_RotateY`) live in `Shaders/Environment.glsl`, written so `EnvironmentTests.cpp` compiles it as C++ over GLM.
+- **`Renderer3D::EndScene` order**: `ResolveSceneLights`, then `m_PendingEnvironment` is copied (before `ClearSceneLights`/the end-of-scene `ClearEnvironment`) and `Prepare()` runs if not ready (counts `EnvironmentBakes`), then fog and shadow preparation, shadow pass, opaque batches, skinned, then `DrawSkybox`, then translucents. A render target without depth (`EnableDepth` false) draws the sky first, before the opaque batches. A scene skipped for the frame draws none. Only a perspective camera (`CameraPosition.w`) draws it.
+- **Draw** (`Renderer3D::DrawSkybox`, `Shaders/Skybox.glsl`): one `Renderer::Draw(material, 3)` fullscreen triangle at z = w = 1, `DepthCompare::LessEqual`, no depth write, no culling, opaque. The ray is `normalize(unproject(ndc, 1) - unproject(ndc, 0))` with the inverse view-projection computed in double; the engine has no reverse-Z. Output is `LinearToSrgb(radiance * intensity)`.
+- **Bindings**: UBO `SkyboxData` at 0 (std140, 96 bytes: inverse view-projection, `Params` = cos/sin of the turn `-Rotation` and intensity, reserved), the cube at 1, `Renderer::GetClampSampler()` at 2.
+- **Material cache**: `m_SkyboxMaterials`, keyed by the cube's `Texture::GetId()` (an in-place reload keeps it), each with `SetUniformWritesPerFrame(k_MaxScenesPerFrame)`; one not used for more than `k_MaxIdleBatchScenes` scenes is destroyed by `ReleaseIdleSkyboxes` (called from `BeginSceneInternal`, next to `ReleaseIdleTwins`), so a deleted `Environment` leaves nothing but a short-lived material. All are freed in the destructor.
+- **Scene side**: `LightSystem::SubmitSkybox` (called at the end of `SubmitLights`) picks the `SkyboxComponent` like the fog and calls `SetEnvironment`; `Visible` becomes `DrawSkybox`.
+- **Hooks for later**: `ApplySkyFog(color, dir)` in `Skybox.glsl` is the identity (Phase 5 froxel fog); `Visible = false` keeps the environment for Phase 4 IBL.
 
 ## Pipeline state and winding
 
@@ -433,6 +444,7 @@ PBR materials were added in v1.3 Phase 2 (`docs/pbr.md`).
 - Raw NVRHI buffers pad their own (the ImGui index buffer, #86); volatile buffers are copied byte for byte.
 - After the write, `Write` puts a non-volatile buffer back into its initial state and commits the barrier at once (#145): NVRHI moves vertex and index buffers out of `CopyDest` only when the bound buffer changes, so a scene that rewrites the batch buffers the last scene left bound drew without a barrier; a pending barrier would be ORed with the next state, which D3D12 rejects for a read state plus a write state.
 - `NvrhiCommandList::UploadTexture` does the same for a texture (#154: a mid-frame `Texture::Upload` between two draws of one binding set left it in `CopyDest`; the Render Target Test draws one material twice around an upload).
+- **Clears keep their target alive**: NVRHI's Vulkan `clearTexture`/`clearDepthStencilTexture` don't add the texture to the command buffer's references (D3D12's do), so `NvrhiCommandList::Clear` calls `setTextureState` on each attachment it clears (the colour one after the clear, with the state the clear left it in, so no backend records a barrier; requiring `CopyDest` first doubled every clear's barrier on D3D12, whose clear needs `RenderTarget`). Without it a framebuffer only cleared in a frame, then resized or destroyed by a post-execution callback, was freed while the GPU cleared it (`VUID-vkDestroyImage-image-01000`, the Skybox Test's first frame). A new raw NVRHI clear does the same.
 - Custom material shader binding convention: **0** = scene UBO, **1** = the material's own `SetUniform` params, **2+** = textures/samplers, interleaved.
 - The binding set must match shader reflection exactly.
 - The scene UBO (`Renderer3D::CameraData`, std140, volatile, uploaded at the top of `EndScene`) starts with a frozen 96-byte prefix (`ViewProjection`, `LightDirection`, `Ambient`) that custom shaders may declare alone; the lights follow, then the fog, mirrored by `CameraData` in `Renderer3D_Lit.glsl`.

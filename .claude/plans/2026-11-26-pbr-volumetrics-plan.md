@@ -1,4 +1,4 @@
-**Status**: open — Phase 1 committed (`3d33d8fc`); Phase 2 built, reviewed and GPU-verified 2026-11-27 (uncommitted); next: Phase 3
+**Status**: open — Phases 1–2 committed (`3d33d8fc`, `97235b5e`, `13c54ffb`); Phase 3 committed (`a94c3af8`); next: Phase 4
 
 # v1.3: PBR materials, image-based lighting and volumetric fog
 
@@ -193,6 +193,101 @@
 - `Environment` asset: `.hdr` → cube (compute), `Renderer3D::SetEnvironment`, `SkyboxComponent` (environment, intensity, rotation), drawn after opaque at the far plane.
 - Asset manager and packing support for `.hdr`.
 
+
+### Phase 3 design (engine-designer, 2026-11-27)
+
+**Gaps found**
+- G1. `.hdr` isn't an asset type: `AssetTypeFromExtension` doesn't list it (`AssetTypes.cpp:44-55`), so `Unpackage` skips packed `.hdr` files (`AssetPackaging.cpp:305`). `Package` already packs every file (`AssetPackage.h:42-52`).
+- G2. `Renderer::Dispatch` only records into the frame list (`Renderer.cpp:642-647`). A texture created with `InitialData` outside a frame submits its own list (`NvrhiTexture.cpp:231-233`, `:275-289`) = #337; `createTexture` alone submits nothing (`:200`). So the cube conversion runs inside a frame and the equirect pixels reach the GPU through the frame list.
+- G3. No reverse-Z: depth clears to 1.0 (`NvrhiTexture.h:11`); D3D clamps depth to 1, so `Less` never passes at the far plane (`rendering.md:52`). The sky uses `LessEqual`, no depth write. No MSAA (`NvrhiFramebuffer.cpp:114`).
+- G4. A material without a scene buffer binds its UBO at 0, slot 0's texture at 1, sampler at 2 (`Material.cpp:354-358`). Default sampler is linear-trilinear-clamp (`Renderer.cpp:132`, `Sampler.h:15-22`).
+- G5. Scene-scoped renderer state is cleared in `ClearSceneLights` (`Renderer3D.cpp:615`), before the draws, so `EndScene` copies fog into `m_CameraData` first (`:590-607`). Scene fog is chosen by `SubmitFog` (`LightSystem.cpp:98-146`) from `SubmitLights` (`:149`), called by `SceneRenderer` (`SceneRenderer.cpp:76`).
+- G6. Scenes are not serialised; only the debug inspector lists components (`SceneDebug.cpp:208`, `:695`).
+- G7. AO at depth ≥ 1 is exactly 1 (`PostAmbientOcclusion.glsl:61-63`), so a sky writing no depth leaves AO, soft particles and the depth copy as with a clear background.
+
+**Public API** (recommended options; see P1–P10)
+- New `include/DingoEngine/Graphics/Environment.h`:
+  - `EnvironmentParams { Path; FaceSize = 0 (auto); DebugName }` with setters.
+  - `class Environment`: `static Environment* Create(const EnvironmentParams&)` (nullptr when no device, not `.hdr`, or bad size); `~Environment`, `bool Prepare()`, `bool IsReady() const`, `Texture* GetCubeMap() const`, `uint32_t GetFaceSize() const`, `uint32_t GetMipLevelCount() const`, `uint64_t GetId() const` (never reused).
+  - `SceneEnvironment { Dingo::Environment* Environment = nullptr; float Intensity = 1; float Rotation = 0 /*deg about +Y*/; bool DrawSkybox = true; }`.
+- `Renderer3D` (next to `SetFog`, `Renderer3D.h:325-333`): `bool SetEnvironment(const SceneEnvironment&)` (false for non-finite or negative intensity), `void ClearEnvironment()`. Scene-scoped like `SetFog`: last call before `EndScene` wins; `EndScene` clears it. `Statistics` (`:539-629`) gains `bool Skybox`, `uint32_t EnvironmentBakes`.
+- `SkyboxComponent { Dingo::Environment* Environment = nullptr; float Intensity = 1; float Rotation = 0; bool Visible = true; bool Enabled = true; }` in `Components.h` after `FogComponent` (`:335`); spell the member `Dingo::Environment*` (GCC). Phase 4 IBL reads the same component; `Visible = false` = IBL with no sky.
+- `AssetType::Environment` appended before `Count` (`AssetTypes.h:22-34`); `GetEnvironment(handle)` and `Get<Environment>` (update the static_assert text, `AssetManager.h:193-217`).
+
+**Environment (internal)**
+- Owns two `Texture*`, deleted in the destructor: the cube (`TextureCube`, RGBA16F, full mip chain `MipLevels = 0`, `IsStorage`, sampled) and the equirect (RGBA16F 2D, one mip, no `InitialData`, so it submits nothing).
+- `Create` reads the file through the VFS (the `Texture.cpp:117-145` path, `FloatToHalf`) and keeps the halves on the CPU until the bake.
+- Format and full chain are final for Phase 4: GGX prefilter importance sampling needs the source mips, SH9 projects from a small mip. Phase 4 adds its prefiltered cube, SH buffer and LUT beside them.
+- Face size: auto `floor_pow2(W/4)` clamped to [32, 1024] (4k equirect → 1024², ~64 MB with mips). Explicit size must be a power of two in [16, 2048], else nullptr. Pure function `Internal::ChooseEnvironmentFaceSize` in `Graphics/EnvironmentLayout.h` (doctested).
+- Bake (`Prepare`), inside a frame only (false outside one, in a skipped frame, or with an invalid bake shader, logged once):
+  1. `UploadSubresource` the halves into the equirect (joins the frame list, `NvrhiTexture.cpp:268-272`; #337 doesn't widen).
+  2. Dispatch `EnvironmentBake.glsl` `DE_ENV_EQUIRECT`: 8×8 groups, z = face; equirect `texture2D` at 1, sampler at 2 (linear, U repeat, V clamp), `writeonly image2DArray rgba16f` at 3 (`SetStorageTexture(3, cube, 0)`); face size in push constants; 2×2 stratified taps per texel.
+  3. Each mip N ≥ 1: `DE_ENV_DOWNSAMPLE` reads mip N−1 via `SetTexture(1, cube, N-1, 1)` as `textureCube`, `textureLod(dir, 0)` at the destination texel centre (the shared corner of four source texels, so bilinear = exact average, no `imageLoad`), writes mip N.
+  4. Free the CPU halves; move the equirect and per-mip ComputePasses into a `Renderer::RunAfterFrame` lambda that deletes them (never refers back to the Environment). NVRHI keeps GPU handles alive until the list retires (`NvrhiTexture.cpp:225`).
+- Shaders in `Graphics/EnvironmentShaders.{h,cpp}`: `Internal::GetEnvironmentShader(EquirectBake|Downsample|Skybox)`, lazy via `CreateEngineShader`, watched like PBR (`PbrShaders.cpp:35-54`); `DestroyEnvironmentShaders` beside `DestroyPbrShaders` (`Renderer.cpp:178`).
+- `Internal::EnvironmentAccess` (friend, like `MaterialAccess`) gives the AssetManager create-from-halves and in-place reload (`Texture::Reinitialize` on the cube: same id, new generation, cached sets rebind, needs a re-bake).
+- Lifetime: owned by the caller or the AssetManager, deleted before `Renderer::Destroy`; alive from `SetEnvironment` to `EndScene` (like a mesh for `SubmitMesh`); deleting after the scene that drew it is safe (NVRHI refs). Phase 4 adds its IBL stages to `Prepare`.
+
+**Render pass order and pipeline**
+- `EndScene`: right after `ResolveSceneLights` (`Renderer3D.cpp:588`) copy the pending `SceneEnvironment` to a local (`ClearSceneLights` at `:615` drops it); call `Prepare()` (counts `EnvironmentBakes`) before the shadow pass; `DrawSkybox()` between `DrawSkinnedSubmissions()` (`:686`) and `DrawTranslucentPass` (`:687`). Translucents, particles, then post `End` (tone map, bloom) draw over it.
+- Target with no depth attachment: draw the sky before the opaque loop (`:641`).
+- Skip for orthographic (`CameraPosition.w < 0.5`), `DrawSkybox == false`, or not ready.
+- `Skybox.glsl`: vertex = fullscreen triangle (`Fullscreen.glsl:9-11`), `gl_Position = vec4(ndc, 1, 1)`, passes `v_Ndc`. Fragment: `dir = unproject(ndc,1) − unproject(ndc,0)` via `InverseViewProjection`, rotate about Y by −Rotation, `texture(samplerCube(u_Cube, u_Sampler), dir)` implicit LOD (no branches), `o_Color = vec4(LinearToSrgb(rgb * Intensity), 1)`. Hook `ApplySkyFog(color, dir)` = identity for Phase 5.
+- `SkyboxData` UBO at 0, std140, append-only, 96 B: `mat4 InverseViewProjection` (CPU `glm::inverse(dmat4(VP))`), `vec4 Params` (cos θ, sin θ, intensity, spare), `vec4 Reserved`. Cube at 1, `Renderer::GetClampSampler()` at 2 (D3D11 b0/t1/s2).
+- Material: `CullMode::None`, `Opaque`, depth test on, write off, `LessEqual`, `UniformWritesPerFrame = k_MaxScenesPerFrame` (UBO written in every scene). One per cube, `m_SkyboxMaterials` keyed by `Texture::GetId()` (swapping a texture rebuilds pipelines, `FullscreenPass.h:10-14`); idle for `k_MaxIdleBatchScenes` → released like `ReleaseIdleTwins` (`:555`); all freed in `Shutdown`. A released entry never touches its possibly freed texture (implementer confirms `Material`'s destroy path). `Renderer::Draw(material, 3)` in the current target/viewport.
+
+**Colour space**
+- `.hdr` is linear radiance; the sky outputs `LinearToSrgb(radiance × Intensity)` (`Brdf.glsl:41`, extends past 1) — the same display-space encoding PBR applies before fog and lit outputs natively. Radiance 1 = white 255, like a fully lit white surface; independent of PBR.
+- Into the RGBA16F post scene target values > 1 survive to tone map/bloom; into the RGBA8/BGRA8 swap chain they clip, as lights do.
+- `Intensity` is linear. Phase 4: uniform sky radiance 1 → irradiance π → PBR diffuse albedo/π × E = albedo, matching `AmbientColor` white 1.
+
+**Fog**
+- Distance `Fog` doesn't apply to the sky (joins the "not fogged" list, `Renderer3D.h:325-331`, `docs/lighting.md`). Document: with a skybox set `FogComponent::UseClearColor = false` and `Fog.Color` = horizon colour. Phase 5 fills `ApplySkyFog` from the froxel grid's last slice.
+
+**Scene/ECS**
+- `SubmitSkybox` beside `SubmitFog` (`LightSystem.cpp:98-146`), same rules: the camera entity's own enabled component wins, else the first enabled one on a non-camera entity in entity order; inactive entities skipped; a second candidate warns once. Called from `SubmitLights` (`:149`); `SetEnvironment` after `Scene::SubmitLights` overrides it.
+- Register with `DE_INSTANTIATE_COMPONENT` (`Entity.cpp:521`), `BuiltinComponents` (`ComponentStorage.h:49-55`), `CopyComponentIfExists` (`Scene.cpp:192`), `SceneDebug.cpp:208`/`:695`. No serialisation (G6).
+
+**AssetManager and packing**
+- `.hdr` → `Environment` (`AssetTypes.cpp:44-55`), `ToString` (`:11-23`), doc list (`AssetTypes.h:68-72`).
+- Policy row after AudioClip (`AssetManager.cpp:409`, static_assert `:436`): `Load` = `Environment::Create`; worker `Decode` = `VirtualFileSystem::ReadBytes` + `ReadImageHdrFromMemory` + halves into new `AsyncResult::HalfPixels` (`AssetManagerData.h:65-77`); `Publish` creates or reloads in place; `ReloadInPlace` keeps the previous on failure; `HotReloadWatched` and `NeedsGraphicsDevice` true; `Environments` map beside `Textures` (`AssetManagerData.h:114`); update the `SupportsInPlaceReload` doc (`AssetManager.h:236-240`).
+- ImGui per-type counts follow `Count` (`ImGuiDebugPanels.cpp:751`). `.hdr` stays deflated in packs (`PackWriter.cpp:19` unchanged).
+
+**Backends**
+- Cube `image2DArray` storage views are Phase 1's (`NvrhiComputePass.cpp:83`).
+- New: cube SRV of mip N−1 plus 2D-array UAV of mip N on one texture in one dispatch. D3D11: overlap tracking and "still bound" warnings (`d3d11-resource-bindings.cpp:460-493`); D3D12: 6×M per-subresource transitions; Vulkan: `CUBE_COMPATIBLE` image with cube SRV subrange plus 2D-array storage view.
+- Depth exactly 1.0: D3D depth clip is off; Vulkan clips but z = w is inside the clip volume.
+
+**Tests**
+- "Skybox Test" (`--test=skybox`) in `test/src/Tests/Renderer/SkyboxTest.{h,cpp}`, registered after `TestLayer.cpp:86`. Synthetic RGBE equirect written by the test (Phase 1 check 7 pattern): smooth analytic f(dir) plus a sun spot at 20.0. CPU references include `Environment.glsl` and `CubeMap.glsl` as C++ (the `Brdf.glsl` pattern).
+- Checks: 1 bake matches f(`DE_CubeFaceDirection`) on 6 faces of mip 0; 2 each mip = 2×2 average down to 1×1; 3 orientation −Z/+X/−X/+Y/−Y centre pixels; 4 rotation 90° direction; 5 intensity 2 doubles linear; 6 opaque box covers sky 0 px vs no sky, near-far quad after the sky still passes depth; 7 lit and PBR meshes 0 px identical with/without sky; 8 post, tone map None, −2 EV: sun 20 reads 5 before the swap chain; 9 scene precedence, `Enabled`/`Visible = false`, `InactiveComponent`, duplicate; 10 two scenes in one frame with two environments; 11 fogged scene leaves sky pixels unchanged; 12 orthographic → `Statistics::Skybox` false; 13 AssetManager `.hdr` load, hot reload keeps pointer, pack round trip in a temp dir (never `build/bin`); 14 delete unbaked / right after drawing, no validation errors; 15 non-`.hdr` or non-power-of-two size → nullptr + error.
+- On-screen view 2×2: forward sky with lit and PBR spheres; six axis viewports; rotation 90°; post HDR with exposure.
+- Doctests `test/UnitTests/src/EnvironmentTests.cpp`: equirect uv↔dir round trip, −Z = u 0.5 / +X = u 0.75 / +Y = top, face-size rule, rotation sign, `.hdr` → Environment and `ToString`.
+- Unchanged: Lighting, PBR, Batch, Throughput, Post. GPU runs via `.claude/skills/pr-gpu-test/gpu-test.ps1`.
+
+**Build groups** (each builds; each runs its checks)
+1. Pure maths: `Shaders/Environment.glsl` (`DE_EquirectUv`/`DE_EquirectDirection`, C++-compilable subset), `Graphics/EnvironmentLayout.h`, `.inl` + `s_EmbeddedShaders` rows (`EngineShaders.cpp:22-26`, `:59-63`), doctests.
+2. Environment and bake: `Environment.h/.cpp`, `EnvironmentAccess.h`, `EnvironmentShaders.{h,cpp}`, `Shaders/EnvironmentBake.glsl`, `Renderer.cpp:178`. Test skeleton + checks 1, 2, 14, 15.
+3. Renderer3D sky: `SceneEnvironment`, `Set`/`ClearEnvironment`, `Shaders/Skybox.glsl`, `m_SkyboxMaterials`, `DrawSkybox`, `Prepare` in `EndScene`, stats. Checks 3–8, 10–12.
+4. Scene/ECS: `SkyboxComponent`, 4 registrations, `SubmitSkybox`, SceneDebug. Check 9.
+5. Assets: `AssetType::Environment`, policy row, `HalfPixels`, getters. Check 13.
+6. Docs: new `docs/environment.md` (orientation, units, fog note, cube limits for 2D, ImGui and DingoUI); `asset-pipeline.md`, `scenes-and-ecs.md`, `lighting.md`, `textures.md`, `README.md`; `rendering.md` "Environment and skybox".
+
+**Needs testing on a real GPU**
+- Sky at depth exactly 1.0 on all three backends; cube SRV mip N−1 + UAV mip N (D3D11 warnings, D3D12 debug layer, Vulkan sync validation); identical panorama orientation; HDR sun blooms, > 65504 clamped; first-use bake time for a 4k HDR (Tracy zone + GPU timer "Environment"); 64 MB at 1024 face; seamless cube filtering at face edges.
+
+**Owner decisions** (2026-11-27: all A approved)
+- P1 Environment shape: (A) concrete class, `Create`/`delete`, owned by caller or AssetManager; (B) abstract interface + Internal impl; (C) `std::shared_ptr` like `StaticBatch`.
+- P2 Component: (A) `SkyboxComponent` with `Visible`, also read by Phase 4 IBL; (B) `EnvironmentComponent` with `DrawSkybox`; (C) separate Skybox and Environment components.
+- P3 Precedence: (A) scene-scoped `SetEnvironment`, component submitted in `SubmitLights`, last call wins (like `SetFog`); (B) persistent renderer setting overriding the component; (C) component always wins.
+- P4 Intensity: (A) linear multiplier; (B) EV stops; (C) nits.
+- P5 Rotation: (A) degrees about +Y; (B) quaternion; (C) entity transform.
+- P6 Face size: (A) auto `floor_pow2(W/4)` in [32, 1024], explicit powers of two up to 2048; (B) fixed 512; (C) always required.
+- P7 Distance fog on the sky: (A) unfogged + documented horizon-colour recipe; (B) fogged at infinite distance; (C) per-component `FogAmount`.
+- P8 `.hdr` in the AssetManager: (A) loads as `AssetType::Environment`; (B) RGBA16F `Texture2D`; (C) chosen by load params.
+- P9 Bake timing: (A) lazily at first `EndScene` that uses it + public `Prepare()` for loading screens; (B) lazily only; (C) in `Create` (rejected: submits outside a frame, widens #337).
+- P10 Test imagery: (A) synthetic RGBE written by the test only; (B) also a small CC0 1k HDRI in `test/assets` for the on-screen view.
+
 ## Phase 4: image-based lighting
 
 - SH9 irradiance, prefiltered specular cube mips, BRDF LUT; PBR ambient = IBL when an environment is set, else today's ambient colour.
@@ -309,4 +404,30 @@ Built as designed in 9 groups, plus:
   - 8× anisotropic filtering on all three backends;
   - D3D12 per-mip uploads during a PBR import (widens #337's exposure outside a frame).
 - **Docs:** new `docs/pbr.md`; changes to `docs/README.md`, `lighting.md`, `performance.md`, `animation.md`, `scenes-and-ecs.md`, `asset-pipeline.md`, `Shadows.glsl` binding note, and `.claude/reference/rendering.md` ("PBR materials").
+- Doxygen isn't installed here, so the PR's `API reference` job is the check.
+
+### Phase 3 (2026-11-27, `a94c3af8`)
+
+Built as designed (owner chose A for P1–P10) in 5 code groups plus docs, with these changes:
+- **Orientation:** +Y is v = 1 because the `.hdr` loader flips rows (texture row 0 is the picture's bottom); −Z = u 0.5, +X = u 0.75. Check 3 pins it.
+- **HDR through post:** the sky writes `LinearToSrgb(radiance × Intensity)` into the RGBA16F post target too, like lit and PBR draws, so a sun of 20 reaches post as about 3.7, not 20. Exposure therefore acts on encoded values: −2 EV is not a quarter of the radiance. Check 8 uses −3 EV against the encoded reference and fails if post or exposure is skipped (review M3).
+- **Sky direction** is `UnprojectPoint(0.5) − UnprojectPoint(0.0)`, finite for an infinite-far projection (review L6).
+- **Bake failure** (review M4): a failed dispatch sets `m_BakeFailed`, keeps the equirect, logs once and stops retrying until `EnvironmentAccess::Reload`. The bake shader's hot-reload generation doesn't clear it. `Prepare` has a Tracy zone and a GPU timer "Environment" (L8).
+- **AssetManager:** `.hdr` decodes on the worker through `Internal::EnvironmentAccess::DecodeHdr` (VFS + stb only); `Environment::Create` uses the same helper. The asset manager always uses the auto face size, reloads included.
+- **SubmitSkybox:** a chosen component with a null `Environment` clears an earlier `SetEnvironment`, like `SubmitFog` (review L5).
+- **Engine fix found on the way:** `NvrhiCommandList::Clear` re-requires the cleared colour target's current state after `ClearColorAttachment`. NVRHI's Vulkan `clearTexture` doesn't add the texture to the command buffer's references, so a target only cleared in a frame and then resized hit `VUID-vkDestroyImage-image-01000`. No barrier is recorded on any backend; noted in `.claude/reference/rendering.md`.
+- **Issue filed in passing:** #339, `ImGuiRenderer::m_BindingsCache` keeps every `ImGui::Image` texture alive until shutdown.
+- **Left as is (review L7):** a deleted Environment's cube lives on in its cached sky material for up to `k_MaxIdleBatchScenes` scenes (≈268 MB at a 2048 face for ~5 s), the same pattern as the lit/PBR twins.
+- **Tests:**
+  - "Skybox Test" (`--test=skybox`) runs checks 1–15 plus 7a and 12b (no-depth target draws the sky first); check 9 reports its nine scene cases separately. The on-screen view is a 2×2: sky with a lit and a PBR sphere, six axis views, 90° rotation, post at −1 EV with bloom.
+  - Doctests in `EnvironmentTests.cpp` (convention, round trip, rotation sign, face-size rule, `.hdr` → Environment). Unit tests: 231/231.
+- **Results on the owner's machine** (RX 7900 XTX, private desktops, `gpu-test.ps1`):
+  - `--test=skybox`: 27/27 on Vulkan (validation), DX11 and DX12 (debug layer clean); the only error lines are check 15's 7 deliberate rejections.
+  - Lighting 43, PBR 61, Post 23, Batch 75, Asset Manager 36, Hierarchy 94, Shadow 32, Render Target and Pack 51 unchanged on all three (Pack run one backend at a time).
+- **Review** (engine-reviewer): 0 High, 4 Medium (docs, Doxygen on deleted copies, check 8, bake retry), 5 Low; all fixed except L7 above.
+- **Needs testing on a real GPU:**
+  - D3D11 debug layer and Vulkan synchronization validation during the bake (cube SRV of mip N−1 plus UAV of mip N);
+  - a real 4k HDRI: sun orientation, bake time, ~64 MB at a 1024 face, seams at face edges;
+  - the sky at depth exactly 1.0 with `LessEqual` on another GPU vendor.
+- **Docs:** new `docs/environment.md`; changes to `docs/README.md`, `asset-pipeline.md`, `scenes-and-ecs.md`, `lighting.md`, `textures.md`, `pbr.md`, `AssetManager.h` hot-reload docs, and `.claude/reference/rendering.md` ("Environment and skybox", Vulkan clear rule).
 - Doxygen isn't installed here, so the PR's `API reference` job is the check.
