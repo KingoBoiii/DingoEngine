@@ -4,7 +4,10 @@
 #include "DingoEngine/Graphics/GraphicsDevice.h"
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
+#include "DingoEngine/Core/PathText.h"
 
+#include "DingoEngine/Graphics/HalfFloat.h"
+#include "DingoEngine/Graphics/TextureLayout.h"
 #include "NVRHI/NvrhiTexture.h"
 
 #include <atomic>
@@ -16,20 +19,7 @@ namespace Dingo
 
 	namespace
 	{
-		float HalfToFloat(uint16_t half)
-		{
-			const uint32_t sign = (half >> 15) & 1u;
-			const uint32_t exponent = (half >> 10) & 0x1Fu;
-			const uint32_t mantissa = half & 0x3FFu;
-			float value;
-			if (exponent == 0)
-				value = std::ldexp(static_cast<float>(mantissa), -24);
-			else if (exponent == 31)
-				value = mantissa ? NAN : INFINITY;
-			else
-				value = std::ldexp(static_cast<float>(mantissa | 0x400u), static_cast<int>(exponent) - 25);
-			return sign ? -value : value;
-		}
+		using Internal::HalfToFloat;
 
 		// The unsigned small floats of R11G11B10F: 5 exponent bits and no sign, like a half's top bits.
 		float SmallFloatToFloat(uint32_t bits, uint32_t mantissaBits)
@@ -113,6 +103,60 @@ namespace Dingo
 		return texture;
 	}
 
+	Texture* Texture::CreateFromHdrFile(const std::filesystem::path& filepath, TextureFormat format, const std::string& debugName)
+	{
+		if (!Internal::RequireGraphicsDevice("Texture::CreateFromHdrFile"))
+			return nullptr;
+
+		if (format != TextureFormat::RGBA16F && format != TextureFormat::RGBA32F)
+		{
+			DE_CORE_ERROR("Texture::CreateFromHdrFile: '{}': format must be RGBA16F or RGBA32F.", debugName);
+			return nullptr;
+		}
+
+		const std::filesystem::path resolvedPath = Internal::ResolveRawAssetPath(filepath);
+
+		const std::optional<std::vector<uint8_t>> bytes = FileSystem::ReadFileBytes(resolvedPath);
+		if (!bytes || bytes->empty())
+		{
+			DE_CORE_ERROR("Failed to load image: {}", Internal::PathToUtf8(resolvedPath));
+			return nullptr;
+		}
+		if (!Internal::IsHdrImage(bytes->data(), bytes->size()))
+		{
+			DE_CORE_ERROR("Texture::CreateFromHdrFile: '{}' is not a Radiance .hdr image.", Internal::PathToUtf8(resolvedPath));
+			return nullptr;
+		}
+
+		uint32_t width = 0, height = 0;
+		const float* pixels = Internal::ReadImageHdrFromMemory(bytes->data(), bytes->size(), &width, &height, true);
+		if (!pixels)
+			return nullptr;
+
+		const size_t count = static_cast<size_t>(width) * height * 4;
+		std::vector<uint16_t> halves;
+		const void* data = pixels;
+		if (format == TextureFormat::RGBA16F)
+		{
+			halves.resize(count);
+			for (size_t i = 0; i < count; ++i)
+				halves[i] = Internal::FloatToHalf(pixels[i]);
+			data = halves.data();
+		}
+
+		Texture* texture = Create(TextureParams()
+			.SetDebugName(debugName)
+			.SetWidth(width)
+			.SetHeight(height)
+			.SetDimension(TextureDimension::Texture2D)
+			.SetFormat(format)
+			.SetIsRenderTarget(false)
+			.SetInitialData(data));
+		Internal::FreeImageHdr(pixels);
+
+		return texture;
+	}
+
 	Texture* Texture::CreateFromData(uint32_t width, uint32_t height, const void* data, TextureFormat format, const std::string& debugName)
 	{
 		return Create(TextureParams()
@@ -130,10 +174,18 @@ namespace Dingo
 		if (!Internal::RequireGraphicsDevice("Texture::Create"))
 			return nullptr;
 
-		Texture* texture = new NvrhiTexture(params);
+		TextureParams normalized = params;
+		std::string error;
+		if (!Internal::NormalizeTextureParams(normalized, error))
+		{
+			DE_CORE_ERROR("Texture::Create: '{}': {}.", params.DebugName, error);
+			return nullptr;
+		}
+
+		Texture* texture = new NvrhiTexture(normalized);
 		texture->Initialize();
-		if (params.InitialData)
-			texture->Upload(params.InitialData);
+		if (normalized.InitialData)
+			texture->Upload(normalized.InitialData);
 		return texture;
 	}
 

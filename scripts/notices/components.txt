@@ -46,3 +46,4 @@ earcut.hpp (in assimp) | https://github.com/mapbox/earcut.hpp | ISC | model load
 MiniZip (in assimp) | https://www.winimage.com/zLibDll/minizip.html | Zlib | model loading | scripts/notices/licenses/minizip.txt
 zip (in assimp) | https://github.com/kuba--/zip | Unlicense | model loading | scripts/notices/licenses/kuba-zip.txt
 zlib | https://zlib.net | Zlib | model loading | scripts/notices/licenses/zlib.txt
+Poly Haven assets (Dustlight) | https://polyhaven.com | CC0-1.0 | Dustlight's models and HDRIs | examples/Dustlight/assets/LICENSES.md

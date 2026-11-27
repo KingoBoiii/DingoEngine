@@ -9,6 +9,7 @@
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Graphics/Renderer3DAccess.h"
 #include "DingoEngine/Graphics/Model.h"
+#include "DingoEngine/Graphics/PbrShaders.h"
 
 #include "DingoEngine/Scene/SceneDebug.h"
 #include "DingoEngine/Scene/SceneData.h"
@@ -189,6 +190,8 @@ namespace Dingo
 		CopyComponentIfExists<PointLightComponent>(registry, dst, src);
 		CopyComponentIfExists<SpotLightComponent>(registry, dst, src);
 		CopyComponentIfExists<FogComponent>(registry, dst, src);
+		CopyComponentIfExists<SkyboxComponent>(registry, dst, src);
+		CopyComponentIfExists<FogVolumeComponent>(registry, dst, src);
 		CopyComponentIfExists<RigidBody2DComponent>(registry, dst, src);
 		CopyComponentIfExists<BoxCollider2DComponent>(registry, dst, src);
 		CopyComponentIfExists<CircleCollider2DComponent>(registry, dst, src);
@@ -356,6 +359,7 @@ namespace Dingo
 		// runs slow through the stall instead.
 		deltaTime = std::min(deltaTime, Internal::PhysicsSync::k_MaxStepTime);
 		DE_PROFILE_SCOPE_TEXT("Scene::OnUpdate", m_Name);
+		m_Data->FogVolumeTime += static_cast<double>(deltaTime);
 
 		if (!m_Data->DebugRegistered)
 		{
@@ -868,10 +872,14 @@ namespace Dingo
 			const std::span<const glm::mat4> palette = skeleton ? Internal::AnimationSystem::Palette(m_Data->Registry, entity, *skeleton) : std::span<const glm::mat4>();
 			for (const SubMesh& submesh : skinned.Model->GetSubMeshes())
 			{
+				Material* material = skinned.Material;
+				if (!material && submesh.Material && Internal::IsPbrShader(submesh.Material->GetShader()))
+					material = submesh.Material;
+
 				if (skeleton && submesh.Mesh->HasSkin())
-					renderer.SubmitSkinnedMesh(submesh.Mesh, world, palette, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
+					renderer.SubmitSkinnedMesh(submesh.Mesh, world, palette, skinned.Color, material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
 				else
-					renderer.SubmitMesh(submesh.Mesh, world, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
+					renderer.SubmitMesh(submesh.Mesh, world, skinned.Color, material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
 			}
 		}
 
@@ -904,6 +912,7 @@ namespace Dingo
 	{
 		InterpolatedView view(*this);
 		const entt::entity cameraHandle = IsValid(camera) ? static_cast<entt::entity>(camera.m_Handle) : entt::null;
+		renderer.SetFogVolumeTime(m_Data->FogVolumeTime);
 		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer, m_Data->Memo, glm::vec3(m_ClearColor), shadowProbes ? &m_Data->ShadowProbes : nullptr, cameraHandle);
 	}
 

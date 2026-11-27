@@ -268,6 +268,27 @@ namespace Dingo
 			Renderer::DrawIndexed(m_CheckTranslucent, m_Layout, m_CheckVB, m_CheckIB, 6, 1, 6);
 		});
 
+		const TransformUBO identity{ glm::mat4(1.0f), glm::mat4(1.0f) };
+		const uint8_t quarter[4] = { 64, 64, 64, 255 };
+		const uint8_t threeQuarters[4] = { 192, 192, 192, 255 };
+		Texture* first = Texture::CreateFromData(1, 1, quarter, TextureFormat::RGBA8_UNORM, "Mesh3D_SwapFirst");
+		m_SwapSecond = Texture::CreateFromData(1, 1, threeQuarters, TextureFormat::RGBA8_UNORM, "Mesh3D_SwapSecond");
+		m_CheckSwap = Material::Create(MaterialParams().SetDebugName("Mesh3D_CheckSwap").SetShader(m_Shader).SetCullMode(CullMode::None));
+		m_CheckSwap->SetTexture(0, first);
+		m_CheckSwap->SetSampler(0, Renderer::GetClampSampler());
+		m_CheckSwap->SetUniform(identity);
+
+		render("a texture drawn from before it is deleted", 0.25f, 0.25f, [this]
+		{
+			Renderer::DrawIndexed(m_CheckSwap, m_Layout, m_CheckVB, m_CheckIB, 6, 1, 0);
+		});
+		DestroyAndDelete(first);
+		m_CheckSwap->SetTexture(0, m_SwapSecond);
+		render("SetTexture over a deleted texture binds the new one of the same format", 0.75f, 0.75f, [this]
+		{
+			Renderer::DrawIndexed(m_CheckSwap, m_Layout, m_CheckVB, m_CheckIB, 6, 1, 0);
+		});
+
 		Renderer::SetRenderTarget(previous);
 	}
 
@@ -387,6 +408,8 @@ namespace Dingo
 		m_Alive.reset();
 		DestroyAndDelete(m_CheckOpaque);
 		DestroyAndDelete(m_CheckTranslucent);
+		DestroyAndDelete(m_CheckSwap);
+		DestroyAndDelete(m_SwapSecond);
 		for (Framebuffer*& target : m_CheckTargets)
 			DestroyAndDelete(target);
 		m_CheckTargets.clear();

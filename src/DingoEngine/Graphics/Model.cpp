@@ -7,6 +7,9 @@
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/GraphicsDevice.h"
 #include "DingoEngine/Graphics/AssimpVfsIO.h"
+#include "DingoEngine/Graphics/MipChain.h"
+#include "DingoEngine/Graphics/PbrShaders.h"
+#include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Asset/AssetPath.h"
 #include "DingoEngine/Core/FileSystem.h"
 #include "DingoEngine/Core/VirtualFileSystem.h"
@@ -16,6 +19,7 @@
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include <assimp/config.h>
+#include <assimp/GltfMaterial.h>
 
 #include <glm/gtc/type_ptr.hpp>
 
@@ -64,14 +68,36 @@ namespace Dingo
 		// Embedded images are keyed by the model's path and their own name, and dated by the model.
 		std::filesystem::path ModelPath;
 		std::filesystem::file_time_type ModelWriteTime{};
+		// ModelLoadParams::PbrMaterials: metallic-roughness materials with mipped textures.
+		bool PbrMaterials = false;
+		bool WarnedAlphaMask = false;
 	};
+
+	enum class TextureUse
+	{
+		Plain,  // one mip, as every model texture was before PBR imports
+		Color,  // a full box-filtered mip chain
+		Srgb,   // a full mip chain averaged in linear light, for colours stored as sRGB
+		Normal  // a full mip chain of renormalised vectors
+	};
+
+	static const char* KeySuffix(TextureUse use)
+	{
+		switch (use)
+		{
+		case TextureUse::Plain: return "";
+		case TextureUse::Color: return "|mips";
+		case TextureUse::Srgb:  return "|mips-srgb";
+		default:                return "|mips-normal";
+		}
+	}
 
 	static std::filesystem::file_time_type WriteTimeOf(const std::filesystem::path& path)
 	{
 		return VirtualFileSystem::GetWriteTime(path).value_or(std::filesystem::file_time_type{});
 	}
 
-	static TextureParams MakeImageParams(uint32_t width, uint32_t height, uint32_t channels, const uint8_t* data)
+	static TextureParams MakeImageParams(uint32_t width, uint32_t height, uint32_t channels, const uint8_t* data, TextureUse use)
 	{
 		return TextureParams()
 			.SetDebugName("Texture (File)")
@@ -79,11 +105,24 @@ namespace Dingo
 			.SetHeight(height)
 			.SetDimension(TextureDimension::Texture2D)
 			.SetFormat(TextureFormat::RGBA8_UNORM)
+			.SetMipLevels(use == TextureUse::Plain ? 1 : 0)
 			.SetIsRenderTarget(false)
 			.SetInitialData(data);
 	}
 
-	static bool RefreshTexture(Texture& texture, const std::filesystem::path& path)
+	static void UploadMips(Texture& texture, uint32_t width, uint32_t height, const uint8_t* data, TextureUse use)
+	{
+		if (use == TextureUse::Plain)
+			return;
+
+		const Internal::MipFilter filter = use == TextureUse::Normal ? Internal::MipFilter::Normal
+			: use == TextureUse::Srgb ? Internal::MipFilter::Srgb : Internal::MipFilter::Color;
+		const auto mips = Internal::BuildMipChain(data, width, height, filter);
+		for (size_t i = 0; i < mips.size(); ++i)
+			texture.UploadSubresource(mips[i].data(), static_cast<uint32_t>(i + 1));
+	}
+
+	static bool RefreshTexture(Texture& texture, const std::filesystem::path& path, TextureUse use)
 	{
 		uint32_t width = 0, height = 0, channels = 0;
 		const uint8_t* data = Internal::ReadImage(path, &width, &height, &channels, true, true);
@@ -93,9 +132,27 @@ namespace Dingo
 			return false;
 		}
 
-		texture.Reinitialize(MakeImageParams(width, height, channels, data));
+		texture.Reinitialize(MakeImageParams(width, height, channels, data, use));
+		UploadMips(texture, width, height, data, use);
 		Internal::FreeImage(data);
 		return true;
+	}
+
+	static Texture* CreateImageTexture(const std::filesystem::path& path, TextureUse use)
+	{
+		if (use == TextureUse::Plain)
+			return Texture::CreateFromFile(path);
+
+		uint32_t width = 0, height = 0, channels = 0;
+		const uint8_t* data = Internal::ReadImage(Internal::ResolveRawAssetPath(path), &width, &height, &channels, true, true);
+		if (!data)
+			return nullptr;
+
+		Texture* texture = Texture::Create(MakeImageParams(width, height, channels, data, use));
+		if (texture)
+			UploadMips(*texture, width, height, data, use);
+		Internal::FreeImage(data);
+		return texture;
 	}
 
 	// Rows flipped like ReadImage's, so embedded and file images share one UV convention.
@@ -131,9 +188,9 @@ namespace Dingo
 		return true;
 	}
 
-	static Texture* LoadEmbeddedTexture(const aiTexture* embedded, const std::string& name, TextureCache& textureCache)
+	static Texture* LoadEmbeddedTexture(const aiTexture* embedded, const std::string& name, TextureUse use, TextureCache& textureCache)
 	{
-		const std::string key = Internal::PathToGenericUtf8(textureCache.ModelPath) + "#" + name;
+		const std::string key = Internal::PathToGenericUtf8(textureCache.ModelPath) + "#" + name + KeySuffix(use);
 		if (auto it = textureCache.Loaded.find(key); it != textureCache.Loaded.end())
 			return it->second.Image;
 
@@ -162,29 +219,32 @@ namespace Dingo
 			return texture.Image;
 		}
 
-		const TextureParams params = MakeImageParams(width, height, 4, rgba.data());
+		const TextureParams params = MakeImageParams(width, height, 4, rgba.data(), use);
 		if (texture.Image)
 			texture.Image->Reinitialize(params);
 		else
 			texture.Image = Texture::Create(params);
+		if (texture.Image)
+			UploadMips(*texture.Image, width, height, rgba.data(), use);
 		texture.WriteTime = textureCache.ModelWriteTime;
 		textureCache.Loaded[key] = texture;
 		return texture.Image;
 	}
 
-	static Texture* LoadDiffuseTexture(aiMaterial* aiMat, const aiScene* scene, const std::filesystem::path& modelDir, TextureCache& textureCache)
+	static Texture* LoadMaterialTexture(aiMaterial* aiMat, aiTextureType type, unsigned int index, TextureUse use, const aiScene* scene,
+	                                    const std::filesystem::path& modelDir, TextureCache& textureCache)
 	{
-		if (!Internal::HasGraphicsDevice() || aiMat->GetTextureCount(aiTextureType_DIFFUSE) == 0)
+		if (!Internal::HasGraphicsDevice() || aiMat->GetTextureCount(type) <= index)
 			return nullptr;
 
 		aiString aiPath;
-		aiMat->GetTexture(aiTextureType_DIFFUSE, 0, &aiPath);
+		aiMat->GetTexture(type, index, &aiPath);
 		std::string rawPath = aiPath.C_Str();
 
 		if (!rawPath.empty() && rawPath[0] == '*')
 		{
 			if (const aiTexture* embedded = scene->GetEmbeddedTexture(rawPath.c_str()))
-				return LoadEmbeddedTexture(embedded, rawPath, textureCache);
+				return LoadEmbeddedTexture(embedded, rawPath, use, textureCache);
 
 			DE_CORE_WARN("Model '{}': a material names embedded image '{}', which the file doesn't hold", Internal::PathToUtf8(textureCache.ModelPath.filename()), rawPath);
 			return nullptr;
@@ -201,7 +261,7 @@ namespace Dingo
 
 		for (uint32_t i = 0; i < candidateCount; ++i)
 		{
-			const std::string key = Internal::PathToGenericUtf8(candidates[i]);
+			const std::string key = Internal::PathToGenericUtf8(candidates[i]) + KeySuffix(use);
 
 			auto it = textureCache.Loaded.find(key);
 			if (it != textureCache.Loaded.end())
@@ -217,12 +277,12 @@ namespace Dingo
 				texture = reusable->second;
 				texture.Borrowed = true;
 				textureCache.Reusable.erase(reusable);
-				if (writeTime != texture.WriteTime && RefreshTexture(*texture.Image, candidates[i]))
+				if (writeTime != texture.WriteTime && RefreshTexture(*texture.Image, candidates[i], use))
 					texture.WriteTime = writeTime;
 			}
 			else
 			{
-				texture.Image = Texture::CreateFromFile(candidates[i]);
+				texture.Image = CreateImageTexture(candidates[i], use);
 				texture.WriteTime = writeTime;
 			}
 			if (!texture.Image)
@@ -234,7 +294,7 @@ namespace Dingo
 
 		// FBX embeds an image under its file name.
 		if (const aiTexture* embedded = scene->GetEmbeddedTexture(rawPath.c_str()))
-			return LoadEmbeddedTexture(embedded, rawPath, textureCache);
+			return LoadEmbeddedTexture(embedded, rawPath, use, textureCache);
 
 		return nullptr;
 	}
@@ -252,12 +312,79 @@ namespace Dingo
 		return indices;
 	}
 
+	static Material* CreateImportedPbrMaterial(const aiMesh* mesh, aiMaterial* aiMat, const aiScene* scene, const std::filesystem::path& modelDir,
+	                                           TextureCache& textureCache, const glm::vec4& baseColor, Texture* albedo)
+	{
+		PbrMaterialParams params;
+		MaterialParams material;
+		material.SetDebugName(mesh->mName.C_Str());
+		params.BaseColor = baseColor;
+		params.AlbedoMap = albedo;
+
+		auto load = [&](aiTextureType type, TextureUse use)
+		{
+			return LoadMaterialTexture(aiMat, type, 0, use, scene, modelDir, textureCache);
+		};
+
+		params.NormalMap = load(aiTextureType_NORMALS, TextureUse::Normal);
+		float value = 0.0f;
+		if (aiMat->Get(AI_MATKEY_GLTF_TEXTURE_SCALE(aiTextureType_NORMALS, 0), value) == AI_SUCCESS)
+			params.NormalScale = value;
+
+		params.MetallicRoughnessMap = load(aiTextureType_GLTF_METALLIC_ROUGHNESS, TextureUse::Color);
+		if (!params.MetallicRoughnessMap)
+			params.MetallicRoughnessMap = load(aiTextureType_METALNESS, TextureUse::Color);
+		params.Metallic = params.MetallicRoughnessMap ? 1.0f : params.Metallic;
+		params.Roughness = params.MetallicRoughnessMap ? 1.0f : params.Roughness;
+		if (aiMat->Get(AI_MATKEY_METALLIC_FACTOR, value) == AI_SUCCESS)
+			params.Metallic = value;
+		if (aiMat->Get(AI_MATKEY_ROUGHNESS_FACTOR, value) == AI_SUCCESS)
+			params.Roughness = value;
+
+		for (aiTextureType type : { aiTextureType_LIGHTMAP, aiTextureType_AMBIENT_OCCLUSION })
+		{
+			if (params.OcclusionMap)
+				break;
+			params.OcclusionMap = load(type, TextureUse::Color);
+			// assimp 6.0.4's glTF2 importer writes the occlusion strength under this key, not
+			// AI_MATKEY_GLTF_TEXTURE_STRENGTH's "$tex.strength".
+			if (params.OcclusionMap && aiMat->Get("$tex.file.strength", type, 0, value) == AI_SUCCESS)
+				params.Ao = value;
+		}
+
+		params.EmissiveMap = load(aiTextureType_EMISSIVE, TextureUse::Srgb);
+		aiColor4D emissive;
+		if (aiMat->Get(AI_MATKEY_COLOR_EMISSIVE, emissive) == AI_SUCCESS)
+			params.Emissive = { emissive.r, emissive.g, emissive.b };
+		else if (params.EmissiveMap)
+			params.Emissive = glm::vec3(1.0f);
+		if (aiMat->Get(AI_MATKEY_EMISSIVE_INTENSITY, value) == AI_SUCCESS)
+			params.EmissiveStrength = value;
+
+		aiString alphaMode;
+		if (aiMat->Get(AI_MATKEY_GLTF_ALPHAMODE, alphaMode) == AI_SUCCESS)
+		{
+			if (std::strcmp(alphaMode.C_Str(), "BLEND") == 0)
+				material.SetTranslucent(true);
+			else if (std::strcmp(alphaMode.C_Str(), "MASK") == 0 && !textureCache.WarnedAlphaMask)
+			{
+				textureCache.WarnedAlphaMask = true;
+				DE_CORE_WARN("Model '{}': glTF alpha MASK isn't supported by PBR materials; its materials draw opaque", Internal::PathToUtf8(textureCache.ModelPath.filename()));
+			}
+		}
+
+		int twoSided = 0;
+		if (aiMat->Get(AI_MATKEY_TWOSIDED, twoSided) == AI_SUCCESS && twoSided != 0)
+			material.SetCullMode(CullMode::None);
+
+		params.Material = material;
+		return Internal::CreatePbrMaterial(params);
+	}
+
 	static void AssignMaterial(SubMesh& submesh, const aiMesh* mesh, const aiScene* scene,
 	                           const std::filesystem::path& modelDir, TextureCache& textureCache)
 	{
 		aiMaterial* aiMat = scene->mMaterials[mesh->mMaterialIndex];
-		submesh.Material = Material::Create(MaterialParams()
-			.SetDebugName(mesh->mName.C_Str()));
 
 		aiColor4D baseColor;
 		if (aiMat->Get(AI_MATKEY_BASE_COLOR, baseColor) == AI_SUCCESS)
@@ -271,11 +398,26 @@ namespace Dingo
 			submesh.BaseColor = { baseColor.r, baseColor.g, baseColor.b, opacity };
 		}
 
-		Texture* diffuse = LoadDiffuseTexture(aiMat, scene, modelDir, textureCache);
+		const bool pbr = textureCache.PbrMaterials && Internal::HasGraphicsDevice();
+		const TextureUse albedoUse = pbr ? TextureUse::Srgb : TextureUse::Plain;
+		Texture* diffuse = pbr ? LoadMaterialTexture(aiMat, aiTextureType_BASE_COLOR, 0, albedoUse, scene, modelDir, textureCache) : nullptr;
+		if (!diffuse)
+			diffuse = LoadMaterialTexture(aiMat, aiTextureType_DIFFUSE, 0, albedoUse, scene, modelDir, textureCache);
+
+		if (pbr)
+			submesh.Material = CreateImportedPbrMaterial(mesh, aiMat, scene, modelDir, textureCache, submesh.BaseColor, diffuse);
+		const bool pbrMaterial = submesh.Material != nullptr;
+		if (!pbrMaterial)
+		{
+			submesh.Material = Material::Create(MaterialParams()
+				.SetDebugName(mesh->mName.C_Str()));
+		}
+
 		if (diffuse)
 		{
 			submesh.DiffuseTexture = diffuse;
-			submesh.Material->SetTexture(0, diffuse);
+			if (!pbrMaterial)
+				submesh.Material->SetTexture(0, diffuse);
 		}
 	}
 
@@ -961,6 +1103,21 @@ namespace Dingo
 		return Load(filepath, params, nullptr);
 	}
 
+	static void CopyPbrMaterial(Material& target, const Material& source)
+	{
+		if (target.IsTranslucent() != source.IsTranslucent() || target.GetParams().CullMode != source.GetParams().CullMode)
+			DE_CORE_WARN("Model::Reload: material '{}' changed its translucency or cull mode, which are baked into the material and keep their first-load values", target.GetParams().DebugName);
+		for (uint32_t slot = 0; slot < Renderer3D::k_PbrTextureSlots; ++slot)
+			target.SetTexture(slot, source.GetTexture(slot));
+		target.SetBaseColor(source.GetBaseColor());
+		target.SetMetallic(source.GetMetallic());
+		target.SetRoughness(source.GetRoughness());
+		target.SetOcclusion(source.GetOcclusion());
+		target.SetNormalScale(source.GetNormalScale());
+		target.SetEmissiveColor(source.GetEmissiveColor());
+		target.SetEmissiveStrength(source.GetEmissiveStrength());
+	}
+
 	Model* Model::Load(const std::filesystem::path& filepath, const ModelLoadParams& params, Model* refresh)
 	{
 		const std::filesystem::path resolvedPath = Internal::ResolveRawAssetPath(filepath);
@@ -1021,6 +1178,7 @@ namespace Dingo
 		TextureCache textureCache;
 		textureCache.ModelPath = model->m_FilePath;
 		textureCache.ModelWriteTime = WriteTimeOf(model->m_FilePath);
+		textureCache.PbrMaterials = params.PbrMaterials;
 		if (refresh)
 		{
 			for (const ModelTexture& texture : refresh->m_Textures)
@@ -1234,7 +1392,10 @@ namespace Dingo
 
 			SubMesh& current = m_SubMeshes[i];
 			current.Mesh->Reinitialize(*incoming.Mesh);
-			current.Material->SetTexture(0, incoming.DiffuseTexture);
+			if (Internal::IsPbrShader(current.Material->GetShader()) && Internal::IsPbrShader(incoming.Material->GetShader()))
+				CopyPbrMaterial(*current.Material, *incoming.Material);
+			else
+				current.Material->SetTexture(0, incoming.DiffuseTexture);
 			current.DiffuseTexture = incoming.DiffuseTexture;
 			current.BaseColor = incoming.BaseColor;
 			delete incoming.Mesh;

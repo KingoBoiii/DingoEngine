@@ -2,7 +2,8 @@
 // <DingoEngine/Shadows.glsl>. Mirrors Renderer3D::ShadowData. The three resources are found by name
 // (ShadowData, u_ShadowAtlas, u_ShadowSampler), so a custom shader can move them to bindings its own
 // leave free by defining DE_SHADOW_DATA_BINDING (13 at most, D3D11's constant buffers),
-// DE_SHADOW_ATLAS_BINDING and DE_SHADOW_SAMPLER_BINDING (15 at most) before including it. The lit
+// DE_SHADOW_ATLAS_BINDING and DE_SHADOW_SAMPLER_BINDING before including it. The sampler's binding stays
+// at 15 or below (D3D11 has 16 sampler slots); the atlas is a shader resource and may sit higher. The lit
 // shader takes 5, 6 and 7.
 //
 // DirectionalShadow(worldPosition, normal) is 1 where the shadowed directional light reaches the
@@ -123,6 +124,121 @@ float DirectionalShadow(vec3 worldPosition, vec3 normal)
 	}
 
 	return mix(1.0, shadow, ShadowParams.x);
+}
+
+// One hardware comparison of the cascade the point lies in: no normal offset, no filter kernel and no
+// blend into the next cascade, which suits a medium that has no surface to offset from. Same result as
+// DirectionalShadow otherwise: 1 without a shadow, mixed toward the shadow by its strength. A point
+// outside every cascade or outside the cascade's map gets outsideLight, which the last cascade's tail
+// reaches smoothly over the same fraction the surface shadows blend over (ShadowForward.w).
+float DE_DirectionalShadowVolume(vec3 worldPosition, float outsideLight)
+{
+	if (ShadowCounts.x <= 0)
+		return 1.0;
+	outsideLight = mix(1.0, outsideLight, ShadowParams.x);
+	float depth = ShadowDepth(worldPosition);
+	int cascade = ShadowCascadeIndex(depth);
+	if (cascade < 0)
+		return outsideLight;
+
+	vec4 clip = Tiles[cascade].ViewProjection * vec4(worldPosition, 1.0);
+	if (clip.w <= 0.0)
+		return outsideLight;
+	vec3 ndc = clip.xyz / clip.w;
+	vec2 uv = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+	if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || ndc.z >= 1.0)
+		return outsideLight;
+
+	vec4 rect = Tiles[cascade].AtlasRect;
+	float texel = ShadowParams.z;
+	vec2 tap = clamp(rect.xy + uv * rect.zw, rect.xy + vec2(texel), rect.xy + rect.zw - vec2(texel));
+	float lit = textureLod(sampler2DShadow(u_ShadowAtlas, u_ShadowSampler), vec3(tap, ndc.z), 0.0);
+	float shadow = mix(1.0, lit, ShadowParams.x);
+
+	if (cascade == ShadowCounts.x - 1)
+	{
+		float end = Tiles[cascade].Params.x;
+		float start = cascade > 0 ? Tiles[cascade - 1].Params.x : 0.0;
+		float band = (end - start) * ShadowForward.w;
+		if (band > 0.0)
+			shadow = mix(shadow, outsideLight, clamp((depth - (end - band)) / band, 0.0, 1.0));
+	}
+	return shadow;
+}
+
+// DE_DirectionalShadowVolume split for media that each have their own outside light: x = the shadow with the
+// light's strength applied, y = the weight of the outside light, which is 1 outside every cascade and ramps up
+// over the last cascade's tail. A medium's visibility is (1 - y) * x + y * (1 - S + S * outside), S being
+// ShadowParams.x. Without a shadow it is (1, 0).
+vec2 DE_DirectionalShadowVolumeParts(vec3 worldPosition)
+{
+	if (ShadowCounts.x <= 0)
+		return vec2(1.0, 0.0);
+	float depth = ShadowDepth(worldPosition);
+	int cascade = ShadowCascadeIndex(depth);
+	if (cascade < 0)
+		return vec2(1.0, 1.0);
+
+	vec4 clip = Tiles[cascade].ViewProjection * vec4(worldPosition, 1.0);
+	if (clip.w <= 0.0)
+		return vec2(1.0, 1.0);
+	vec3 ndc = clip.xyz / clip.w;
+	vec2 uv = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+	if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || ndc.z >= 1.0)
+		return vec2(1.0, 1.0);
+
+	vec4 rect = Tiles[cascade].AtlasRect;
+	float texel = ShadowParams.z;
+	vec2 tap = clamp(rect.xy + uv * rect.zw, rect.xy + vec2(texel), rect.xy + rect.zw - vec2(texel));
+	float lit = textureLod(sampler2DShadow(u_ShadowAtlas, u_ShadowSampler), vec3(tap, ndc.z), 0.0);
+
+	float outside = 0.0;
+	if (cascade == ShadowCounts.x - 1)
+	{
+		float end = Tiles[cascade].Params.x;
+		float start = cascade > 0 ? Tiles[cascade - 1].Params.x : 0.0;
+		float band = (end - start) * ShadowForward.w;
+		if (band > 0.0)
+			outside = clamp((depth - (end - band)) / band, 0.0, 1.0);
+	}
+	return vec2(mix(1.0, lit, ShadowParams.x), outside);
+}
+
+// LocalLightShadow for a medium: one hardware comparison, no normal offset and no filter kernel.
+float DE_LocalLightShadowVolume(int light, vec3 worldPosition)
+{
+	if (ShadowCounts.w <= 0)
+		return 1.0;
+	vec4 record = LocalShadows[light].Record;
+	if (record.x < 0.0)
+		return 1.0;
+
+	vec3 fromLight = worldPosition - LocalShadows[light].Position.xyz;
+	int tile = int(record.x);
+	if (record.y > 1.5)
+	{
+		vec3 a = abs(fromLight);
+		if (a.x >= a.y && a.x >= a.z)
+			tile += fromLight.x > 0.0 ? 0 : 1;
+		else if (a.y >= a.z)
+			tile += fromLight.y > 0.0 ? 2 : 3;
+		else
+			tile += fromLight.z > 0.0 ? 4 : 5;
+	}
+
+	vec4 clip = Tiles[tile].ViewProjection * vec4(worldPosition, 1.0);
+	if (clip.w <= 0.0)
+		return 1.0;
+	vec3 ndc = clip.xyz / clip.w;
+	vec2 uv = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+	if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || ndc.z >= 1.0)
+		return 1.0;
+
+	vec4 rect = Tiles[tile].AtlasRect;
+	float texel = ShadowParams.z;
+	vec2 tap = clamp(rect.xy + uv * rect.zw, rect.xy + vec2(texel), rect.xy + rect.zw - vec2(texel));
+	float lit = textureLod(sampler2DShadow(u_ShadowAtlas, u_ShadowSampler), vec3(tap, ndc.z), 0.0);
+	return mix(1.0, lit, record.z);
 }
 
 float LocalLightShadow(int light, vec3 worldPosition, vec3 normal)

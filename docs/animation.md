@@ -223,7 +223,7 @@ entity needs a `Transform3DComponent` as well.
 |---|---|---|
 | `Model* Model` | null | Not owned. Null draws nothing. |
 | `glm::vec4 Color` | white | Tints every submesh (the lit shader multiplies it with the albedo). Alpha comes from this colour alone. |
-| `Material* Material` | null | Applies to **every** submesh. Null is the built-in lit material. |
+| `Material* Material` | null | Applies to **every** submesh. Null draws each submesh with its own PBR material when the model was imported with `ModelLoadParams::SetPbrMaterials(true)`, and the built-in lit material otherwise. |
 | `bool Visible` | true | `false` skips the entity. It is not inherited by children; `Entity::SetActive(false)` switches a whole subtree off. |
 
 ```cpp

@@ -11,6 +11,8 @@ namespace Dingo
 		Texture1D,
 		Texture2D,
 		Texture3D,
+		/// Six square faces in layers 0..5: +X, -X, +Y, -Y, +Z, -Z (TextureParams::ArrayLayers is 6).
+		TextureCube,
 
 		Count ///< The number of dimensions, not a dimension.
 	};

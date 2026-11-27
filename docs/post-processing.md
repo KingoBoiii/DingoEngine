@@ -156,6 +156,20 @@ reads the same with AO as without; `--post=ao` shows the
 room with AO on. The Lighting Test takes `--post`, `--bloom` and `--ao` too: its materials mode's lamp
 has an emissive strength of 1.5.
 
+## With the sky and volumetrics
+
+*(v1.3)*
+
+- **The skybox** ([Environment and skybox](environment.md)) writes its radiance × `Intensity` into the
+  HDR target in the same encoded form as lit and PBR draws, so a sun of 20 reaches the chain as about
+  3.7. Exposure and bloom act on those encoded values: −2 EV is not a quarter of the sky's radiance.
+- **Volumetric fog** ([Volumetric fog](volumetrics.md)) is applied in the mesh, particle and sky shaders,
+  so the chain tone maps and blooms the hazed colour; nothing in the chain changes.
+- **Raymarch volumes need the chain.** The march reads the chain's copy of the scene depth and is
+  composited into the HDR target after the opaque meshes, the sky and ambient occlusion (so AO doesn't
+  darken the haze), before translucent meshes and particles. Without the chain they fall back to the
+  froxel path with one warning. The pass shows as `VolumeRaymarch` in the F8 Profiler tab.
+
 ## For custom shaders
 
 The curves live in an engine include, so a shader of your own can use them:
