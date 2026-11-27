@@ -660,7 +660,7 @@ void main()
 			Check(false, "Froxel 3a: the frame's command list and the integrated volume exist");
 			return;
 		}
-		// The clear a failed dispatch records, over the uniform volume Froxel 3 left behind.
+		// The primitive a failed dispatch records, over the uniform volume Froxel 3 left behind.
 		list->ClearTexture(Integrated(), glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
 		const std::vector<uint32_t> slices = { 0, k_Grid.z / 2, k_Grid.z - 1 };
 		ReadSlices(Integrated(), slices, m_Alive, [this](const std::vector<TexturePixels>& images)
@@ -668,7 +668,7 @@ void main()
 			float worst = 0.0f;
 			for (const TexturePixels& image : images)
 				worst = (std::max)(worst, WorstTexel(image, [](uint32_t, uint32_t) { return glm::vec4(0.0f, 0.0f, 0.0f, 1.0f); }));
-			Check(worst == 0.0f, std::format("Froxel 3a: a cleared volume, as a failed dispatch leaves it, is no in-scatter and full transmittance at every texel of slices 0, D/2 and D-1 (worst {:.5f})", worst));
+			Check(worst == 0.0f, std::format("Froxel 3a: CommandList::ClearTexture leaves the integrated volume no in-scatter and full transmittance at every texel of slices 0, D/2 and D-1 (worst {:.5f})", worst));
 		});
 	}
 

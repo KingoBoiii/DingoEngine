@@ -100,13 +100,13 @@ namespace Dingo
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before clearing a texture.");
 		DE_CORE_ASSERT(texture, "Texture is null.");
-		DE_CORE_ASSERT(texture->GetParams().IsStorage || texture->GetParams().IsRenderTarget, "ClearTexture takes a storage or render-target texture.");
+		DE_CORE_ASSERT(texture->GetParams().IsStorage && !texture->GetParams().IsRenderTarget && texture->GetParams().Format != TextureFormat::D32, "ClearTexture takes a colour storage texture that is not a render target.");
 
 		nvrhi::ITexture* handle = static_cast<NvrhiTexture*>(texture)->m_Handle;
 		m_CommandListHandle->clearTextureFloat(handle, nvrhi::AllSubresources, nvrhi::Color(value.r, value.g, value.b, value.a));
 
-		// As in UploadTexture: a binding set kept bound across the clear would otherwise sample a copy
-		// destination.
+		// Back to its initial state for a binding set kept bound across the clear; on Vulkan this is also
+		// what makes the command buffer hold the texture (see Clear).
 		const nvrhi::TextureDesc& desc = handle->getDesc();
 		if (desc.initialState != nvrhi::ResourceStates::Unknown)
 		{

@@ -46,7 +46,8 @@ namespace Dingo::Internal
 
 		virtual void Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec4& clearColor = glm::vec4(0.3f, 0.3f, 0.3f, 1.0f)) = 0;
 
-		// Fills every subresource of a storage or render-target texture, then puts it back in its usual state.
+		// Fills every mip and slice of a storage texture, then puts it back in its usual state. Not for
+		// render targets: NVRHI's D3D12 RTV clear covers only mip 0 and one slice of a 3D texture.
 		virtual void ClearTexture(Texture* texture, const glm::vec4& value) = 0;
 
 		virtual void UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0) = 0;
