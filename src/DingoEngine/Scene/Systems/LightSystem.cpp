@@ -200,6 +200,8 @@ namespace Dingo::Internal::LightSystem
 			environment.DrawSkybox = chosen->Visible;
 			environment.Lighting = chosen->Lighting;
 			environment.LightingIntensity = chosen->LightingIntensity;
+			environment.FollowSun = chosen->FollowSun;
+			environment.TintSun = chosen->TintSun;
 			renderer.SetEnvironment(environment);
 		}
 	}

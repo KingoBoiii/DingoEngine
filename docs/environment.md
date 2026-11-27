@@ -76,7 +76,7 @@ Entity sky = scene.CreateEntity("Sky");
 sky.AddComponent<SkyboxComponent>(environment, 1.0f, 0.0f);   // environment, intensity, rotation
 ```
 
-A `SkyboxComponent` holds `Environment`, `Intensity`, `Rotation`, `Visible` and `Enabled`. `Visible = false`
+A `SkyboxComponent` holds `Environment`, `Intensity`, `Rotation`, `Visible`, `FollowSun`, `TintSun` and `Enabled`. `Visible = false`
 draws no sky but keeps the environment as the scene's, which the later lighting phase reads. `Enabled = false`
 takes the component out of the choice. The component does not own the `Environment`.
 
@@ -156,6 +156,78 @@ untouched, and `SceneEnvironment::Lighting` / `SkyboxComponent::Lighting` (defau
 `Renderer3D::Statistics::EnvironmentLighting` says whether the last scene lit PBR materials from the
 environment, and `EnvironmentLightingCopies` how many times it copied the lighting in (1 whenever the
 environment or its bake changed, else 0).
+
+## Procedural sky
+
+An `Environment` can also be a sky computed from a sun instead of read from a file: a physically based
+atmosphere (Hillaire 2020: Rayleigh, Mie and ozone, with multiple scattering), baked on the GPU into the same
+cube map. Twilight, the red sunset and the dark of night come from the physics, and the sun's light colour
+can follow them.
+
+```cpp
+ProceduralSky sky;
+sky.SunDirection = { -0.4f, -0.5f, -0.3f };   // the way the light travels, as DirectionalLight::Direction
+Environment* environment = Environment::CreateProcedural(ProceduralEnvironmentParams().SetSky(sky));   // 256 texel faces
+
+SceneEnvironment scene;
+scene.Environment = environment;
+renderer.SetEnvironment(scene);
+```
+
+Everything else about it is an ordinary `Environment`: the same `SceneEnvironment`, `SkyboxComponent`,
+image-based lighting and `IsReady()`. `IsProcedural()` tells them apart, `GetSky()` returns the sky last
+accepted, and `SetSky` replaces it (it returns false, with one warning, for a field that is not finite or out of
+range, and keeps the old sky).
+
+| `ProceduralSky` field | Default | Meaning |
+|---|---|---|
+| `SunDirection` | (-0.4, -1, -0.35) | The way the sun's light travels. |
+| `SunColor` | white | sRGB colour of the light above the atmosphere. |
+| `SunIntensity` | 2 | Linear; a white floor under an unveiled sun has this radiance. Scales the whole sky. |
+| `SunDiscRadius` | 0.5 deg | 0 to 10; 0 draws no disc. |
+| `SunDiscIntensity` | 20 | How much brighter the disc is than the sunlight on the ground. |
+| `Turbidity` | 1 | Haze, 0 to 50. |
+| `MieAnisotropy` | 0.8 | How tight the glow around the sun is. |
+| `RayleighScale`, `OzoneScale` | 1 | Density of the air and of the ozone layer. |
+| `GroundAlbedo` | 0.3 | sRGB colour below the horizon. |
+| `NightColor` | (0.0015, 0.002, 0.004) | Linear radiance added everywhere, so night is not black. |
+| `Altitude` | 0 | Camera height in metres. |
+| `RebakeAngle` | 0.25 deg | How far the sun may move before the sky is baked again. |
+
+### Following the sun
+
+`SceneEnvironment` and `SkyboxComponent` have two switches, both on by default and ignored for a panorama:
+
+- `FollowSun` points the sky's sun along the scene's main directional light (the one that casts shadows, else
+  the first; a scene with no light follows the default one). A scene that moves the light re-bakes the sky when
+  the sun has moved `RebakeAngle`; one that does not move it never bakes again.
+- `TintSun` multiplies that light's colour by the atmosphere's transmittance
+  (`Environment::GetSunTransmittance`), so lit and PBR surfaces, fog and [volumetric shafts](volumetrics.md)
+  redden at sunset and go dark when the sun sets. It needs `FollowSun` to agree with the sky.
+
+`Rotation` is ignored for a procedural environment, because the sun and the lights must keep agreeing.
+
+### The sun disc
+
+The cube holds scattered light only. The skybox adds the disc itself, at the live light direction, after the
+cube lookup: its radiance is `SunDiscIntensity x SunIntensity x SunColor x transmittance x Intensity`, with limb
+darkening and an antialiased edge, and the post-process bloom catches it. The disc, its radius and its intensity
+never re-bake the sky. Below the horizon it fades out over one degree.
+
+### Cost
+
+A bake runs in one frame, at most once per environment per frame (a second scene that frame with another sun
+uses the cube as it is). It costs about 0.4 ms at a 512 texel face with nothing to upload; a 256 face is less. That figure was
+measured on an RX 7900 XTX by the Procedural Sky test's check 13 (30 re-bakes at a 512 face; mean per bake:
+Vulkan 0.38-0.48 ms, DX11 0.52-0.54 ms, DX12 0.32-0.39 ms). Mid-range GPUs are unmeasured. A 256 cube is about 4 MB (512: 17 MB). Check it with the `Environment` GPU timer.
+
+### Limits
+
+- Chrome (a perfect mirror) shows the sky's GGX highlight in the lighting, not a sun disc, because the disc is
+  not in the cube.
+- `Rotation` has no effect.
+- One bake per environment per frame.
+- The volumetric fog's ambient term stays the flat `AmbientColor` and does not follow the sky (#344).
 
 ## Limits
 

@@ -200,6 +200,10 @@ scene for one, copied into a 2D texture of the grid's width and height after the
 | Custom shaders | Include the contract below. |
 | Raymarch volumes | The composite after the opaque meshes and the sky; translucent meshes and particles are not hazed by them (see Raymarch volumes). |
 
+Under a procedural sky with `TintSun`, the main directional light's colour is already multiplied by the
+atmosphere's transmittance, so the shafts and the fog's in-scatter redden at sunset and fade out when the sun
+sets (see [Procedural sky](environment.md#procedural-sky)). The fog's ambient term stays the flat ambient colour.
+
 There is no ambient occlusion fade under the volume: AO is applied after the fog (it multiplies the
 fogged colour), so SSAO darkens dense haze as well as the surfaces.
 
@@ -295,7 +299,7 @@ one `Begin`, and the debug view). Both read results back from the GPU.
 
 ## Showcase
 
-[examples/Dustlight](../examples/Dustlight/README.md) puts the froxel fog, local volumes, the raymarch mode and the lantern scattering in one room, with a panel and `--check`.
+`examples/Dustlight` puts the froxel fog, local volumes, the raymarch mode and the lantern scattering in one room, with a panel and `--check`.
 
 ## Headstone questions
 

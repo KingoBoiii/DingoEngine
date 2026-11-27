@@ -397,11 +397,11 @@ namespace Dingo
 	/// own the Environment: keep it alive while the scene renders, as for a Mesh.
 	struct SkyboxComponent
 	{
-		/// The panorama to draw; null draws no sky. The caller or the AssetManager owns it.
+		/// The panorama or procedural sky to draw; null draws no sky. The caller or the AssetManager owns it.
 		Dingo::Environment* Environment = nullptr;
 		/// Linear multiplier on the radiance, 0 or more; 1 shows the panorama as stored.
 		float Intensity = 1.0f;
-		/// Degrees the sky is turned about +Y, as SceneEnvironment::Rotation.
+		/// Degrees the sky is turned about +Y, as SceneEnvironment::Rotation (ignored by a procedural environment).
 		float Rotation = 0.0f;
 		/// False keeps the environment for lighting without drawing the sky.
 		bool Visible = true;
@@ -410,6 +410,12 @@ namespace Dingo
 		bool Lighting = true;
 		/// Linear multiplier on the environment's lighting only, 0 or more, as SceneEnvironment::LightingIntensity.
 		float LightingIntensity = 1.0f;
+		/// For a procedural environment, true points its sun along the scene's main directional light, as
+		/// SceneEnvironment::FollowSun. Ignored for a panorama.
+		bool FollowSun = true;
+		/// For a procedural environment, true tints the main directional light by the atmosphere's
+		/// transmittance, as SceneEnvironment::TintSun. Ignored for a panorama.
+		bool TintSun = true;
 		/// False takes this component out of the choice without removing it.
 		bool Enabled = true;
 

@@ -1,4 +1,4 @@
-**Status**: open — Phases 1–6 committed (`3d33d8fc`, `97235b5e`, `13c54ffb`, `a94c3af8`, `04693ec3`, `e15b509f`, `1a5fbb2a`, `88e1a5ca`, `20a29660`, `930e4214`, `7af93366`); Phase 7 (Dustlight, milestone review and fixes) built, uncommitted; D3D12 #1008 shadow-atlas duplicate-barrier warning rises to ~2.5k lines in the froxel run (atlas used as compute SRV), same known warning
+**Status**: open — Phases 1–6 committed (`3d33d8fc`, `97235b5e`, `13c54ffb`, `a94c3af8`, `04693ec3`, `e15b509f`, `1a5fbb2a`, `88e1a5ca`, `20a29660`, `930e4214`, `7af93366`); Phase 7 committed (`8937818e`, `692a1fe1`, `536e72a9`, `dfafcac9`, `e351da56`); Phase 8 (procedural sky) built, uncommitted; D3D12 #1008 shadow-atlas duplicate-barrier warning rises to ~2.5k lines in the froxel run (atlas used as compute SRV), same known warning
 
 # v1.3: PBR materials, image-based lighting and volumetric fog
 
@@ -793,6 +793,69 @@ Read: plan 1-22, 359-595, 720-737; `Renderer3DVolumetrics.cpp`, `VolumetricInjec
 - Docs: new `docs/pbr.md` and `docs/volumetrics.md`, updates to `lighting.md`, `post-processing.md`, `asset-pipeline.md`; `.claude/reference/rendering.md` sections.
 - Milestone review `.claude/reviews/YYYY-MM-DD-v1.3-review.md`; open findings become issues.
 
+## Phase 8: procedural sky (owner request 2026-11-27)
+
+Owner: "generate a skybox based on the sun's (directional light) rotation, and a sun in the sky", engine-level (option A), in v1.3, then an entry in Dustlight's environment dropdown.
+
+### Phase 8 design (engine-designer, 2026-11-27)
+
+**Model (P40):** Hillaire 2020 LUT atmosphere, written from the paper: transmittance LUT 256×64 (40 steps), multi-scattering LUT 32×32 (64 dirs × 20 steps), sky-view LUT 192×108 (30 steps, non-linear latitude). Transmittance and multi-scatter rebuild only when atmosphere parameters change. Twilight, reddening and night come from the physics; the CPU evaluates the same transmittance.
+
+**`ProceduralSky` parameters:** `SunDirection` (travel direction, as `DirectionalLight`), `SunColor` (sRGB, decoded), `SunIntensity` (linear; TOA illuminance π·I·lin(C), so a white floor under an unattenuated sun has radiance I), `SunDiscRadius` (0.5°, 0 = none), `SunDiscIntensity` (20), `Turbidity` (1; scales Mie scattering 3.996e-3/km and absorption 4.4e-3/km), `MieAnisotropy` (0.8), `RayleighScale`/`OzoneScale` (1 = Earth: β_R (5.802, 13.558, 33.1)e-3/km, H_R 8 km; ozone (0.65, 1.881, 0.085)e-3/km, tent at 25 km), `GroundAlbedo` (sRGB 0.3), `NightColor` (linear floor ~(0.0015, 0.002, 0.004)), `Altitude` (0–20000 m), `RebakeAngle` (0.25°). Fixed: planet 6360 km, top 6460 km.
+
+**Public API (`Environment.h`, every declaration `///`):** `struct ProceduralSky`; `struct ProceduralEnvironmentParams { uint32_t FaceSize = 256; std::string DebugName; ProceduralSky Sky; }` with setters; `static Environment* CreateProcedural(const ProceduralEnvironmentParams&)`; `bool SetSky(const ProceduralSky&)` (rejects non-finite/out-of-range, warns once, keeps the old sky; a sun move ≥ `RebakeAngle` or any other field change marks it dirty); `const ProceduralSky* GetSky() const` (nullptr for `.hdr`); `bool IsProcedural() const`; `glm::vec3 GetSunTransmittance(const glm::vec3& travelDirection) const` (CPU, linear, 0 below the horizon). `SceneEnvironment` gains `bool FollowSun = true`, `bool TintSun = true` (ignored for `.hdr`). `Prepare()` re-bakes a procedural environment with a pending change; `IsReady()` stays true after the first bake.
+
+**Choices (owner approved all A, 2026-11-27):**
+- P40 A Hillaire (B Hosek-Wilkie: coefficient tables + licence, no twilight/night; C Preetham: wrong at low sun).
+- P41 A same `Environment` class (B separate class owning one; C renderer-owned cube per scene).
+- P42 A `FollowSun` resolved in `Renderer3D::EndScene`: main light = the shadow-casting directional (`m_ShadowLight`, `Renderer3D.cpp:2616`), else `DirectionalLights[0]` incl. the legacy default (`:2999`) (B ECS-only copy; C manual).
+- P43 A `TintSun` default true: main light colour → `LinearToSrgb(SrgbToLinear(C·I) × T(sun))` in `m_CameraData` before the upload (`:694`), so lit, PBR, fog and shafts redden and go to 0 below the horizon; the encoded-domain tint keeps PBR exact (`Renderer3D_Pbr.glsl:199`) and fog consistent (`VolumetricInject.glsl:55`) (B default false; C none).
+- P44 A `Rotation` ignored for procedural (forced 0 at `:2943` and `:673`) (B honoured).
+- P45 A whole bake in one frame, at most one bake per environment per frame (B two-frame split; C N-frame budget, double-buffered).
+- P46 A fog ambient unchanged (flat `AmbientColor`, `VolumetricInject.glsl:50`); B (inject reads SH band 0 at t11) filed as an issue.
+- P47 A default face 256 (~4 MB) (B 512).
+- P48 A `SkyboxComponent` gains `FollowSun`/`TintSun`, sky parameters on the Environment; `LightSystem::SubmitSkybox` (`LightSystem.cpp:196-203`) maps them, SceneDebug (`SceneDebug.cpp:743`) shows them; no save-format change (B new `ProceduralSkyComponent` with an engine-owned Environment).
+
+**GPU pipeline:**
+- `Shaders/Atmosphere.glsl`: shared math in the GLSL subset that also compiles as C++ over GLM (like `Brdf.glsl`): ray–sphere, density, transmittance march, phases, sky-view uv mapping, limb darkening. `Environment.cpp` includes it for `GetSunTransmittance` and the tint (first engine `.cpp` to include a `.glsl`; copy the GLM shim and `push_macro("max")` from `test/src/Tests/Renderer/IblTest.cpp:20-51`).
+- `Shaders/ProceduralSky.glsl` variants: `DE_SKY_TRANSMITTANCE` (u3 image2D rgba16f, 32×8 groups); `DE_SKY_MULTISCATTER` (t1, s2 clamp, u3; 64-thread group per texel with shared reduction like `DE_ENV_SH`, `EnvironmentBake.glsl:63-123`); `DE_SKY_VIEW` (t1, t5, s2, u3); `DE_SKY_CUBE` (t1 sky-view, t5 transmittance, s2, u3 image2DArray of cube mip 0; ground = albedo/π × (sun·T·max(sunY,0) + multi-scatter) + aerial in-scatter; + `NightColor`).
+- Constants in the 128 B push block (8 vec4), no volatile UBO; past 128 B fall back to a UBO at b0. One UAV, s2 only, `textureLod`, no `imageLoad`; step counts compile-time (FXC X3511).
+- `EnvironmentShaderVariant` (`EnvironmentShaders.h:16`) + `SkyTransmittance`, `SkyMultiScatter`, `SkyView`, `SkyCube`; `k_VariantCount` 6 → 10 (`EnvironmentShaders.cpp:12`), cases at `:38`, file pick at `:47`. Both new files need the `.inl` include and an `s_EmbeddedShaders` row (`EngineShaders.cpp:22-31`, `:72-81`).
+- Split `Environment::Prepare` (`Environment.cpp:134-247`) into a source stage (HDR upload + `DE_ENV_EQUIRECT` `:158-171`, or the sky stages) and a shared `RecordDerivedStages` (downsample `:173-185`, LUT `:188`, SH `:190-205`, prefilter `:207-221`). `.hdr` keeps transient passes + `RunAfterFrame`; procedural keeps ~20 persistent `ComputePass` members and only re-pushes constants. `Prepare` must not require `m_Equirect`/`m_Halves` when procedural (`:138`).
+- New members `m_Procedural`, `m_Sky`, `m_SkyDirty`, `m_LutsDirty`, `m_LastBakeFrame` (`Renderer::GetFrameIndex`, `Renderer.h:197`), three LUTs, the pass cache. `EnvironmentAccess`: `NeedsBake(env)` (`!m_Ready || m_SkyDirty`), `SetSunDirection(env, dir)` (threshold), `SetMultipleScattering(env, bool)` (test only), LUT getters.
+- Re-bake gate: `Renderer3D.cpp:662` uses `NeedsBake` after applying `FollowSun` (`m_ShadowLight` still valid; reset at `:2981`); bake only if `m_LastBakeFrame != frame` (a second scene with another sun that frame uses the cube as is, documented). Nothing stale is shown: the bake records before every draw and `PrepareEnvironmentLighting` (`:668`, `:2894-2916`) copies the new IBL the same scene.
+- Cost at 512: ~0.3–0.5 ms on the RX 7900 XTX (no upload; the HDRI's 1 ms included a 2048×1024 upload). Memory: cube 4.2 MB at 256 / 16.8 MB at 512, specular ~1 MB, LUTs 128 + 8 + 162 KB.
+
+**Sun disc:** only in `Skybox.glsl`, after the cube lookup (`:61`), before `LinearToSrgb` and `ApplySkyFog` (fog dims it, bloom catches it). Radiance `SunDiscIntensity·SunIntensity·lin(SunColor)·T(sun)·Intensity`, T from the CPU at the live light direction (tracks the light between re-bakes). Limb `pow(μ, vec3(0.397, 0.503, 0.652))`, μ = sqrt(1 − (θ/r)²); edge AA with `fwidth(cosθ)` before any branch (X3570); clipped at the horizon by `smoothstep(±pixel, dir.y − dip(Altitude))`; gone below the horizon. `SkyboxData` 96 → 128 B (`Renderer3D.h:767` assert; `Skybox.glsl:24-29`): `vec4 Sun` (toward-sun dir, w = cos radius, 0 = off), `vec4 SunDisc` (linear rgb, w = edge); a `.hdr` sky adds exactly +0.0 (Skybox 27/27 must still pass). The cube and IBL hold only scattered light (incl. the Mie aureole), never the disc; direct sun is the analytic light only. Limit: chrome shows the GGX highlight, not a disc.
+
+**Test case "Procedural Sky Test" (`--test=procedural`), closed-form CPU checks:**
+- PS1 transmittance LUT at μ=1, h=0 vs closed form (1 %), downward ray 0.
+- PS2 multi-scatter off, Mie 0, ozone 0, vertical sun and view: zenith = E·P_R(1)·τ·e^{−τ} (2 %).
+- PS3 brightest low-mip texel within one texel of −`SunDirection` for 4 suns; 90° azimuth permutes faces (1e-3).
+- PS4 re-bake trigger (0.1° → +0 bakes; 0.5° → +1 bake, +1 lighting copy; non-sun change → +1; two scenes one frame → 1).
+- PS5 `FollowSun` picks the shadowed light, else the first.
+- PS6 RGBA16F: disc centre = encoded (cube + disc) within 1.5/255, limb at 0.7r within 2 %, 1.5r = cube only.
+- PS7 sun at −3°: no disc, a PBR plane lit only by the tinted light reads 0.
+- PS8 `SunDiscIntensity` 0 vs 1000: 0 px on diffuse/chrome PBR, identical SH.
+- PS9 `TintSun`: plane = CPU T × untinted (1.5/255); one froxel's in-scatter ratio = encoded T (2 %).
+- PS10 sun at −20°: upper-hemisphere mean ≈ `NightColor` (10 % + 1e-4).
+- PS11 Scene path = direct path (0 px at 1.5/255), moving `Direction` re-bakes once.
+- PS12 `SetSky` NaN/negative warns once and keeps the sky; bad face size → nullptr.
+- PS13 log the `Environment` timer over 30 re-bakes at 512.
+- Doctests: `Atmosphere.glsl` as C++ (transmittance closed form, sky-view uv round trip, limb at μ=1, T below the horizon 0).
+- On-screen 2×2: sunset with disc and bloom; six faces at noon; auto elevation sweep with the timer; chrome and diffuse PBR under a tinted sun in froxel fog.
+- Re-run Skybox, IBL, PBR, froxel, volume, Post.
+
+**Groups:**
+- G1 engine core (risky): `Atmosphere.glsl`, `ProceduralSky.glsl`, `Environment.h/.cpp`, `EnvironmentShaders.*`, `EngineShaders.cpp`, `EnvironmentAccess.h`, doctests.
+- G2 renderer (risky): `Renderer3D.cpp` `EndScene` `:660-675`, `SetEnvironment` `:2851`, `DrawSkybox` `:2918-2952`, `SkyboxData`, `Skybox.glsl`, `SceneEnvironment` fields; test PS1–PS10, PS12, PS13.
+- G3 ECS + docs: `SkyboxComponent`, `LightSystem.cpp:196-203`, `SceneDebug.cpp:743`, PS11; `docs/environment.md` "Procedural sky", `scenes-and-ecs.md`, `volumetrics.md` (tint), `.claude/reference/rendering.md`.
+- G4 Dustlight: fourth environment "Procedural" (`k_Count` 3 → 4, null `Path`, `CreateProcedural(256)`, `FollowSun`/`TintSun` on, skip `SetSunAzimuth`, preset `SunTint` white so `SunCycle` warmth isn't applied twice, `DustlightLayer.cpp:123-136`), panel sliders (turbidity, disc), `--check` entries.
+
+**Risks:** Vulkan sync validation (cube re-written after last frame's sky sampled it), RGBA16F horizon banding at 256, persistent-pass binding sets across frames. D3D11 FXC compile time/unroll of 30–64-step loops, latency-bound single-group SH, bake cost (2–3× slower for volumetrics), `fwidth` before branches. D3D12 `CopyTexture` of the IBL every bake frame (copy-restore rule), debug-layer barriers on cube UAV/SRV mips, any later volatile buffer written every bake frame.
+
+**Needs testing on a real GPU:** sunset/twilight look, horizon banding, disc shimmer and bloom, SH ringing opposite a bright aureole, 512 bake time on all three backends, the validation runs above.
+
 ## Needs testing on a real GPU (every phase)
 
 Vulkan, DX11 and DX12 on the owner's machine: visual comparison of the test cases, D3D12 debug layer clean, Vulkan validation clean, froxel pass timings.
@@ -969,3 +1032,15 @@ Built as designed (owner chose A for Q1–Q4) in three implementer groups plus t
 - **Dustlight GPU cost** (RX 7900 XTX, `--check` means): Volumetrics 0.07 / 0.19 / 0.25 ms, VolumeRaymarch 0.15 / 0.47 / 0.33 ms, Environment bake ~1 ms per bake frame (Vulkan / DX11 / DX12).
 - **Full regression** (`-Tag v13-final`): Vulkan, DX11, DX12 all PASS, 0 `VUID-` (counts in the review file); unit tests 257/257.
 - **Open for the owner:** whether `build-release.yml` packages Dustlight like Candlewick/Marionette/Hearthvale (changes the release asset count).
+
+### Phase 8 (2026-11-27, uncommitted)
+
+Built as designed (owner chose A for P40–P48) in two implementer groups (G1+G2 engine and renderer, G3+G4 ECS, docs and Dustlight), with these changes:
+- **Deviations:** disc radius, disc intensity and `RebakeAngle` don't dirty the sky (the cube never holds the disc); default `SunIntensity` 2; `GetSunTransmittance` fades over 1° below the horizon; with `FollowSun` the disc and T use the live light direction; with no submitted light the legacy default light is followed; one bake per environment per frame, counted by bake generation; `SkyboxData.SunDisc.w` carries the horizon y threshold.
+- **Bug found on the way:** moving the HDR bake's derived stages into the shared `RecordDerivedStages` broke the pass-reuse counter (the SH projection reused the BRDF LUT pass; IBL 2, 5a, 5b failed). Fixed in the pass-acquire lambda.
+- **Tests:** "Procedural Sky Test" (`--test=procedural`) PS1–PS13 (25 lines) with an on-screen 2×2; PS3 searches only the sun's own elevation band (the horizon is brighter than the Mie glow) with a 9° tolerance (worst 3.7°); PS4 primes each step; PS6 uses an 8° FOV camera. Doctests `AtmosphereTests.cpp`; unit tests 263.
+- **Bake cost** (PS13, 30 re-bakes at a 512 face, RX 7900 XTX): Vulkan 0.38–0.48, DX11 0.52–0.54, DX12 0.32–0.39 ms mean.
+- **Dustlight:** fourth environment "Procedural sky" (face 256, `FollowSun`/`TintSun` on, white base sun colour, sky `SunIntensity` 4 scaled by the `SunCycle` intensity); Turbidity and disc sliders; `--check` 61 (re-bake check needs `EnvironmentBakes > 0` and `IsReady()`).
+- **Review** (engine-reviewer, Opus high): 0 High, 0 Medium, 5 Low, all fixed (`GetSky` doc, the Dustlight re-bake check, "panorama or procedural sky" docs, one planet-radius constant via `EnvironmentAccess::GetGroundRatio`, the sourced cost figure). P46 B filed as #344.
+- **Full regression** (`-Tag v13-p8-final`): procedural 25, froxel 88, volume 81, raymarch 38, ibl 29, skybox 27, pbr 61, Lighting 43, Batch 75, Shadow 32, Post 23, Particle 26, Mesh 3D 19, Render Target 75, Dustlight `--check` 61 on Vulkan, DX11 and DX12; 0 `VUID-`, 0 sync; noise only (skybox 7, procedural 5 deliberate rejections; D3D12 #1008).
+- **Needs testing on a real GPU:** sunset and twilight look, horizon banding at 256, disc shimmer and bloom, SH ringing opposite a bright aureole; the D3D11 debug layer when a later scene in the same frame re-bakes a cube an earlier scene's sky sampled (`CSSETUNORDEREDACCESSVIEWS_HAZARD`); mid-range bake cost.

@@ -40,6 +40,7 @@ namespace Dingo
 		const char* GetEnvironmentName(int index) const { return Environments::GetPreset(index).Name; }
 		bool AreEnvironmentsReady() const { return m_Environments.AllReady(); }
 		bool AreEnvironmentsLoaded() const { return m_Environments.AllLoaded(); }
+		Environments& GetEnvironments() { return m_Environments; }
 		Entity GetSkyEntity() const { return m_Environments.GetSky(); }
 		Entity GetAmbientEntity() const { return m_Ambient; }
 		Props& GetProps() { return m_Props; }

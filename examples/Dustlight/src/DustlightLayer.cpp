@@ -10,6 +10,7 @@ namespace
 
 	constexpr const char* k_SceneName = "Dustlight";
 	constexpr float k_ShaftIntensity = 4.0f;
+	constexpr float k_FullSunIntensity = 3.2f;
 	constexpr int k_FreezeHoldSteps = 90;
 	constexpr float k_FreezeStep = 1.0f / 60.0f;
 
@@ -19,8 +20,8 @@ namespace
 		settings.Enabled = true;
 		settings.Tone.Operator = ToneMapOperator::Soft;
 		settings.Bloom.Enabled = true;
-		settings.Bloom.Intensity = 0.45f;
-		settings.Bloom.Threshold = 0.8f;
+		settings.Bloom.Intensity = 0.3f;
+		settings.Bloom.Threshold = 1.0f;
 		return settings;
 	}
 }
@@ -129,10 +130,13 @@ namespace Dingo
 		DirectionalLightComponent& light = m_SunEntity.GetComponent<DirectionalLightComponent>();
 		light.Direction = m_Sun.Direction;
 		const EnvironmentPreset& preset = Environments::GetPreset(m_EnvironmentIndex);
-		light.Color = m_Sun.Color * preset.SunTint;
+		const bool procedural = Environments::IsProceduralPreset(m_EnvironmentIndex);
+		light.Color = (procedural ? glm::vec3(1.0f) : m_Sun.Color) * preset.SunTint;
 		light.Intensity = m_Sun.Intensity * preset.SunScale;
 		light.VolumetricIntensity = k_ShaftIntensity * preset.ShaftScale;
 		m_Environments.SetSunAzimuth(m_Sun.AzimuthDegrees);
+		if (procedural)
+			m_Environments.SetSunFade(m_Sun.Intensity / k_FullSunIntensity);
 	}
 
 	void DustlightLayer::SetEnvironment(int index)

@@ -29,6 +29,8 @@ namespace
 #include "Environment.glsl.inl"
 #include "EnvironmentBake.glsl.inl"
 #include "Skybox.glsl.inl"
+#include "Atmosphere.glsl.inl"
+#include "ProceduralSky.glsl.inl"
 #include "VolumetricMath.glsl.inl"
 #include "Volumetrics.glsl.inl"
 #include "VolumetricMedia.glsl.inl"
@@ -79,6 +81,8 @@ namespace
 		{ "Environment.glsl", View(k_Environment_glsl) },
 		{ "EnvironmentBake.glsl", View(k_EnvironmentBake_glsl) },
 		{ "Skybox.glsl", View(k_Skybox_glsl) },
+		{ "Atmosphere.glsl", View(k_Atmosphere_glsl) },
+		{ "ProceduralSky.glsl", View(k_ProceduralSky_glsl) },
 		{ "VolumetricMath.glsl", View(k_VolumetricMath_glsl) },
 		{ "Volumetrics.glsl", View(k_Volumetrics_glsl) },
 		{ "VolumetricMedia.glsl", View(k_VolumetricMedia_glsl) },

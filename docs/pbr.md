@@ -67,7 +67,7 @@ leaves 22 to it).
 
 ## Showcase
 
-[examples/Dustlight](../examples/Dustlight/README.md) shows PBR materials (a roughness and metallic grid, glTF props and an emissive sphere) lit by HDR environments.
+`examples/Dustlight` shows PBR materials (a roughness and metallic grid, glTF props and an emissive sphere) lit by HDR environments.
 
 ## Importing a glTF model
 

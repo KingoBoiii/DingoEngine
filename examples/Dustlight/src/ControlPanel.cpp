@@ -80,6 +80,24 @@ namespace Dingo
 			ImGui::EndCombo();
 		}
 
+		if (Environments::IsProceduralPreset(environment))
+		{
+			ProceduralSky& sky = layer.GetEnvironments().GetProceduralSettings();
+			bool changed = ImGui::SliderFloat("Turbidity", &sky.Turbidity, 0.0f, 10.0f);
+			changed |= ImGui::SliderFloat("Sun disc intensity", &sky.SunDiscIntensity, 0.0f, 100.0f);
+			changed |= ImGui::SliderFloat("Sun disc radius", &sky.SunDiscRadius, 0.0f, 3.0f, "%.2f deg");
+			if (changed)
+				layer.GetEnvironments().ApplyProcedural();
+		}
+
+		Entity camera = layer.GetCameraEntity();
+		if (camera.IsValid() && camera.HasComponent<PostProcessComponent>())
+		{
+			BloomSettings& bloom = camera.GetComponent<PostProcessComponent>().Settings.Bloom;
+			ImGui::SliderFloat("Bloom intensity", &bloom.Intensity, 0.0f, 1.0f);
+			ImGui::SliderFloat("Bloom threshold", &bloom.Threshold, 0.5f, 4.0f);
+		}
+
 		ImGui::SeparatorText("Volumetrics");
 		bool volumetrics = renderer.IsVolumetricsEnabled();
 		if (ImGui::Checkbox("Volumetric fog", &volumetrics))

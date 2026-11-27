@@ -763,8 +763,10 @@ namespace Dingo
 			glm::mat4 InverseViewProjection{ 1.0f };
 			glm::vec4 Params{ 1.0f, 0.0f, 1.0f, 0.0f }; // x = cos and y = sin of the lookup's turn, z = intensity
 			glm::vec4 Volume{ 0.0f }; // x = 1: the froxel volume fogs the sky, y = the texture coordinate of its last slice
+			glm::vec4 Sun{ 0.0f }; // xyz = direction toward the sun, w = cosine of the disc's radius, 0 = no disc
+			glm::vec4 SunDisc{ 0.0f }; // rgb = the disc's linear radiance, w = the horizon's y: the disc is clipped below it
 		};
-		static_assert(sizeof(SkyboxData) == 96, "SkyboxData must match the std140 block in Skybox.glsl");
+		static_assert(sizeof(SkyboxData) == 128, "SkyboxData must match the std140 block in Skybox.glsl");
 		struct SkyboxEntry
 		{
 			Material* Sky = nullptr;
@@ -776,6 +778,8 @@ namespace Dingo
 		std::unordered_map<uint64_t, SkyboxEntry> m_SkyboxMaterials;
 		void ReleaseIdleSkyboxes();
 		bool DrawSkybox(const SceneEnvironment& environment);
+		void ApplyProceduralSun(const SceneEnvironment& environment);
+		glm::vec4 m_SkySun{ 0.0f }; // xyz = the travel direction of the sun this scene's procedural sky shows, w = 1 when set
 		bool PrepareEnvironmentLighting(const SceneEnvironment& environment);
 		bool PrepareShadows();
 		void EnsureShadowResources();
