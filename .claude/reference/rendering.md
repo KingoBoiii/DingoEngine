@@ -132,6 +132,62 @@ Read on demand from CLAUDE.md. Shaders, Renderer2D/3D, lighting, skinning and an
 - `Material::SetTexture/SetSampler` rebuild the cached passes when a slot's pointer changes, or for a sampler its `GetId()` (#229).
 - A texture created at a freed one's address is still caught at bind time, because every texture draws `GetGeneration()` from one shared counter (v0.8.3, #77, formerly K18).
 
+## PBR materials
+
+PBR materials were added in v1.3 Phase 2 (`docs/pbr.md`).
+
+**Shaders**
+- The engine owns the PBR shaders (`Graphics/PbrShaders.{h,cpp}`):
+  - `Internal::GetPbrShader(Static|Skinned|Instanced)` creates each variant lazily, with hot reload through `WatchUnmanagedShader`;
+  - `DestroyPbrShaders` runs first in `Renderer::Destroy`;
+  - `Internal::CreatePbrMaterial` needs no renderer, so `Model` can call it.
+
+**Treated as lit**
+- `IsLitShader` is true for PBR shaders too. Layout, object records, instancing, translucency and static batches therefore take the lit path.
+- `PrepareLitMaterial` branches to `Internal::PreparePbrMaterial`:
+  - empty slots 0..4 get the white texture and `GetPbrSampler()` (repeat, trilinear, 8× anisotropic);
+  - the 64 B `PbrMaterialData` at binding 1 is written only when it changed.
+- `BindsPastItsSlots` checks 5 slots for PBR and 1 for lit.
+- `GetTwin` re-copies all 5 slots and the PBR fields on each resolve. A cached twin with the wrong shader is rebuilt.
+- PBR honours `MaterialParams::CullMode`. Lit forces None.
+
+**Bindings**
+
+| Binding | Resource |
+|---|---|
+| 0 | Camera |
+| 1 | PbrMaterialData |
+| 2–11 | slot texture/sampler pairs |
+| 12 | ShadowData |
+| 13 | shadow sampler |
+| 16 | atlas |
+| 17 | ObjectData (`DE_OBJECT_DATA_BINDING`) |
+| 18 | instance data |
+| 19 | skin palette |
+| 14, 15, 20–22 | reserved for IBL and froxels |
+
+- D3D11 limits: constant buffers b0, b1, b2 (push constants) and b12; samplers ≤ s13.
+
+**Shader files**
+- `Renderer3D_Lit.glsl` takes its vertex stage from `Renderer3D_MeshVertex.glsl` and its scene declarations from `Renderer3DScene.glsl`. `Renderer3D_Pbr.glsl` includes the same two.
+- `Brdf.glsl` is a GLSL subset that also compiles as C++. `BrdfTests.cpp` and `PbrMaterialTest.cpp` include it for their CPU references.
+
+**Colour space**
+- Albedo, emissive, the mesh colour, the ambient colour and every light colour are authored in sRGB like lit and decoded in the shader (`SrgbToLinear`). Lighting is linear, with light colours × π, so a white surface under a full-strength white light or ambient matches lit; mid-tone light colours and falloff come out brighter than lit (gamma-correct).
+- Mips of albedo and emissive maps are filtered in linear space (`MipFilter::Srgb`, cache suffix `|mips-srgb`); normal maps average as vectors.
+- `LinearToSrgb` is applied before the cascade tint and fog, so post effects see display-space values, like lit.
+- Hook points: `PbrAmbient` (Phase 4 IBL) and `ApplySceneFog` (Phase 5 froxels).
+
+**Normal maps**
+- The frame comes from screen derivatives, with `sign(det)` so mirrored UVs and the D3D y flip both work. Without UVs it falls back to the geometric normal.
+- All texture samples and derivatives are taken before any branch (FXC X3570/X4014).
+- Shadow bias uses the geometric normal.
+
+**Import**
+- `ModelLoadParams::SetPbrMaterials(true)` turns on the glTF import (`Model.cpp` `LoadMaterialTexture`, `CreateImportedPbrMaterial`, `CopyPbrMaterial` on reload).
+- assimp 6.0.4 stores the occlusion strength as `"$tex.file.strength"`, not `AI_MATKEY_GLTF_TEXTURE_STRENGTH`.
+- CPU mip chains come from `Graphics/MipChain.h`; normal maps are renormalised.
+
 ## Pipeline state and winding
 
 - **Blending** (`NvrhiPipeline`, every pipeline): straight-alpha "over", colour `SrcAlpha`/`OneMinusSrcAlpha` and alpha `One`/`OneMinusSrcAlpha`, so a target stays as opaque as what lies under a translucent draw.

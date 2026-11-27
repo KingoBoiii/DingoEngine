@@ -278,8 +278,8 @@ never culled.
 A mesh drawn many times in one scene, with one material and one shadow setting, is drawn
 **instanced**: every copy in view in one draw from the mesh's own vertex and index buffers, each
 placed on the GPU from a 128-byte record (its transform, normal matrix, colour and the index of its
-surface override). Nothing to turn on: it applies to the built-in lit material and every
-`CreateLitMaterial` material once a mesh has `Renderer3DCapabilities::InstanceThreshold` copies
+surface override). Nothing to turn on: it applies to the built-in lit material, every
+`CreateLitMaterial` material and every PBR material (`CreatePbrMaterial`) once a mesh has `Renderer3DCapabilities::InstanceThreshold` copies
 submitted with one material and shadow setting (8 by default), or fewer whose vertices together
 outgrow one batch (`MaxVertices`). Below that the CPU batch stays cheaper. The count is taken before
 culling, so the camera never moves a copy between the two transforms. Copies culled from the camera

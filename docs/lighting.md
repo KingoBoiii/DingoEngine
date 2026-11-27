@@ -415,6 +415,7 @@ orb.GetComponent<MeshRendererComponent>().Surface->EmissiveStrength = 2.4f * pul
   those settings (the Batch Test reads both back and requires 0 differing pixels). Folding several
   materials into one batch changes the order their meshes draw in, which shows only where two
   surfaces lie at exactly the same depth.
+- **Metallic.** `SurfaceOverride::Metallic` (default 0) is read only by PBR materials (see [PBR materials](pbr.md)); the lit shader ignores it.
 - **Lit materials only.** A custom shader's mesh ignores it, and so does a skinned mesh
   (`SubmitSkinnedMesh` has none).
 - **How:** each override is a 32-byte record in a storage buffer the lit shader reads by the index

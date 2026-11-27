@@ -120,6 +120,11 @@ neither (OBJ's importer fills in 0.6 grey for a material without `Kd`). Nothing
 applies it, so existing scenes look the same: pass it as the mesh colour
 (`MeshRendererComponent::Color`, `SubmitMesh`'s colour) for a colour-only pack.
 
+`ModelLoadParams().SetPbrMaterials(true)` turns each material into a metallic-roughness PBR material with
+the file's five images (base colour, normal, metallic-roughness, occlusion, emissive), mip chains and
+factors, for `Renderer3D` to draw: see [PBR materials](pbr.md#importing-a-gltf-model). Off, a material
+has only the diffuse image, as before.
+
 A model whose meshes have bones loads its skeleton, skin weights and animation
 clips: `Model::IsSkinned()`, `GetSkeleton()`, `GetAnimation(i)` and
 `FindAnimation(name)`. A file with clips but no meshes is a clip library, so
