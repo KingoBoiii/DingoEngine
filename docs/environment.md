@@ -119,6 +119,41 @@ Distance fog does not apply to the sky. To make the horizon meet the fog, set `F
 to `false` and `Fog.Color` to the colour of the sky's horizon. Fog through the air (froxel fog) comes in
 a later phase.
 
+## Image-based lighting
+
+A ready environment also lights [PBR materials](pbr.md). Three things are derived from the cube map
+when it bakes: the **irradiance** as nine spherical-harmonics coefficients (the diffuse term), a
+**prefiltered specular** cube (128 per face, 6 mips, roughness m/5 at mip m) and, once per renderer, a
+128 x 128 **BRDF lookup** (the split-sum scale and bias). Lit materials and the flat ambient colour are
+untouched, and `SceneEnvironment::Lighting` / `SkyboxComponent::Lighting` (default true) switch it off.
+
+- **When.** Inside `Prepare`, so the first `EndScene` that uses the environment (or your own `Prepare`
+  call) pays for it, together with the sky bake. The BRDF lookup bakes on the first environment bake of a
+  frame. `IsReady()` is true once all of it is recorded.
+- **Replaces ambient.** With an environment set and `Lighting` on, PBR materials take their ambient from
+  the environment and `AmbientColor` no longer reaches them; analytic lights are unchanged. With
+  `Lighting` off, or no environment, the flat ambient colour applies as before.
+- **Units.** Uniform radiance 1 at intensity 1 lights a surface exactly as a white `AmbientColor` of 1
+  does (diffuse). The lighting scale is `Intensity x LightingIntensity`: `Intensity` is the sky's
+  brightness and is shared, `LightingIntensity` (0 or more, default 1) is the extra multiplier for the
+  lighting alone, so you can dim the light without dimming the sky. There is no separate exposure
+  control; [post exposure](post-processing.md) acts on the encoded sky and the PBR surfaces alike.
+- **Rotation** is the sky's: `Rotation` turns the lighting with the sky.
+- **Hidden sky.** `DrawSkybox` / `Visible` false still lights.
+- **Specular occlusion.** A material's occlusion map also darkens its reflections (see
+  [PBR materials](pbr.md#ambient-and-image-based-lighting)).
+- **Hot reload.** A reloaded `.hdr` bakes all of it again at the next scene that uses it.
+- **Memory.** About 1 MB per `Environment` (the specular cube) and per `Renderer3D` (its own copy), and
+  128 KB for the lookup. The renderer keeps its copy so materials never bind an environment's own
+  textures; it re-copies whenever the environment or its bake changes. None of this is public.
+- **Limits.** One environment per scene. No multiple scattering, so a rough metal reads a little darker
+  than it should, most visibly in a furnace test. The diffuse term is band-limited (SH9): a sun in the
+  panorama lights softly, not as a shadow-casting light, so use a directional light for the sun.
+
+`Renderer3D::Statistics::EnvironmentLighting` says whether the last scene lit PBR materials from the
+environment, and `EnvironmentLightingCopies` how many times it copied the lighting in (1 whenever the
+environment or its bake changed, else 0).
+
 ## Limits
 
 - **Perspective cameras only.** An orthographic camera's scene draws no sky.
@@ -140,7 +175,8 @@ keeps the loaded one. A file read from a package never reloads. `AssetManager::R
 ## Statistics and checking it
 
 `Renderer3D::Statistics::Skybox` says whether the last scene drew a sky (a ready environment, `DrawSkybox`
-and a perspective camera), and `EnvironmentBakes` how many environments it baked.
+and a perspective camera), and `EnvironmentBakes` how many environments it baked; the lighting counters are under
+[Image-based lighting](#image-based-lighting).
 
 The test app's **Skybox Test** (`--test=skybox`) draws the sky and reads pixels back, including an
 orthographic camera, `DrawSkybox` off, an invalid intensity and `SkyboxComponent` selection. The doctests

@@ -164,7 +164,11 @@ PBR materials were added in v1.3 Phase 2 (`docs/pbr.md`).
 | 17 | ObjectData (`DE_OBJECT_DATA_BINDING`) |
 | 18 | instance data |
 | 19 | skin palette |
-| 14, 15, 20–22 | reserved for IBL and froxels |
+| 14 | `u_EnvironmentSampler` (clamp, for 20 and 21) |
+| 15 | `DE_EnvironmentSh` (`readonly` std430 buffer: 9 SH irradiance coefficients) |
+| 20 | `u_EnvironmentSpecular` (cube, 6 mips) |
+| 21 | `u_EnvironmentBrdf` (128² LUT) |
+| 22 | reserved for Phase 5 froxels |
 
 - D3D11 limits: constant buffers b0, b1, b2 (push constants) and b12; samplers ≤ s13.
 
@@ -176,7 +180,7 @@ PBR materials were added in v1.3 Phase 2 (`docs/pbr.md`).
 - Albedo, emissive, the mesh colour, the ambient colour and every light colour are authored in sRGB like lit and decoded in the shader (`SrgbToLinear`). Lighting is linear, with light colours × π, so a white surface under a full-strength white light or ambient matches lit; mid-tone light colours and falloff come out brighter than lit (gamma-correct).
 - Mips of albedo and emissive maps are filtered in linear space (`MipFilter::Srgb`, cache suffix `|mips-srgb`); normal maps average as vectors.
 - `LinearToSrgb` is applied before the cascade tint and fog, so post effects see display-space values, like lit.
-- Hook points: `PbrAmbient` (Phase 4 IBL) and `ApplySceneFog` (Phase 5 froxels).
+- Hook points: `PbrAmbient` (IBL, Phase 4) and `ApplySceneFog` (Phase 5 froxels).
 
 **Normal maps**
 - The frame comes from screen derivatives, with `sign(det)` so mirrored UVs and the D3D y flip both work. Without UVs it falls back to the geometric normal.
@@ -197,7 +201,17 @@ PBR materials were added in v1.3 Phase 2 (`docs/pbr.md`).
 - **Bindings**: UBO `SkyboxData` at 0 (std140, 96 bytes: inverse view-projection, `Params` = cos/sin of the turn `-Rotation` and intensity, reserved), the cube at 1, `Renderer::GetClampSampler()` at 2.
 - **Material cache**: `m_SkyboxMaterials`, keyed by the cube's `Texture::GetId()` (an in-place reload keeps it), each with `SetUniformWritesPerFrame(k_MaxScenesPerFrame)`; one not used for more than `k_MaxIdleBatchScenes` scenes is destroyed by `ReleaseIdleSkyboxes` (called from `BeginSceneInternal`, next to `ReleaseIdleTwins`), so a deleted `Environment` leaves nothing but a short-lived material. All are freed in the destructor.
 - **Scene side**: `LightSystem::SubmitSkybox` (called at the end of `SubmitLights`) picks the `SkyboxComponent` like the fog and calls `SetEnvironment`; `Visible` becomes `DrawSkybox`.
-- **Hooks for later**: `ApplySkyFog(color, dir)` in `Skybox.glsl` is the identity (Phase 5 froxel fog); `Visible = false` keeps the environment for Phase 4 IBL.
+- **Hooks for later**: `ApplySkyFog(color, dir)` in `Skybox.glsl` is the identity (Phase 5 froxel fog); `Visible = false` keeps the environment for IBL.
+
+**Image-based lighting** (v1.3 Phase 4, `Shaders/Ibl.glsl`, `docs/environment.md`)
+- `SceneEnvironment` and `SkyboxComponent` carry `Lighting` (default true) and `LightingIntensity` (default 1). `LightSystem::SubmitSkybox` copies both; `Visible = false` still lights.
+- **Bake** (inside `Environment::Prepare`, after the cube mips): SH9 radiance coefficients into `m_Irradiance` (a `GraphicsBuffer`) and a GGX prefiltered 128 cube (6 mips, roughness m/5) into `m_Specular`. `m_BakeGeneration` changes on each bake. The shared 128² BRDF LUT (`Internal::GetBrdfLut`) bakes lazily on the first Environment bake inside a frame. No multiscatter. `IsReady()` covers all of it.
+- **Renderer copy** (`PrepareEnvironmentLighting`): `Renderer3D` owns `m_IblSpecular` and `m_IblIrradiance` and copies the environment's in via `CommandList::CopyTexture` / `CopyBuffer` when `m_IblSourceId` or `m_IblSourceGeneration` changes (`EnvironmentLightingCopies`). Materials bind only these (`MaterialAccess::SetEnvironmentResources`, names `k_Environment*Name`), never the Environment's own textures, so cached binding sets stay valid.
+- **Copy-restore rule**: a copy into a texture or buffer that stable binding sets sample must put it back in its usual state afterwards (`NvrhiCommandList::CopyTexture`/`CopyBuffer` do), or the sets go stale.
+- `CameraData::EnvironmentParams` (last member, after `FogParams`): x = 1 when lit by the environment, y = `Intensity` x `LightingIntensity`, z/w = cos/sin of the lookup's turn (`DE_RotateY`). The static_assert in `Renderer3D.h` pins it; custom materials only see the frozen prefix.
+- **Shader** (`PbrAmbient`): every fetch happens before the final select between the IBL result and the flat path (`EnvBRDFApprox`, unchanged), so derivatives stay uniform. Diffuse = irradiance x AO; specular = prefiltered x (F0 x A + B) x Lagarde specular occlusion (`DE_SpecularOcclusion(NoV, ao, a)`) x a horizon fade. Radiance enters undecoded and is encoded with the rest.
+- **Include preprocessor**: it pastes each include once and ignores `#if`, so put includes at the top of the file; an include inside a conditional is pasted regardless. `Ibl.glsl` does not pull in `Brdf.glsl` (which has no guard): include `Brdf.glsl` first.
+- IBL resources are internal only; there is no new exposure control (post exposure acts on the encoded sky and PBR alike). Stats: `EnvironmentLighting`, `EnvironmentLightingCopies`.
 
 ## Pipeline state and winding
 

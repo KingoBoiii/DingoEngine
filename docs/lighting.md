@@ -20,7 +20,7 @@ stays off until a material asks for it.
 | Directional | `DirectionalLight` | `DirectionalLightComponent` | Parallel rays, no falloff. At most `Renderer3D::k_MaxDirectionalLights` (4) per scene. |
 | Point | `PointLight` | `PointLightComponent` | Light from a position in every direction, reaching zero at `Range`. |
 | Spot | `SpotLight` | `SpotLightComponent` | A point light limited to a cone. |
-| Ambient | `Renderer3D::SetAmbientLight(color, intensity)` | `AmbientLightComponent` | Reaches every face equally. |
+| Ambient | `Renderer3D::SetAmbientLight(color, intensity)` | `AmbientLightComponent` | Reaches every face equally. PBR materials in a scene with an [environment](environment.md#image-based-lighting) take their ambient from it instead. |
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -488,8 +488,9 @@ appended after them, so a shader that declares only those three keeps compiling 
 | 272 | `LocalLight LocalLights[32]` | 48 bytes each: `vec4 PositionRange` (xyz, w = range), `vec4 Color` (rgb × intensity, w = cone scale), `vec4 SpotDirection` (xyz normalised, w = cone offset). |
 | 1808 | `vec4 FogColor` | rgb = the fog's colour, a = its `MaxOpacity`. |
 | 1824 | `vec4 FogParams` | x = `Start`, y = `End`, z = `Density`, w = the `FogMode` (0 none, 1 linear, 2 exponential, 3 exponential squared). |
+| 1840 | `vec4 EnvironmentParams` | x = 1 when image-based lighting is on, y = `Intensity` × `LightingIntensity`, z and w = cos and sin of −`Rotation`. |
 
-The whole block is 1840 bytes. Declare members in this order from the start; you may stop after
+The whole block is 1856 bytes. Declare members in this order from the start; you may stop after
 any of them. To use the lights, mirror the whole block, struct definitions included, from
 [`Renderer3D_Lit.glsl`](../src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.glsl), the reference
 implementation. Either stage may declare binding 0 (the lit shader's vertex stage declares only

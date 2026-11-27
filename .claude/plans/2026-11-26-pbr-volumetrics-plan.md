@@ -1,4 +1,4 @@
-**Status**: open — Phases 1–2 committed (`3d33d8fc`, `97235b5e`, `13c54ffb`); Phase 3 committed (`a94c3af8`); next: Phase 4
+**Status**: open — Phases 1–4 committed (`3d33d8fc`, `97235b5e`, `13c54ffb`, `a94c3af8`, `04693ec3`, `e15b509f`); next: Phase 5
 
 # v1.3: PBR materials, image-based lighting and volumetric fog
 
@@ -293,6 +293,69 @@
 - SH9 irradiance, prefiltered specular cube mips, BRDF LUT; PBR ambient = IBL when an environment is set, else today's ambient colour.
 - Exposure/intensity control; tests compare against reference values for a white furnace and a known HDR.
 
+### Design (engine-designer, 2026-11-27)
+
+Gaps found:
+- G1. Material binding sets are cached per key with no eviction (`Material.cpp:23-50`, `:315-326`). Binding each Environment's own IBL textures would leave one pass per (material, environment) holding deleted GPU memory. So **materials bind only renderer-owned IBL resources**, which never change.
+- G2. `setComputeState` resets NVRHI graphics state (`vendor/nvrhi/src/vulkan/vulkan-compute.cpp:165`); a copy does not. The #154 restore rule (`NvrhiCommandList.cpp:123-131`) applies to every copy into a texture a stable binding set samples.
+- G3. Render passes re-require only raw-buffer and UAV items (`NvrhiCommandList.cpp:358-362`, `:281`): a readonly storage buffer gets a `ShaderResource` barrier every draw.
+- G4. No `CommandList` texture-to-texture copy exists (only staging copies, `NvrhiTexture.cpp:144`, `NvrhiGraphicsBuffer.cpp:229`).
+- G5. `EnvironmentBake.glsl:12-14` declares its sampler and `image2DArray` for every variant; new variants need their own declarations (binding sets match reflection exactly).
+- G6. Flat ambient is `SrgbToLinear(AmbientColor)·(diffuseColor + EnvBRDFApprox)·occlusion` (`Renderer3D_Pbr.glsl:95-98`), no (1−F) on diffuse. IBL keeps that structure so the furnace matches term by term.
+
+**Bake pipeline** (`Environment::Prepare`, `Environment.cpp:121-193`): new stages after the downsample loop (`:157-168`), before `EndGpuTimer` (`:170`), same frame list and `passes` vector (`RunAfterFrame`, `:186-191`). Each stage runs only if the previous recorded; failure sets `m_BakeFailed` (`:180-184`); `m_Ready` and `m_BakeGeneration++` only when all recorded.
+1. BRDF LUT once per process: `Internal::EnsureBrdfLutBaked()` (`EnvironmentShaders.cpp`), `DE_IBL_BRDF_LUT`, 16×16 groups of 8×8, binding 3 `writeonly image2D rgba16f`; `s_LutBaked` set only when recorded.
+2. SH9 `DE_ENV_SH`: one group of 64. Source `SetTexture(1, cube, shMip, 1)`, `S = min(faceSize, 32)`, `shMip = log2(faceSize/S)`; `textureLod` at texel centres × exact texel solid angle (`DE_CubeTexelSolidAngle`); `shared vec4 s_Sum[9][64]` tree reduction; scale by `4π/Σdω` × cosine-lobe/π (1, 2/3, 1/4). Output binding 4 `writeonly buffer DE_EnvironmentShOut { vec4 C[9]; }` (RawBuffer_UAV u4), storing **irradiance/π**, so diffuse = `diffuseColor·Σ cᵢYᵢ(n)`.
+3. Specular prefilter `DE_ENV_PREFILTER`: one dispatch per mip of `m_Specular` (`SetStorageTexture(3, m_Specular, m)`, 8×8, z = face), source `m_Cube` all mips + `Renderer::GetClampSampler()`. Mip 0 = one `textureLod` at `max(log2(faceSize/128), 0)`; mip m ≥ 1: roughness m/5, 64 Hammersley GGX samples, N = V = R, PDF-based source LOD `max(0.5·log2(Ωs/Ωp) + 1, 0)`, weight `max(NoL,0)`, no branch, `textureLod` only.
+
+Hot reload: `EnvironmentAccess::Reload` (`:232-263`) already clears `m_Ready`; `m_Specular`/SH buffer are fixed-size, never reinitialised.
+
+**Resources and lifetime**
+- Environment (create in `Build` `:101-104`, delete in `~Environment` `:85-89`): `m_Specular` TextureCube RGBA16F face 128, `k_PrefilterMips = 6`, storage (~1.05 MB); `m_Irradiance` 144 B storage buffer, no initial data; `m_BakeGeneration`. `EnvironmentAccess` gains `GetSpecular`, `GetIrradiance`, `GetBakeGeneration`.
+- Renderer3D (`Initialize` next to `:376-383`, `Shutdown` next to `:484-485`): `m_IblSpecular` (same format, no storage), `m_IblIrradiance`, `m_IblSourceId`, `m_IblSourceGeneration`. Never uploaded; undefined until first copy but never selected.
+- LUT: global 128×128 RGBA16F storage texture, `Internal::GetBrdfLut()` created lazily (no submit) from `Renderer3D::Initialize`, deleted in `DestroyEnvironmentShaders` (`EnvironmentShaders.cpp:54-64`, `Renderer.cpp:178`), `s_LutBaked` reset there.
+- Copy into the active slot in `EndScene` after `Prepare` (`Renderer3D.cpp:597-601`), before the scene UBO upload (`:620`), when `(GetId, GetBakeGeneration)` changed: new `CommandList::CopyTexture(dst, src)` (`CommandList.h` after `:52`; 6 faces × 6 mips, then `setTextureState(dst, All, initialState)` + `commitBarriers()`, `UploadTexture` pattern `:126-131`) and `CopyBuffer(dst, src, size)` with the same restore. `Statistics::EnvironmentLightingCopies` counts them. Ids never reused; L7 not widened.
+- Threading: all main-thread recording into the frame list; #337 not widened.
+
+**Bindings** (`Renderer3D_Pbr.glsl`; 22 stays reserved for Phase 5 froxels)
+
+| Binding | Resource | Name | D3D |
+|---|---|---|---|
+| 14 | sampler, `Renderer::GetClampSampler()` | `u_EnvironmentSampler` | s14 |
+| 15 | `readonly buffer DE_EnvironmentSh { vec4 Sh[9]; }` | `DE_EnvironmentSh` | t15 RawBuffer_SRV |
+| 20 | `textureCube` | `u_EnvironmentSpecular` | t20 |
+| 21 | `texture2D` | `u_EnvironmentBrdf` | t21 |
+
+- Material: name constants next to `Material.h:229-238`; private `SetEnvironmentResources(GraphicsBuffer*, Texture* specular, Texture* lut, Sampler*)` next to `:315` + `MaterialAccess::SetEnvironmentResources` (`MaterialAccess.h:14`); bound by name in `GetOrCreateRenderPass` (`Material.cpp:315-380`), so only PBR binds them; ids join `MakeCacheKey` (one key per renderer).
+- Call sites next to every `SetShadowResources`: `Renderer3D.cpp:672` (opaque/static/instanced), `:1891` (translucent), `:2418` (skinned). Shadow probe `:3935` is not PBR.
+- Scene UBO: `CameraData` appends `glm::vec4 EnvironmentParams` after `FogParams` (`Renderer3D.h:738-750`): x = IBL on, y = `Intensity × LightingIntensity`, z/w = cos/sin(−Rotation). Update static_assert (`:753-758`) and mirror (`Renderer3DScene.glsl:29-41`); 96 B prefix frozen. Set before `:620`, zeroed in `ClearSceneLights` (`:2740-2753`).
+
+**Shader math and colour space** (new `Shaders/Ibl.glsl`, C++-compilable like `Brdf.glsl`)
+- `DE_ShBasis`, `DE_ShLambertOverPi`, `DE_CubeTexelSolidAngle`, `DE_Hammersley`, `DE_ImportanceSampleGgx`, `DE_PrefilterSourceLod`, `DE_PrefilterLod(r) = r·(k_PrefilterMips−1)` + inverse, `DE_IntegrateBrdf` (Filament DFG with `V_SmithGGXCorrelated` from `Brdf.glsl`, 256 samples), `DE_BrdfLutUv(NoV, r) = vec2(NoV, r)·(127/128) + 0.5/128`.
+- `PbrAmbient` replaces `Renderer3D_Pbr.glsl:94-98`, gains `normal`, `geometricNormal`, `toCamera`; called at `:147` after all samples. Branch-free, selected at the end: n and R rotated by `DE_RotateY` (`Environment.glsl`); `irr = max(Σ Sh[i]·Yᵢ(n), 0)`; `pre = textureLod(cube, R, DE_PrefilterLod(r))`; `dfg = textureLod(lut, uv, 0).rg`; `so` = Lagarde specular occlusion; horizon `h = min(1 + dot(R, Ng), 1)²`; `ibl = EP.y·(diffuseColor·irr·occlusion + pre·(F0·dfg.x + dfg.y)·so·h)`; `return EP.x > 0.5 ? ibl : flat` (flat path byte for byte today's).
+- Colour space: `.hdr` radiance is linear, enters undecoded; only `AmbientColor` is decoded. Uniform radiance 1 at Intensity 1 → irr = 1 → diffuse = diffuseColor, exactly white `AmbientColor` 1. Intensity is one linear multiplier on sky (`Skybox.glsl:51`) and IBL before the shared `LinearToSrgb` (`:178`). Post exposure still acts on encoded values.
+- AO: material AO scales IBL diffuse and drives `so`; SSAO unchanged (post, #153). No multiscatter. Orthographic cameras get IBL (sky stays perspective-only).
+
+**Public API**: `SceneEnvironment` (`Environment.h:109-119`) and `SkyboxComponent` (`Components.h:366-377`) gain `bool Lighting = true`, `float LightingIntensity = 1`; mapped in `SubmitSkybox` (`LightSystem.cpp:150`), validated in `SetEnvironment` (`Renderer3D.cpp:2655`), shown in SceneDebug (`SceneDebug.cpp:708`). `Renderer3D::Statistics` (`Renderer3D.h:640-641`) gains `EnvironmentLighting`, `EnvironmentLightingCopies`. `IsReady` doc (`Environment.h:74`) covers irradiance and specular.
+
+**Tests**
+- Doctests `test/UnitTests/src/IblTests.cpp` (`BrdfTests.cpp:9-26` pattern): SH orthonormal; texel solid angles sum to 4π; uniform cube → irr 1; analytic L = a + b·y + c(3y²−1) closed form; Hammersley + GGX pdf normalisation; LOD round trip; LUT bounds (A+B ≤ 1, ≥ 0.98 at NoV 1 r 0.045, monotone, |LUT − approx| ≤ 0.06); `so` = 1 at AO 1.
+- "IBL Test" (`--test=ibl`, `test/src/Tests/Renderer/IblTest.{h,cpp}`, registered after `TestLayer.cpp:88`), synthetic RGBE: 1 LUT readback vs CPU; 2 SH uniform; 3 SH analytic within 1.5 %; 4 prefilter uniform/analytic/mip-5 MC; 5 white furnace grid; 6 analytic diffuse ±Y + chrome centre vs sky; 7 intensity / `LightingIntensity` 0 / `Lighting = false`; 8 rotation; 9 lit 0 px; 10 two environments per frame, copy counts; 11 hot reload; 12 delete then no environment; 13 occlusion 0.5; 14 skinned/instanced/translucent/static equal static; 15 orthographic.
+- On-screen 2×2: IBL sphere grid before the sky; furnace grid; diffuse-only vs specular-only; normal-mapped + AO sphere IBL vs AmbientColor.
+- Skybox Test check 7 becomes lit 0 px, PBR 0 px only with `Lighting = false`.
+
+**Build groups**
+1. `Ibl.glsl` + `.inl` + `s_EmbeddedShaders` row (`EngineShaders.cpp:22-29`, `:62-69`), `IblTests.cpp`. Verify: unit tests.
+2. Bake: Environment members, 3 kernels (`k_VariantCount` 3→6, `EnvironmentShaders.cpp:11`, `:34-38`), LUT ownership, `Prepare` stages, access getters, IBL Test checks 1–4. Verify: `--test=ibl` 1–4, `--test=skybox`.
+3. Public fields and plumbing, no rendering change. Verify: full build, Skybox check 9.
+4. Renderer wiring + shader: copies with restore, active resources, `CameraData`, Material bindings, 3 call sites, `EndScene` copy, `PbrAmbient`. Verify: IBL 5–10, 12–15, Skybox 7, PBR/Lighting/Batch unchanged.
+5. Hot-reload check 11, on-screen panel, cost logging.
+6. Docs (`docs/environment.md`, `pbr.md`, `scenes-and-ecs.md`, `lighting.md`, `.claude/reference/rendering.md`) and As built.
+
+**Risks (GPU)**: copy-into-sampled transitions on D3D12/Vulkan sync validation/D3D11 bound warnings; FXC `groupshared`+`barrier()` and 64/256-sample loop compile time at -Od; s14/t15/t20/t21 in the D3D12 root signature; LUT RGBA16F precision at grazing; PDF-LOD seams; fireflies at roughness 0.2–0.4; SH ringing under a strong sun. Cost: bake < 1 ms estimated on the RX 7900 XTX; +1.05 MB per Environment and per Renderer3D, 128 KB LUT; per pixel 2 fetches, 9 buffer loads, ~40 ALU.
+
+**Owner choices — approved 2026-11-27: all A.** (recommended first): P1 controls (A `Lighting` + `LightingIntensity`); P2 IBL replaces `AmbientColor` (A); P3 flat path keeps `EnvBRDFApprox` (A); P4 no multiscatter (A); P5 fixed 128 prefiltered cube copied into a renderer slot (A); P6 LUT lazily at first `Prepare` (A); P7 no new exposure control (A); P8 IBL resources internal only (A); P9 SH on GPU (A); P10 Lagarde specular occlusion + horizon fade (A).
+
 ## Phase 5: froxel volumetrics core
 
 - Grid (default 160×90×64, exponential depth slices, `RGBA16F`), compute passes: inject density + in-scatter, temporal reprojection with jittered slices, front-to-back integrate.
@@ -431,3 +494,23 @@ Built as designed (owner chose A for P1–P10) in 5 code groups plus docs, with 
   - the sky at depth exactly 1.0 with `LessEqual` on another GPU vendor.
 - **Docs:** new `docs/environment.md`; changes to `docs/README.md`, `asset-pipeline.md`, `scenes-and-ecs.md`, `lighting.md`, `textures.md`, `pbr.md`, `AssetManager.h` hot-reload docs, and `.claude/reference/rendering.md` ("Environment and skybox", Vulkan clear rule).
 - Doxygen isn't installed here, so the PR's `API reference` job is the check.
+
+### Phase 4 (2026-11-27, `e15b509f`)
+
+Built as designed (owner chose A for P1–P10) in 5 code groups plus docs and review fixes, with these changes:
+- **Include rule:** the shader include preprocessor pastes each include once and ignores `#if`, so `EnvironmentBake.glsl` includes `Brdf.glsl` and `Ibl.glsl` at the top, not per variant. `Ibl.glsl` does not include `Brdf.glsl` (no include guard there); include Brdf first.
+- **Prefilter source LOD** has no `+1` bias: with it, mip 5 was 7.4–7.9 % off the Monte Carlo reference; without it 2.4–2.5 % (limit 3 %). Review L6: a real sun `.hdr` may sparkle at roughness 0.2–0.4; check on the GPU and restore the bias if so.
+- **LUT vs `EnvBRDFApprox`** differ by up to 0.2 at F0 = 1 (the Karis fit is loose against height-correlated Smith). The flat path keeps the approximation (P3); the furnace check compares against the LUT. IBL 1 tolerance is 4e-3 at the NoV 0 / r 0 texel.
+- **`EnsureBrdfLutBaked`** takes `Prepare`'s `passes` vector (`RunAfterFrame` is private to `Renderer`). `GetBrdfLut` remembers a creation failure and logs once (review L5).
+- **Shared sizes** (review L1): `Internal::k_IblFaceSize`, `k_IblMipLevels`, `k_IblIrradianceBytes` in `EnvironmentAccess.h`; a doctest pins `k_PrefilterMips == 6`.
+- **`CommandList::CopyTexture`** transitions all subresources once before its per-subresource loop (review L2); `CopyBuffer` rejects a size larger than either buffer at runtime.
+- **Bake errors name the stage** (cube, downsample, BRDF LUT, SH projection, specular prefilter) (review L3). A failed IBL stage still keeps the sky from drawing, as designed.
+- **Scene/ECS (owner request):** `SkyboxComponent` → `SubmitSkybox` maps `Lighting` and `LightingIntensity`; a hidden sky still lights. Nothing serializes `SkyboxComponent`, so there is no save-format change. SceneDebug shows the fields read-only. IBL 16 checks the Scene path against the direct one (0 px at 1.5/255).
+- **IBL Test** (`--test=ibl`): checks IBL 1–16 (29 lines) and an on-screen 2×2 view (grid under the analytic sky, white furnace, diffuse and chrome, normal-mapped AO sphere IBL vs flat). Checks start after 10 frames so the panel's resize lands first. Check 4c uses the exact Funk–Hecke form (two Monte Carlo band factors per mip) instead of a per-texel reference, which took ~6 min in Debug (review H1).
+- **Results on the owner's machine** (RX 7900 XTX, private desktops), Vulkan (validation), DX11, DX12 (debug layer):
+  - IBL 29/29, Skybox 27 (7 deliberate error lines), PBR 61, Lighting 43, Batch 75, Shadow 32, Post 23; 0 `VUID-`.
+  - 4c worst error per mip 1–5: 0.57, 0.89, 1.02, 1.63, 2.39–2.54 %.
+  - Unit tests 244/244.
+- **Review** (engine-reviewer): 1 High, 1 Medium, 6 Low. Fixed H1, M1, L1, L2, L3, L5. Left: L4 (editing a bake shader at runtime doesn't re-bake until restart; Debug only), L6 (GPU check above).
+- **Needs testing on a real GPU:** a real sun `.hdr` on a roughness grid (L6); one RenderDoc/PIX capture of the environment copy's barriers; lit versus PBR-with-IBL brightness in a real level.
+- **Docs:** `docs/environment.md` ("Image-based lighting"), `pbr.md`, `scenes-and-ecs.md`, `lighting.md` (`CameraData` row, now 1856 B), `.claude/reference/rendering.md` (PBR bindings 14/15/20/21, copy-restore rule, include rule).

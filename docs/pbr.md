@@ -1,8 +1,8 @@
 # PBR materials
 
 Status: v1.3. Analytic lights (directional, point, spot) with shadows, fog and AO. A skybox is
-in ([Environment and skybox](environment.md)); image-based lighting follows in a later v1.3 phase, and
-until then the ambient term is the scene's ambient colour.
+in ([Environment and skybox](environment.md)), and a scene's environment lights PBR materials; without
+one the ambient term is the scene's ambient colour.
 
 Lighting is GGX with height-correlated Smith visibility and Schlick Fresnel. Albedo and emissive maps,
 the mesh colour, the ambient colour and every light's colour are authored in sRGB, as for lit
@@ -38,6 +38,26 @@ Material* steel = renderer.CreatePbrMaterial(PbrMaterialParams()
 
 `SurfaceOverride::Metallic` overrides a mesh's metallic factor on a PBR material.
 `Renderer3D::Statistics::PbrDraws` counts PBR draws.
+
+## Ambient and image-based lighting
+
+What a PBR surface gets from the sky side depends on the scene:
+
+| Scene | Diffuse ambient | Specular ambient |
+|---|---|---|
+| No environment, or `Lighting` off | `AmbientColor` | A fitted approximation of the BRDF scale and bias (flat, from the ambient colour). |
+| Environment with `Lighting` on | The environment's irradiance (SH9) | Its prefiltered reflections times the BRDF lookup. |
+
+With an environment, `AmbientColor` does not reach PBR materials; lit materials keep using it. Uniform
+radiance 1 at intensity 1 gives the same diffuse as a white `AmbientColor` of 1. Details and
+limits are in [Environment and skybox](environment.md#image-based-lighting).
+
+- **Occlusion** (the `Occlusion` map and `Ao`) multiplies the diffuse term and, through a specular
+  occlusion curve (Lagarde and de Rousiers) that also depends on roughness and the view angle, the
+  reflections, so a crevice does not mirror the sky. It does not touch direct lights.
+- **Horizon.** Reflections that point below the geometric surface fade out, so a bumpy normal map does
+  not reflect the ground into the sky.
+- The post chain's [ambient occlusion](post-processing.md#ambient-occlusion) is separate and darkens the finished pixel.
 
 ## Importing a glTF model
 
