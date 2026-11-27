@@ -241,6 +241,8 @@ void main()
 			commandList = sharedCmdList;
 		}
 
+		++m_RenderSerial;
+
 		if (!UpdateGeometry(drawData, commandList))
 		{
 			if (ownsCommandList)
@@ -342,6 +344,8 @@ void main()
 			vtxOffset += cmdList->VtxBuffer.Size;
 			idxOffset += cmdList->IdxBuffer.Size;
 		}
+
+		EvictUnusedBindingSets();
 
 		if (ownsCommandList)
 		{
@@ -475,7 +479,8 @@ void main()
 		auto iter = m_BindingsCache.find(texture);
 		if (iter != m_BindingsCache.end())
 		{
-			return iter->second;
+			iter->second.LastUsedRender = m_RenderSerial;
+			return iter->second.BindingSet;
 		}
 
 		nvrhi::BindingSetDesc desc;
@@ -489,8 +494,13 @@ void main()
 		nvrhi::BindingSetHandle binding = device->createBindingSet(desc, m_BindingLayout);
 		DE_CORE_ASSERT(binding);
 
-		m_BindingsCache[texture] = binding;
+		m_BindingsCache[texture] = { binding, m_RenderSerial };
 		return binding;
+	}
+
+	void ImGuiRenderer::EvictUnusedBindingSets()
+	{
+		std::erase_if(m_BindingsCache, [this](const auto& entry) { return entry.second.LastUsedRender != m_RenderSerial; });
 	}
 
 } // namespace Dingo
