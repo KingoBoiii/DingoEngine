@@ -27,6 +27,7 @@ namespace Dingo
 		Model,
 		Font,
 		AudioClip,
+		Environment, ///< A Radiance .hdr panorama, loaded as an Environment.
 
 		/// Not a type: the enumerator count, so a per-type table can static_assert that it
 		/// has a row for every type rather than silently serving the None row for a new one.
@@ -66,10 +67,10 @@ namespace Dingo
 	[[deprecated("use ToString(AssetState); removed in 2.0")]] inline const char* AssetStateToString(AssetState state) { return ToString(state); }
 
 	/// Infers the asset type from a file extension (".png" -> Texture2D, ".glsl" -> Shader,
-	/// ".obj"/".gltf" -> Model, ".ttf" -> Font, ".wav"/".ogg" -> AudioClip). Case-insensitive.
+	/// ".obj"/".gltf" -> Model, ".ttf" -> Font, ".wav"/".ogg" -> AudioClip, ".hdr" -> Environment). Case-insensitive.
 	/// Returns AssetType::None for unrecognized extensions.
 	/// All of them: .png .jpg .jpeg .tga .bmp (Texture2D); .glsl .shader (Shader); .obj .gltf .glb
-	/// .fbx (Model); .ttf .otf (Font); .wav .ogg .mp3 (AudioClip).
+	/// .fbx (Model); .ttf .otf (Font); .wav .ogg .mp3 (AudioClip); .hdr (Environment).
 	AssetType AssetTypeFromExtension(const std::filesystem::path& extension);
 
 }

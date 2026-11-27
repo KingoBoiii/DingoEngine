@@ -2,6 +2,8 @@
 #include "DingoEngine/Graphics/Pipeline.h"
 #include "DingoEngine/Graphics/RenderPass.h"
 #include "DingoEngine/Graphics/Sampler.h"
+#include "DingoEngine/Graphics/Enums/TextureFormat.h"
+#include "DingoEngine/Graphics/Enums/TextureDimension.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/SurfaceOverride.h"
 
@@ -82,6 +84,11 @@ namespace Dingo
 		/// Highlight spread, 0 (small, sharp) to 1 (wide, soft).
 		float       Roughness              = 0.5f;
 		float       Specular               = 0.0f; ///< Highlight strength; 0 is none.
+		/// Base colour multiplier; read only by the PBR shader (Renderer3D::CreatePbrMaterial).
+		glm::vec4   BaseColor              = { 1.0f, 1.0f, 1.0f, 1.0f };
+		float       Metallic               = 0.0f; ///< 0 dielectric to 1 metal; read only by the PBR shader.
+		float       Occlusion              = 1.0f; ///< Ambient occlusion multiplier; read only by the PBR shader.
+		float       NormalScale            = 1.0f; ///< Normal-map strength; read only by the PBR shader.
 
 		///@{
 		/// Each setter sets the field of the same name and returns *this, for chaining.
@@ -107,6 +114,10 @@ namespace Dingo
 		MaterialParams& SetEmissiveStrength(float strength)               { EmissiveStrength = strength; return *this; }
 		MaterialParams& SetRoughness(float roughness)                     { Roughness = roughness; return *this; }
 		MaterialParams& SetSpecular(float specular)                       { Specular = specular; return *this; }
+		MaterialParams& SetBaseColor(const glm::vec4& color)              { BaseColor = color; return *this; }
+		MaterialParams& SetMetallic(float metallic)                       { Metallic = metallic; return *this; }
+		MaterialParams& SetOcclusion(float occlusion)                     { Occlusion = occlusion; return *this; }
+		MaterialParams& SetNormalScale(float scale)                       { NormalScale = scale; return *this; }
 		///@}
 	};
 
@@ -158,7 +169,8 @@ namespace Dingo
 		///@{
 		/// Puts a texture or sampler in a slot (null clears it); the material does not take
 		/// ownership. A change rebuilds the material's cached pipelines at its next draw, so avoid
-		/// swapping a slot every frame. A texture created at a freed one's address is noticed at
+		/// swapping a slot every frame, except to another texture of the same format and dimension,
+		/// which only re-binds the cached passes. A texture created at a freed one's address is noticed at
 		/// the next draw (Texture::GetGeneration), and a sampler at the next SetSampler
 		/// (Sampler::GetId), but don't draw the material while a slot holds a freed texture or sampler.
 		void SetTexture(uint32_t slot, Texture* texture);
@@ -229,6 +241,18 @@ namespace Dingo
 		static constexpr const char* k_ShadowAtlasName = "u_ShadowAtlas";
 		/// Name of the shadow atlas sampler a shader declares (Shadows.glsl).
 		static constexpr const char* k_ShadowSamplerName = "u_ShadowSampler";
+		/// Name of the storage block holding the environment's irradiance coefficients (Renderer3D_Pbr.glsl).
+		static constexpr const char* k_EnvironmentShBlockName = "DE_EnvironmentSh";
+		/// Name of the environment's prefiltered specular cube map a shader declares (Renderer3D_Pbr.glsl).
+		static constexpr const char* k_EnvironmentSpecularName = "u_EnvironmentSpecular";
+		/// Name of the BRDF lookup texture a shader declares (Renderer3D_Pbr.glsl).
+		static constexpr const char* k_EnvironmentBrdfName = "u_EnvironmentBrdf";
+		/// Name of the sampler for the two environment textures a shader declares (Renderer3D_Pbr.glsl).
+		static constexpr const char* k_EnvironmentSamplerName = "u_EnvironmentSampler";
+		/// Name of the froxel fog volume a shader declares (Volumetrics.glsl).
+		static constexpr const char* k_VolumetricFogName = "u_VolumetricFog";
+		/// Name of the volume's sampler, when the shader declares its own (Volumetrics.glsl).
+		static constexpr const char* k_VolumetricFogSamplerName = "u_VolumetricFogSampler";
 
 		// ---- Accessors -------------------------------------------------------
 
@@ -255,12 +279,26 @@ namespace Dingo
 		/// The highlight strength; 0 is none.
 		float             GetSpecular()         const { return m_Params.Specular; }
 		///@{
+		/// The PBR shader's base colour, metallic, occlusion and normal-map strength.
+		const glm::vec4& GetBaseColor()         const { return m_Params.BaseColor; }
+		float             GetMetallic()         const { return m_Params.Metallic; }
+		float             GetOcclusion()        const { return m_Params.Occlusion; }
+		float             GetNormalScale()      const { return m_Params.NormalScale; }
+		///@}
+		///@{
 		/// Change the lit shader's surface settings at run time; free to call every frame and read
 		/// by every mesh drawn with this material that has no SurfaceOverride.
 		void SetEmissiveColor(const glm::vec3& color)  { m_Params.EmissiveColor = color; }
 		void SetEmissiveStrength(float strength)       { m_Params.EmissiveStrength = strength; }
 		void SetRoughness(float roughness)             { m_Params.Roughness = roughness; }
 		void SetSpecular(float specular)               { m_Params.Specular = specular; }
+		///@}
+		///@{
+		/// Change the PBR shader's settings at run time, like the surface setters above.
+		void SetBaseColor(const glm::vec4& color)      { m_Params.BaseColor = color; }
+		void SetMetallic(float metallic)               { m_Params.Metallic = metallic; }
+		void SetOcclusion(float occlusion)             { m_Params.Occlusion = occlusion; }
+		void SetNormalScale(float scale)               { m_Params.NormalScale = scale; }
 		///@}
 
 	private:
@@ -290,6 +328,16 @@ namespace Dingo
 		// Binds Renderer3D's shadows to the shader's ShadowData block, u_ShadowAtlas texture and
 		// u_ShadowSampler sampler (Shadows.glsl), each at whatever binding the shader gave it.
 		void SetShadowResources(GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler);
+
+		// Binds Renderer3D's image-based lighting to the shader's DE_EnvironmentSh storage block,
+		// u_EnvironmentSpecular, u_EnvironmentBrdf and u_EnvironmentSampler, each at whatever binding the
+		// shader gave it. Only the renderer's own copies are ever passed, so the cached passes stay valid.
+		void SetEnvironmentResources(GraphicsBuffer* irradiance, Texture* specular, Texture* brdfLut, Sampler* sampler);
+
+		// Binds Renderer3D's froxel fog volume to the shader's u_VolumetricFog texture and, when the
+		// shader declares one, u_VolumetricFogSampler. Only the renderer's own stable texture and sampler
+		// are ever passed, so the cached passes stay valid.
+		void SetVolumetricResources(Texture* volume, Sampler* sampler);
 
 		// Binds Renderer3D's per-mesh surface records to the shader's DE_ObjectData storage block.
 		// Another buffer only re-points the cached passes' binding sets, so the renderer can grow it
@@ -323,6 +371,9 @@ namespace Dingo
 		uint64_t m_Id = AllocateId();
 
 		Texture* m_Textures[k_MaxTextureSlots] = {};
+		uint64_t m_TextureIds[k_MaxTextureSlots] = {};
+		TextureFormat m_TextureFormats[k_MaxTextureSlots] = {};
+		TextureDimension m_TextureDimensions[k_MaxTextureSlots] = {};
 		Sampler* m_Samplers[k_MaxSamplerSlots] = {};
 		uint64_t m_SamplerIds[k_MaxSamplerSlots] = {};
 		uint64_t m_BindingRevision = 0;
@@ -337,6 +388,12 @@ namespace Dingo
 		GraphicsBuffer*      m_ShadowDataBuffer   = nullptr;
 		Texture*             m_ShadowAtlas        = nullptr;
 		Sampler*             m_ShadowSampler      = nullptr;
+		GraphicsBuffer*      m_EnvironmentSh      = nullptr;
+		Texture*             m_EnvironmentSpecular = nullptr;
+		Texture*             m_EnvironmentBrdf    = nullptr;
+		Sampler*             m_EnvironmentSampler = nullptr;
+		Texture*             m_VolumetricFog      = nullptr;
+		Sampler*             m_VolumetricSampler  = nullptr;
 		GraphicsBuffer*      m_ObjectBuffer       = nullptr;
 		uint64_t             m_ObjectBufferId     = 0;
 		GraphicsBuffer*      m_InstanceBuffer     = nullptr;

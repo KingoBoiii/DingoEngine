@@ -50,7 +50,9 @@ namespace Dingo::Internal
 		bool Owns(const ParticleEmitter& emitter) const { return emitter.m_Pool == m_Pool; }
 		// Simulates the scene's emitters and draws them into the current render target, which must be
 		// the one the scene's opaque pass drew into (its depth tests the particles).
-		void EndScene(const glm::mat4& viewProjection, Renderer3D::Statistics& stats);
+		// volume is the renderer's froxel fog texture; volumeParams and volumeGrid are the scene's CameraData
+		// members of those names, 0 when the scene has no volume.
+		void EndScene(const glm::mat4& viewProjection, Texture* volume, const glm::vec4& volumeParams, const glm::vec4& volumeGrid, Renderer3D::Statistics& stats);
 		void ClearScene() { m_Submissions.clear(); }
 		bool HasSubmissions() const { return !m_Submissions.empty(); }
 

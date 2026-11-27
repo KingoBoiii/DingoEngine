@@ -142,6 +142,12 @@ which an emitter takes when it is made. An effect must outlive its emitters.
   keep capacities near what an effect needs. `Particles` in the F8 Profiler tab times it; F4's
   Renderer tab shows the pool, emitters, slots, spawns and dropped spawns.
 
+## Volumetric fog
+
+A scene with [volumetric fog](volumetrics.md) fogs every particle fragment, alpha and additive (an
+additive particle fogs towards black, so it dims instead of lighting the haze up). Distance fog does
+not apply to particles.
+
 ## Checking it
 
 The test app's **Particle Test** (`--test=particle`, `--particles=fountain|burst|soft|budget|events`)

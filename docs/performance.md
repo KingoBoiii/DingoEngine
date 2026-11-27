@@ -327,9 +327,10 @@ SurfaceOverride glow = SurfaceOverride()
 renderer.SubmitMesh(sphere, transform, color, nullptr, ShadowCasting::On, 1, 0.0f, &glow);
 ```
 
-- **All four or none.** An override replaces `EmissiveColor`, `EmissiveStrength`, `Roughness` and
-  `Specular` together. The ones you don't set take `SurfaceOverride`'s defaults.
-- **Lit materials only.** A custom shader ignores it. A skinned mesh has none.
+- **All or none.** An override replaces `EmissiveColor`, `EmissiveStrength`, `Roughness`,
+  `Specular` and `Metallic` together. The ones you don't set take `SurfaceOverride`'s defaults.
+  Only PBR materials read `Metallic`.
+- **Lit and PBR materials only.** A custom shader ignores it. A skinned mesh has none.
 - **It composes.** An instanced copy keeps its override, and so does a
   [baked](#static-geometry) mesh (changing a baked mesh's surface rebakes its cell).
 - **Cheap to change.** An override is a 32-byte record in a storage buffer, not a pipeline or a

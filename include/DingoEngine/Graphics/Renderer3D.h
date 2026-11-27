@@ -2,9 +2,11 @@
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Shader.h"
 #include "DingoEngine/Graphics/Material.h"
+#include "DingoEngine/Graphics/PbrMaterial.h"
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/Frustum.h"
+#include "DingoEngine/Graphics/Environment.h"
 #include "DingoEngine/Graphics/Light.h"
 #include "DingoEngine/Graphics/Particles.h"
 #include "DingoEngine/Graphics/Pipeline.h"
@@ -55,9 +57,17 @@ namespace Dingo
 		bool IsValid() const { return Index >= 0; }
 	};
 
+	/// The resolution of the Raymarch FogVolume pass, relative to the render target.
+	enum class RaymarchResolution
+	{
+		Half,    ///< Half the width and height.
+		Quarter  ///< A quarter of the width and height.
+	};
+
 	/// Budgets and switches of a renderer, set in Renderer3DParams::Capabilities at Create.
-	/// Afterwards only Instancing (SetInstancingEnabled) and LightBudgetFade (SetLightBudgetFade)
-	/// can change.
+	/// Afterwards only Instancing (SetInstancingEnabled), LightBudgetFade (SetLightBudgetFade) and the
+	/// volumetric switch, grid and raymarch resolution (SetVolumetricsEnabled, SetVolumetricGrid,
+	/// SetVolumeRaymarchResolution) can change.
 	struct Renderer3DCapabilities
 	{
 		/// The most one indexed draw takes. A box is 24 verts / 36 indices and a default sphere
@@ -125,6 +135,24 @@ namespace Dingo
 		/// warn-once-and-drop. Asserts are compiled out in release, where it warns and drops
 		/// regardless.
 		bool AssertOnOverflow = false;
+
+		/// Allows froxel volumetric fog (VolumetricFog). It uses no GPU memory and costs nothing until
+		/// first used: the first scene with a volumetric fog set allocates the volume. Once used, the
+		/// volume stays allocated while the renderer lives, and the dispatches stop when this is off.
+		/// Renderer3D::SetVolumetricsEnabled changes it.
+		bool Volumetrics = false;
+		/// The volume's froxel grid: x and y across the view (clamped to 8..256) and z slices in
+		/// depth (8..128). Memory is about 8 bytes per froxel for each of three textures.
+		/// Renderer3D::SetVolumetricGrid changes it.
+		glm::uvec3 VolumetricGrid{ 160, 90, 64 };
+		/// FogVolumes a scene draws, at most Renderer3D::k_MaxFogVolumes, at most
+		/// Renderer3D::k_MaxRaymarchVolumes of them in Raymarch mode. Volumes outside the view are
+		/// skipped first; past the budget the ones farthest from the camera are dropped with a
+		/// warning (Renderer3D::Statistics::FogVolumesDropped).
+		uint32_t MaxFogVolumes = 8;
+		/// Resolution of the Raymarch FogVolume pass; Renderer3D::SetVolumeRaymarchResolution
+		/// changes it.
+		RaymarchResolution VolumeRaymarchResolution = RaymarchResolution::Half;
 	};
 
 	/// Cascaded shadow maps for the first directional light with CastShadows. Every shadow view of
@@ -321,8 +349,8 @@ namespace Dingo
 		/// Particles of the pool taken by the live emitters' rings.
 		uint32_t GetParticlePoolUsed() const;
 
-		/// Distance fog over this scene's lit draws (static and skinned; particles, custom shaders
-		/// and the 2D overlay aren't fogged), scene-scoped like the lights: set it before EndScene,
+		/// Distance fog over this scene's lit draws (static and skinned; particles, custom shaders,
+		/// the skybox and the 2D overlay aren't fogged: with a skybox, match Fog.Color to its horizon), scene-scoped like the lights: set it before EndScene,
 		/// which clears it. It is no light, so a scene with fog and no light keeps the default
 		/// light. Returns false for a fog it ignores: a non-finite value, a negative Density, or
 		/// Linear with End not past Start. FogMode::None clears it, as ClearFog does; MaxOpacity is
@@ -330,6 +358,56 @@ namespace Dingo
 		bool SetFog(const Fog& fog);
 		/// Removes the scene's fog, as SetFog with FogMode::None does.
 		void ClearFog();
+
+		/// Froxel volumetric fog for this scene, scene-scoped like SetFog: set it before EndScene,
+		/// which clears it. It takes effect only with Renderer3DCapabilities::Volumetrics on and a
+		/// perspective camera, and then replaces the scene's distance fog. Returns false, warning
+		/// once, for settings it ignores: a non-finite value, a negative Density, HeightFalloff or
+		/// intensity, MaxInScatter, a NearDistance of 0 or less, or a MaxDistance not past NearDistance.
+		/// A non-finite or negative ScatterTint is rejected the same way. Anisotropy is clamped to
+		/// -0.95..0.95, Albedo to 0..1 and OutsideShadowLight to 0..1.
+		bool SetVolumetricFog(const VolumetricFog& fog);
+		/// Removes the scene's volumetric fog.
+		void ClearVolumetricFog();
+		/// Adds a local volume of fog (FogVolume) to this scene, scene-scoped like SetVolumetricFog:
+		/// submit it before EndScene, which clears them all. `transform` is the volume's world
+		/// transform: its translation places the centre, its rotation and scale turn and size
+		/// FogVolume::HalfExtents. It takes effect only with Renderer3DCapabilities::Volumetrics on
+		/// and a perspective camera. Returns false, warning once, for a volume it ignores: a
+		/// non-finite value, a negative Density, intensity, EdgeFade, noise value or MaxInScatter, a
+		/// HalfExtents or NoiseScale of 0 or less, an unknown Shape or Mode, or a transform that is
+		/// not finite, not affine or squashes an axis flat. Anisotropy, Albedo, OutsideShadowLight,
+		/// the fade keeps and RaymarchSteps are clamped.
+		bool SubmitFogVolume(const FogVolume& volume, const glm::mat4& transform);
+		/// The clock the FogVolume noise drifts by, in seconds, kept until set again. The ECS route
+		/// (Scene::SubmitLights) passes the scene's own clock, which advances with Scene::OnUpdate.
+		/// While a noisy FogVolume with a non-zero NoiseVelocity is kept, a jump backwards or of
+		/// more than half a second drops the volumetric history, as ResetVolumetricHistory does;
+		/// otherwise the clock is not looked at.
+		void SetFogVolumeTime(double seconds) { m_FogVolumeTime = seconds; }
+		/// The clock set by SetFogVolumeTime.
+		double GetFogVolumeTime() const { return m_FogVolumeTime; }
+		/// Chooses a debug picture of the volumetric fog; see VolumetricDebugView. Persistent.
+		void SetVolumetricDebugView(VolumetricDebugView view) { m_VolumetricDebugView = view; }
+		/// The view set by SetVolumetricDebugView.
+		VolumetricDebugView GetVolumetricDebugView() const { return m_VolumetricDebugView; }
+		/// Drops the volumetric fog's temporal history, so the next scene that uses it draws a frame
+		/// with no blend against the past. Call it on a camera cut or a teleport, where the previous
+		/// frame's air no longer matches the view and would ghost for a few frames. A grid change
+		/// and a skipped frame do the same by themselves.
+		void ResetVolumetricHistory() { InvalidateVolumetricHistory(); }
+
+		/// Draws environment.Environment as the sky behind this scene's opaque meshes, at the far plane
+		/// and under translucents and particles, scene-scoped like SetFog: the last call before EndScene
+		/// wins and EndScene clears it. The first scene that uses an Environment bakes it (Environment::Prepare).
+		/// By default (Lighting = true) it also replaces AmbientColor for PBR materials with
+		/// image-based lighting from the same environment. Returns false, rejecting the whole
+		/// environment and its sky, for an Intensity or LightingIntensity that is negative or not
+		/// finite, or a Rotation that is not finite, leaving the scene as it was. The sky is skipped for an orthographic camera and while
+		/// the Environment is not ready; a null Environment clears it.
+		bool SetEnvironment(const SceneEnvironment& environment);
+		/// Removes the scene's environment.
+		void ClearEnvironment();
 
 		/// Replaces the default light (Renderer3DParams::LightDirection/Ambient).
 		[[deprecated("submit the light each scene with SubmitLight and SetAmbientLight, or set Renderer3DParams::LightDirection/Ambient; removed in 2.0")]]
@@ -354,6 +432,10 @@ namespace Dingo
 		static constexpr uint32_t k_MaxDirectionalLights = 4;
 		/// Upper limit of Renderer3DCapabilities::MaxLocalLights.
 		static constexpr uint32_t k_MaxLocalLights = 32;
+		/// Upper limit of Renderer3DCapabilities::MaxFogVolumes.
+		static constexpr uint32_t k_MaxFogVolumes = 16;
+		/// FogVolumes in Raymarch mode a scene draws, inside MaxFogVolumes.
+		static constexpr uint32_t k_MaxRaymarchVolumes = 4;
 
 		/// Scenes a renderer can run in one frame. On Vulkan each EndScene writes the volatile
 		/// scene buffer, which has room for this many writes a frame; later scenes draw with stale
@@ -496,6 +578,14 @@ namespace Dingo
 		/// created it shuts down.
 		[[nodiscard]] Material* CreateLitMaterial(MaterialParams params) const;
 
+		/// How many texture slots a PBR material has (PbrTextureSlot::Count).
+		static constexpr uint32_t k_PbrTextureSlots = 5;
+
+		/// A metallic-roughness PBR material with its five texture slots (PbrTextureSlot) filled
+		/// from params, white where a map is null. Same ownership as CreateLitMaterial. Returns
+		/// nullptr and logs an error when it can't be made.
+		[[nodiscard]] Material* CreatePbrMaterial(const PbrMaterialParams& params) const;
+
 		/// The material meshes with no material of their own are drawn with, for changing their
 		/// shared emissive, Roughness or Specular.
 		Material* GetDefaultMaterial() const { return m_Material; }
@@ -516,6 +606,19 @@ namespace Dingo
 		void SetInstancingEnabled(bool enabled) { m_Params.Capabilities.Instancing = enabled; }
 		/// Whether instancing is on; see SetInstancingEnabled.
 		bool IsInstancingEnabled() const { return m_Params.Capabilities.Instancing; }
+
+		/// Switches Renderer3DCapabilities::Volumetrics.
+		void SetVolumetricsEnabled(bool enabled) { m_Params.Capabilities.Volumetrics = enabled; }
+		/// Whether volumetric fog is allowed; see SetVolumetricsEnabled.
+		bool IsVolumetricsEnabled() const { return m_Params.Capabilities.Volumetrics; }
+		/// Sets Renderer3DCapabilities::VolumetricGrid, clamping x and y to 8..256 and z to 8..128.
+		void SetVolumetricGrid(const glm::uvec3& grid);
+		/// The clamped froxel grid; see SetVolumetricGrid.
+		const glm::uvec3& GetVolumetricGrid() const { return m_Params.Capabilities.VolumetricGrid; }
+		/// Sets Renderer3DCapabilities::VolumeRaymarchResolution.
+		void SetVolumeRaymarchResolution(RaymarchResolution resolution) { m_Params.Capabilities.VolumeRaymarchResolution = resolution; }
+		/// The Raymarch FogVolume resolution; see SetVolumeRaymarchResolution.
+		RaymarchResolution GetVolumeRaymarchResolution() const { return m_Params.Capabilities.VolumeRaymarchResolution; }
 
 		/// Instanced draws a frame, lit and shadow, across every scene this renderer runs. A draw
 		/// whose shader takes DE_InstanceDraw as a uniform block writes a small volatile buffer
@@ -612,9 +715,24 @@ namespace Dingo
 			uint32_t StaticDraws = 0;
 			/// Static batch cells baked (or emptied) by this scene's submissions.
 			uint32_t StaticCellsBaked = 0;
+			/// Draws with a PBR material (CreatePbrMaterial), also counted in DrawCalls.
+			uint32_t PbrDraws = 0;
 			/// Where each cascade ends along the view.
 			float ShadowCascadeEnds[k_MaxShadowCascades] = {};
 			bool Fogged = false; ///< the scene was drawn with fog: SetFog, and a perspective camera
+			bool Skybox = false; ///< the scene drew a sky: SetEnvironment with DrawSkybox, a ready Environment and a perspective camera
+			uint32_t EnvironmentBakes = 0; ///< Environments this scene baked (1 the first time one is used)
+			bool EnvironmentLighting = false; ///< PBR materials were lit by the environment instead of the flat ambient: a ready Environment with Lighting on
+			uint32_t EnvironmentLightingCopies = 0; ///< Times this scene copied an environment's lighting into the renderer (1 whenever the environment or its bake changed)
+			bool Volumetrics = false; ///< the scene was drawn with volumetric fog or a froxel FogVolume: Capabilities.Volumetrics, SetVolumetricFog or SubmitFogVolume, and a perspective camera
+			bool VolumetricTemporal = false; ///< the scene's volumetric fog blended with the previous frame
+			uint32_t VolumetricDispatches = 0; ///< compute dispatches the scene spent on the volume
+			uint32_t FogVolumes = 0; ///< FogVolumes the scene kept after culling and the budget
+			uint32_t RaymarchVolumes = 0; ///< of those, drawn in Raymarch mode
+			uint32_t FogVolumesCulled = 0; ///< FogVolumes skipped because the view or the froxel volume's MaxDistance can't reach them
+			uint32_t FogVolumesDropped = 0; ///< FogVolumes past Capabilities.MaxFogVolumes or the Raymarch limit
+			uint32_t RaymarchFallbacks = 0; ///< Raymarch volumes drawn as Froxel because the render target has no post-process scene target
+			uint32_t RaymarchDispatches = 0; ///< compute dispatches the scene spent on Raymarch volumes
 		};
 
 		/// The statistics of the latest scene; the reference stays valid and is rewritten by
@@ -638,10 +756,114 @@ namespace Dingo
 		void BeginSceneInternal(const glm::mat4& viewProjection, const glm::vec4& cameraPosition);
 		void ResolveSceneLights();
 		void ClearSceneLights();
+
+		// std140, mirrored by SkyboxData in Skybox.glsl: binding 0 of the sky material.
+		struct SkyboxData
+		{
+			glm::mat4 InverseViewProjection{ 1.0f };
+			glm::vec4 Params{ 1.0f, 0.0f, 1.0f, 0.0f }; // x = cos and y = sin of the lookup's turn, z = intensity
+			glm::vec4 Volume{ 0.0f }; // x = 1: the froxel volume fogs the sky, y = the texture coordinate of its last slice
+			glm::vec4 Sun{ 0.0f }; // xyz = direction toward the sun, w = cosine of the disc's radius, 0 = no disc
+			glm::vec4 SunDisc{ 0.0f }; // rgb = the disc's linear radiance, w = the horizon's y: the disc is clipped below it
+		};
+		static_assert(sizeof(SkyboxData) == 128, "SkyboxData must match the std140 block in Skybox.glsl");
+		struct SkyboxEntry
+		{
+			Material* Sky = nullptr;
+			uint32_t IdleScenes = 0;
+			bool Used = false;
+		};
+		SceneEnvironment m_PendingEnvironment;
+		bool m_EnvironmentWarned = false;
+		std::unordered_map<uint64_t, SkyboxEntry> m_SkyboxMaterials;
+		void ReleaseIdleSkyboxes();
+		bool DrawSkybox(const SceneEnvironment& environment);
+		void ApplyProceduralSun(const SceneEnvironment& environment);
+		glm::vec4 m_SkySun{ 0.0f }; // xyz = the travel direction of the sun this scene's procedural sky shows, w = 1 when set
+		bool PrepareEnvironmentLighting(const SceneEnvironment& environment);
 		bool PrepareShadows();
 		void EnsureShadowResources();
 		void DrawShadowPass();
 		void ResolveSkinnedBudget();
+
+		// std140, mirrored by VolumetricData in VolumetricInject.glsl and VolumetricIntegrate.glsl.
+		struct VolumetricData
+		{
+			glm::vec4 CameraPosition{ 0.0f };
+			glm::vec4 FrustumRays[4] = {};    // the view rays through the corners at uv (0,0), (1,0), (0,1), (1,1), scaled to one unit of view depth
+			glm::mat4 PreviousViewProjection{ 1.0f };
+			glm::vec4 Grid{ 0.0f };           // xyz = size, w = 1 when the history is valid
+			glm::vec4 Slices{ 0.0f };         // x = near, y = far, z = log2(far / near), w = jitter
+			glm::vec4 Medium{ 0.0f };         // x = density, y = base height, z = height falloff, w = anisotropy
+			glm::vec4 Albedo{ 0.0f };         // rgb = albedo, a = weight of the current frame
+			glm::vec4 Intensities{ 0.0f };    // x = ambient, y = directional
+			glm::vec4 ScatterTint{ 1.0f };    // rgb = in-scatter tint, a = sun light outside every cascade
+		};
+		static_assert(sizeof(VolumetricData) == 240 && offsetof(VolumetricData, PreviousViewProjection) == 80 && offsetof(VolumetricData, Grid) == 144 &&
+			offsetof(VolumetricData, Intensities) == 208 && offsetof(VolumetricData, ScatterTint) == 224, "VolumetricData must match the std140 block in VolumetricInject.glsl");
+		static constexpr float k_VolumetricHistoryBlend = 0.1f;
+
+		// std140, mirrored by FogVolumeData in the volume shaders: one local volume of fog.
+		struct FogVolumeRecord
+		{
+			glm::vec4 WorldToLocal[3] = {}; // affine rows taking a world point to the volume's local space: the box is [-1, 1]^3, the sphere the unit ball
+			glm::vec4 Shape{ 0.0f };        // xyz = half extents in world units, w = 0 box, 1 sphere
+			glm::vec4 Medium{ 0.0f };       // x = density, y = anisotropy, z = edge fade in world units, w = raymarch steps
+			glm::vec4 Albedo{ 0.0f };       // rgb = albedo, a = ambient intensity
+			glm::vec4 ScatterTint{ 1.0f };  // rgb = tint, a = sun light outside every cascade
+			glm::vec4 Intensities{ 0.0f };  // x = directional, y = local lights, z = max in-scatter, w = flags (1 = noise)
+			glm::vec4 HeightFade{ 0.0f };   // x = fade start, y = fade end, z = band bottom, w = band top
+			glm::vec4 HeightBand{ 0.0f };   // x = band multiplier, y = softness
+			glm::vec4 Fades{ 0.0f };        // near start, near end, far start, far end
+			glm::vec4 FadeKeep{ 0.0f };     // near keep, far keep, noise min, noise max
+			glm::vec4 Noise{ 0.0f };        // xyz = phase in noise tiles, w = 1 / scale
+			glm::vec4 Drift{ 0.0f };        // xyz = world displacement of the noise since the history frame
+		};
+		static_assert(sizeof(FogVolumeRecord) == 224 && offsetof(FogVolumeRecord, Shape) == 48 && offsetof(FogVolumeRecord, Noise) == 192 && offsetof(FogVolumeRecord, Drift) == 208,
+			"FogVolumeRecord must match the std140 layout of the volume shaders");
+		// std140: binding 8 of the volume kernels.
+		struct FogVolumeData
+		{
+			glm::vec4 Global{ 0.0f };             // x = global local-light intensity, y = global max in-scatter, z = debug view, w = 1 if any volume has noise
+			glm::vec4 DirectionalScatter{ 1.0f }; // per directional light VolumetricIntensity
+			glm::vec4 LocalScatter[8] = {};       // light slot s at [s / 4][s % 4]: that local light's VolumetricIntensity
+			FogVolumeRecord Volumes[k_MaxFogVolumes] = {}; // froxel volumes first, then Raymarch ones
+		};
+		static_assert(sizeof(FogVolumeData) == 3744 && offsetof(FogVolumeData, LocalScatter) == 32 && offsetof(FogVolumeData, Volumes) == 160,
+			"FogVolumeData must match the std140 layout of the volume shaders");
+		// std140, mirrored by RaymarchData in VolumeRaymarch.glsl: binding 1 of the Raymarch kernel.
+		struct RaymarchData
+		{
+			glm::mat4 InverseViewProjection{ 1.0f };
+			glm::vec4 CameraPosition{ 0.0f };
+			glm::vec4 Target{ 0.0f }; // xy = the low-resolution size, zw = the render target's size
+			glm::vec4 Params{ 0.0f }; // x = the first Raymarch record, y = their count, z = the resolution divisor, w = 1 when the froxel volume is active
+			glm::vec4 Reserved{ 0.0f };
+		};
+		static_assert(sizeof(RaymarchData) == 128 && offsetof(RaymarchData, Target) == 80 && offsetof(RaymarchData, Params) == 96, "RaymarchData must match the std140 block in VolumeRaymarch.glsl");
+		// std140, mirrored by RaymarchCompositeData in VolumeRaymarchComposite.glsl.
+		struct RaymarchCompositeData
+		{
+			glm::mat4 InverseViewProjection{ 1.0f };
+			glm::vec4 CameraPosition{ 0.0f };
+			glm::vec4 Low{ 0.0f }; // xy = the low-resolution size, zw = the render target's size over the divisor
+		};
+		static_assert(sizeof(RaymarchCompositeData) == 96, "RaymarchCompositeData must match the std140 block in VolumeRaymarchComposite.glsl");
+		// Renderer3DVolumetrics.cpp
+		void PrepareVolumetrics(bool perspective);
+		void DispatchVolumetrics(Texture* shadowAtlas);
+		bool EnsureVolumetricResources();
+		void DestroyVolumetricResources();
+		void InvalidateVolumetricHistory();
+		bool CullFogVolumes(bool perspective);
+		void PrepareFroxelFog(bool perspective, bool dropVolumeHistory);
+		void PrepareRaymarch(bool perspective);
+		void UploadRaymarchResources();
+		void DrawVolumeRaymarch(Texture* shadowAtlas);
+		bool EnsureRaymarchResources();
+		void DestroyRaymarchResources();
+		void ResetLightScatter();
+		void DispatchVolumetricSlice(const glm::uvec3& grid);
 
 		friend struct Internal::Renderer3DAccess;
 
@@ -687,6 +909,7 @@ namespace Dingo
 			uint32_t ShadowCasterGroups = 0xFFFFFFFFu;
 			uint32_t ShadowFaces = 1;    // 1: a spot light's single view; 6: a cube around the light
 			float OuterConeAngle = 0.0f; // degrees, for a spot light's view
+			float VolumetricIntensity = 1.0f;
 		};
 
 		// std140, mirrored by CameraData in Renderer3D_Lit.glsl. The first three members are a
@@ -703,6 +926,9 @@ namespace Dingo
 			LocalLightData LocalLights[k_MaxLocalLights];
 			glm::vec4 FogColor{ 0.0f };  // rgb = colour, a = max opacity
 			glm::vec4 FogParams{ 0.0f }; // x = start, y = end, z = density, w = FogMode (0 = none)
+			glm::vec4 EnvironmentParams{ 0.0f }; // x = 1: lit by the environment, y = intensity x lighting intensity, z/w = cos/sin of the lookup's turn
+			glm::vec4 VolumeParams{ 0.0f };      // x = 1: this scene samples the volume, y = near, z = 1 / log2(far / near), w = far
+			glm::vec4 VolumeGrid{ 0.0f };        // xyz = grid size, w = 1 / the first slice's far depth
 		};
 		static_assert(offsetof(CameraData, LightDirection) == 64 && offsetof(CameraData, Ambient) == 80,
 			"the frozen prefix custom materials declare must not move");
@@ -710,7 +936,8 @@ namespace Dingo
 			offsetof(CameraData, LightCounts) == 128 && offsetof(CameraData, DirectionalLights) == 144 &&
 			sizeof(DirectionalLightData) == 32 && offsetof(CameraData, LocalLights) == 144 + k_MaxDirectionalLights * 32 &&
 			sizeof(LocalLightData) == 48 && offsetof(CameraData, FogColor) == 144 + k_MaxDirectionalLights * 32 + k_MaxLocalLights * 48 &&
-			offsetof(CameraData, FogParams) == offsetof(CameraData, FogColor) + 16 && sizeof(CameraData) == offsetof(CameraData, FogParams) + 16,
+			offsetof(CameraData, FogParams) == offsetof(CameraData, FogColor) + 16 && offsetof(CameraData, EnvironmentParams) == offsetof(CameraData, FogParams) + 16 &&
+			offsetof(CameraData, VolumeParams) == 1856 && offsetof(CameraData, VolumeGrid) == 1872 && sizeof(CameraData) == 1888,
 			"CameraData must match the std140 block in Renderer3D_Lit.glsl");
 		CameraData m_CameraData = {};
 
@@ -732,6 +959,74 @@ namespace Dingo
 		bool m_AtlasFullWarned = false;
 		bool m_NoClipDistanceWarned = false;
 		bool m_FogWarned = false;
+		bool m_VolumetricFogWarned = false;
+		VolumetricFog m_VolumetricFog;
+		bool m_VolumetricFogSet = false;
+
+		struct SubmittedFogVolume
+		{
+			FogVolume Settings;
+			glm::mat4 World{ 1.0f };
+		};
+		static constexpr uint32_t k_MaxPendingFogVolumes = 256;
+		std::vector<SubmittedFogVolume> m_FogVolumes;
+		FogVolumeData m_FogVolumeData;
+		uint32_t m_FogVolumeFroxelCount = 0;
+		uint32_t m_FogVolumeRaymarchCount = 0;
+		double m_FogVolumeTime = 0.0;
+		double m_FogVolumeHistoryTime = 0.0;
+		bool m_FogVolumeHistoryTimeValid = false;
+		VolumetricDebugView m_VolumetricDebugView = VolumetricDebugView::None;
+		bool m_FogVolumeWarned = false;
+		bool m_FogVolumePendingWarned = false;
+		bool m_FogVolumeBudgetWarned = false;
+		bool m_RaymarchFallbackWarned = false;
+
+		// The Raymarch FogVolume pass: a low-resolution scatter and view-distance pair per scene target
+		// (keyed by the id of its scene depth copy, resized in place, dropped after k_RaymarchIdleFrames
+		// unused), the kernel that fills them and the material that blends the result over the scene
+		// target. m_RaymarchScatter and m_RaymarchDepth are the pair the last draw used.
+		struct RaymarchTarget
+		{
+			Texture* Scatter = nullptr;
+			Texture* Depth = nullptr;
+			uint64_t DepthId = 0;
+			uint64_t LastFrame = 0;
+		};
+		static constexpr uint64_t k_RaymarchIdleFrames = 120;
+		RaymarchTarget* AcquireRaymarchTarget(uint64_t depthId, const glm::uvec2& low);
+		std::vector<RaymarchTarget> m_RaymarchTargets;
+		Texture* m_RaymarchScatter = nullptr;
+		Texture* m_RaymarchDepth = nullptr;
+		ComputePass* m_RaymarchPass = nullptr;
+		Material* m_RaymarchComposite = nullptr;
+		Internal::FullscreenShader* m_RaymarchCompositeShader = nullptr;
+		GraphicsBuffer* m_RaymarchDataBuffer = nullptr;
+		uint64_t m_RaymarchAtlasId = 0;
+		uint64_t m_RaymarchBoundDepthId = 0;
+		uint32_t m_RaymarchDivisor = 0;
+		RaymarchData m_RaymarchData;
+		RaymarchCompositeData m_RaymarchCompositeData;
+		bool m_RaymarchScene = false;     // this scene draws Raymarch volumes
+		bool m_FogVolumeUploaded = false; // m_FogVolumeBuffer already holds this scene's records
+		bool m_RaymarchWarned = false;
+
+		// The debug picture of one froxel slice (Internal::Renderer3DAccess::RequestVolumetricSlice): a
+		// one-shot request the next scene that dispatches the volume answers into a texture of the grid's size.
+		struct VolumetricSliceRequest
+		{
+			bool Active = false;
+			bool Scatter = false;       // the scatter volume instead of the integrated one
+			bool Alpha = false;         // alpha instead of in-scatter
+			uint32_t Slice = 0;
+			float Exposure = 1.0f;
+		};
+		VolumetricSliceRequest m_SliceRequest;
+		Texture* m_VolumetricSlice = nullptr;
+		ComputePass* m_VolumetricSlicePass = nullptr;
+		GraphicsBuffer* m_VolumetricSliceBuffer = nullptr;
+		uint64_t m_VolumetricSliceSourceId = 0;
+		bool m_VolumetricSliceWarned = false;
 
 		// std140, mirrored by MaterialData in Renderer3D_Lit.glsl: binding 1 of every lit material,
 		// rebuilt from its MaterialParams each EndScene. Custom shaders bring their own layout.
@@ -758,7 +1053,7 @@ namespace Dingo
 		struct ObjectRecord
 		{
 			glm::vec4 Emissive{ 0.0f }; // rgb = colour, a = strength
-			glm::vec4 Surface{ 0.0f };  // x = roughness, y = specular
+			glm::vec4 Surface{ 0.0f };  // x = roughness, y = specular, z = metallic (PBR only)
 		};
 		static_assert(sizeof(ObjectRecord) == 32, "ObjectRecord must match the std430 struct in Renderer3D_Lit.glsl");
 		std::vector<ObjectRecord> m_ObjectRecords;
@@ -1435,6 +1730,40 @@ namespace Dingo
 		Framebuffer* m_ShadowAtlas = nullptr;
 		Texture* m_PlaceholderShadowAtlas = nullptr; // bound until the first scene casts
 		Sampler* m_ShadowSampler = nullptr;          // comparison, linear: hardware 2 x 2 PCF
+		// The active environment's lighting, copied in when its id or bake changes: materials bind these and never
+		// the Environment's own textures, which come and go.
+		Texture* m_IblSpecular = nullptr;
+		GraphicsBuffer* m_IblIrradiance = nullptr;
+		uint64_t m_IblSourceId = 0;
+		uint64_t m_IblSourceGeneration = 0;
+
+		// Froxel volumetric fog. The integrated texture is 1x1x1 (0,0,0,1) until a scene uses the volume,
+		// then it is the grid, reinitialized in place so materials that bound it keep a valid binding. The
+		// scatter pair, the passes and their sampler bindings are made by the first such scene.
+		Texture* m_VolumetricIntegrated = nullptr;
+		Texture* m_VolumetricScatter[2] = {};
+		GraphicsBuffer* m_VolumetricDataBuffer = nullptr;
+		GraphicsBuffer* m_FogVolumeBuffer = nullptr;
+		Texture* m_VolumeNoise = nullptr;
+		Sampler* m_VolumeNoiseSampler = nullptr;
+		// Pass i writes Scatter[i] and reads Scatter[1 - i] as its history; Integrate[i] reads Scatter[i].
+		ComputePass* m_VolumetricInject[2] = {};
+		ComputePass* m_VolumetricIntegrate[2] = {};
+		Texture* m_VolumetricAtlas = nullptr;
+		uint64_t m_VolumetricAtlasId = 0;
+		bool m_VolumetricWarned = false;
+		bool m_VolumetricDispatchWarned = false;
+		bool m_VolumetricScene = false;           // this scene dispatches the volume
+		uint32_t m_VolumetricPass = 0;            // the pass pair this scene uses
+		uint32_t m_VolumetricHistory = 0;         // the scatter texture the last temporal scene wrote
+		uint64_t m_VolumetricHistoryFrame = ~0ull; // the frame of that scene; ~0 for none
+		uint64_t m_VolumetricTemporalFrame = ~0ull; // the latest frame in which a scene used the history
+		glm::mat4 m_VolumetricPreviousViewProjection{ 1.0f };
+		glm::uvec3 m_VolumetricHistoryGrid{ 0 };
+		glm::vec2 m_VolumetricHistoryRange{ 0.0f }; // near and far of the history
+		VolumetricData m_VolumetricData = {};
+		glm::vec4 m_SceneVolumeParams{ 0.0f }; // CameraData's VolumeParams and VolumeGrid for the scene's sky and particles, which draw after ClearSceneLights
+		glm::vec4 m_SceneVolumeGrid{ 0.0f };
 		Shader* m_ShadowShader = nullptr;
 		Shader* m_SkinnedShadowShader = nullptr;
 		// One per caster-group mask drawn, each with the mask in its ShadowCaster block.

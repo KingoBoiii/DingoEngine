@@ -23,7 +23,9 @@ namespace Dingo
 		virtual void Destroy() override;
 		virtual void Upload(const void* data) override;
 		virtual void Reinitialize(const TextureParams& params) override;
+		virtual void UploadSubresource(const void* data, uint32_t mip, uint32_t layer) override;
 		virtual void ReadPixels(std::function<void(const TexturePixels&)> done) override;
+		virtual void ReadSubresource(uint32_t mip, uint32_t layer, std::function<void(const TexturePixels&)> done) override;
 
 		virtual bool NativeEquals(const Texture* other) const override
 		{
@@ -38,6 +40,8 @@ namespace Dingo
 		virtual const void* GetResourceHandle() const override { return GetTextureHandle(); }
 
 	private:
+		void UploadLayers(const uint8_t* data, uint32_t mip, uint32_t firstLayer, uint32_t layerCount, uint64_t layerBytes);
+
 		nvrhi::TextureHandle m_Handle;
 
 		friend class NvrhiPipeline;

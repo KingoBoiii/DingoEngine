@@ -59,6 +59,23 @@ namespace Dingo
 			return *this;
 		}
 
+		/// On, each material is a metallic-roughness PBR material (Renderer3D::CreatePbrMaterial's
+		/// shader) built from the file's base colour, normal, metallic-roughness, occlusion and
+		/// emissive images and factors, for Renderer3D to draw; the images get full mip chains.
+		/// glTF's blend alpha mode makes the material Translucent, `doubleSided` turns off
+		/// back-face culling, and its mask alpha mode draws opaque with a warning. Off, a material
+		/// has no shader and only the diffuse image, as before. SubMesh::BaseColor is the same
+		/// either way, but a PBR material already applies it: pass white as the mesh colour. A
+		/// Model::Reload keeps the setting.
+		bool PbrMaterials = false;
+
+		/// Sets PbrMaterials and returns *this, for chaining.
+		ModelLoadParams& SetPbrMaterials(bool pbrMaterials)
+		{
+			PbrMaterials = pbrMaterials;
+			return *this;
+		}
+
 		/// True when every option matches.
 		bool operator==(const ModelLoadParams&) const = default;
 	};

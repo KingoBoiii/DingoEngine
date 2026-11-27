@@ -1,6 +1,7 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/MaterialAccess.h"
 #include "DingoEngine/Graphics/PostProcess.h"
+#include "DingoEngine/Graphics/PostProcessAccess.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/FullscreenPass.h"
 #include "DingoEngine/Graphics/Light.h"
@@ -619,6 +620,24 @@ namespace Dingo
 		Data& data = *m_Data;
 		if (!data.Active)
 			return nullptr;
+		return data.CopyDepth(*data.CurrentTarget);
+	}
+
+	bool Internal::PostProcessAccess::ApplyAmbientOcclusion(PostProcessStack& post)
+	{
+		PostProcessStack::Data& data = *post.m_Data;
+		data.DepthCopied = false;
+		post.ApplyAmbientOcclusion();
+		return data.DepthCopied;
+	}
+
+	Texture* Internal::PostProcessAccess::RefreshSceneDepth(PostProcessStack& post, bool current)
+	{
+		PostProcessStack::Data& data = *post.m_Data;
+		if (!data.Active)
+			return nullptr;
+		if (!current)
+			data.DepthCopied = false;
 		return data.CopyDepth(*data.CurrentTarget);
 	}
 

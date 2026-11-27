@@ -212,7 +212,7 @@ namespace Dingo
 		/// custom 3D drawing inside one Begin/EndScene.
 		void RenderEntities3D(Renderer3D& renderer);
 
-		/// Submits the scene's light components and its fog to the renderer (no
+		/// Submits the scene's light components, its fog and its sky (SkyboxComponent, chosen like the fog) to the renderer (no
 		/// BeginScene/EndScene), for custom 3D passes the same way as RenderEntities3D. A scene
 		/// without a single light component gets a default DirectionalLightComponent. The fog is
 		/// the first enabled FogComponent in entity order on an entity without a CameraComponent,

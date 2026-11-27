@@ -211,6 +211,8 @@ namespace Dingo
 						Set<PointLightComponent>(Component::PointLight);
 						Set<SpotLightComponent>(Component::SpotLight);
 						Set<FogComponent>(Component::Fog);
+						Set<SkyboxComponent>(Component::Skybox);
+						Set<FogVolumeComponent>(Component::FogVolume);
 						Set<RigidBody2DComponent>(Component::RigidBody2D);
 						Set<BoxCollider2DComponent>(Component::BoxCollider2D);
 						Set<CircleCollider2DComponent>(Component::CircleCollider2D);
@@ -324,6 +326,8 @@ namespace Dingo
 					case Component::PointLight: return "PointLight";
 					case Component::SpotLight: return "SpotLight";
 					case Component::Fog: return "Fog";
+					case Component::Skybox: return "Skybox";
+					case Component::FogVolume: return "FogVolume";
 					case Component::RigidBody2D: return "RigidBody2D";
 					case Component::BoxCollider2D: return "BoxCollider2D";
 					case Component::CircleCollider2D: return "CircleCollider2D";
@@ -701,6 +705,53 @@ namespace Dingo
 					Add(section, "Density", Text(fog->Settings.Density));
 					Add(section, "Max opacity", Text(fog->Settings.MaxOpacity));
 					Add(section, "Color", fog->UseClearColor ? "the clear colour" : Text(fog->Settings.Color));
+					if (fog->Volumetric)
+					{
+						const VolumetricFog& volume = *fog->Volumetric;
+						Add(section, "Volumetric density", Text(volume.Density));
+						Add(section, "Volumetric height", std::format("{:.2f} / falloff {:.3f}", volume.BaseHeight, volume.HeightFalloff));
+						Add(section, "Volumetric albedo", Text(volume.Albedo));
+						Add(section, "Volumetric anisotropy", Text(volume.Anisotropy));
+						Add(section, "Volumetric intensity", std::format("ambient {:.2f}, light {:.2f}", volume.AmbientIntensity, volume.LightIntensity));
+						Add(section, "Volumetric range", std::format("{:.2f} to {:.2f}", volume.NearDistance, volume.MaxDistance));
+						Add(section, "Volumetric scatter tint", Text(volume.ScatterTint));
+						Add(section, "Volumetric outside shadow light", Text(volume.OutsideShadowLight));
+						Add(section, "Volumetric temporal", Text(volume.Temporal));
+					}
+				}
+
+				if (const FogVolumeComponent* volume = registry.try_get<FogVolumeComponent>(handle))
+				{
+					const FogVolume& settings = volume->Settings;
+					Section& section = AddSection(out, "FogVolume");
+					Add(section, "Enabled", Text(volume->Enabled));
+					Add(section, "Shape", settings.Shape == FogVolumeShape::Sphere ? "Sphere" : "Box");
+					Add(section, "Mode", settings.Mode == FogVolumeMode::Raymarch ? "Raymarch" : "Froxel");
+					Add(section, "Half extents", Text(settings.HalfExtents));
+					Add(section, "Density", Text(settings.Density));
+					Add(section, "Albedo", Text(settings.Albedo));
+					Add(section, "Anisotropy", Text(settings.Anisotropy));
+					Add(section, "Intensity", std::format("ambient {:.2f}, light {:.2f}, local {:.2f}", settings.AmbientIntensity, settings.LightIntensity, settings.LocalLightIntensity));
+					Add(section, "Edge fade", Text(settings.EdgeFade));
+					Add(section, "Height fade", std::format("{:.2f} to {:.2f}", settings.HeightFadeStart, settings.HeightFadeEnd));
+					Add(section, "Height band", std::format("{:.2f} to {:.2f} x{:.2f} soft {:.2f}", settings.HeightBandBottom, settings.HeightBandTop, settings.HeightBandMultiplier, settings.HeightBandSoftness));
+					Add(section, "Near fade", std::format("{:.2f} to {:.2f} keep {:.2f}", settings.NearFadeStart, settings.NearFadeEnd, settings.NearFadeKeep));
+					Add(section, "Far fade", std::format("{:.2f} to {:.2f} keep {:.2f}", settings.FarFadeStart, settings.FarFadeEnd, settings.FarFadeKeep));
+					Add(section, "Noise", std::format("scale {:.2f}, velocity {}, {:.2f} to {:.2f}", settings.NoiseScale, Text(settings.NoiseVelocity), settings.NoiseMin, settings.NoiseMax));
+				}
+
+				if (const SkyboxComponent* sky = registry.try_get<SkyboxComponent>(handle))
+				{
+					Section& section = AddSection(out, "Skybox");
+					Add(section, "Enabled", Text(sky->Enabled));
+					Add(section, "Visible", Text(sky->Visible));
+					Add(section, "Environment", sky->Environment ? std::format("#{} {} px faces, {}, {}", sky->Environment->GetId(), sky->Environment->GetFaceSize(), sky->Environment->IsProcedural() ? "procedural" : ".hdr", sky->Environment->IsReady() ? "baked" : "not baked") : std::string("none"));
+					Add(section, "Intensity", Text(sky->Intensity));
+					Add(section, "Rotation", std::format("{:.1f} deg", sky->Rotation));
+					Add(section, "Lighting", Text(sky->Lighting));
+					Add(section, "Lighting intensity", Text(sky->LightingIntensity));
+					Add(section, "Follow sun", Text(sky->FollowSun));
+					Add(section, "Tint sun", Text(sky->TintSun));
 				}
 
 				if (const RigidBody2DComponent* body = registry.try_get<RigidBody2DComponent>(handle))
@@ -742,6 +793,7 @@ namespace Dingo
 						const SurfaceOverride& surface = *renderer->Surface;
 						Add(section, "Surface emissive", std::format("{} x {:.3f}", Text(surface.EmissiveColor), surface.EmissiveStrength));
 						Add(section, "Surface roughness / specular", std::format("{:.3f} / {:.3f}", surface.Roughness, surface.Specular));
+						Add(section, "Surface metallic", std::format("{:.3f}", surface.Metallic));
 					}
 					else
 					{

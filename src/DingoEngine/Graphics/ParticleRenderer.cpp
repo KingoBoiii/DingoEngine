@@ -2,6 +2,7 @@
 #include "DingoEngine/Graphics/ParticleRenderer.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 #include "DingoEngine/Graphics/EngineShaders.h"
+#include "DingoEngine/Graphics/MaterialAccess.h"
 #include "DingoEngine/Graphics/PostProcess.h"
 
 #include <glm/gtc/matrix_access.hpp>
@@ -59,10 +60,12 @@ namespace Dingo::Internal
 			glm::vec4 CameraUp{ 0.0f };
 			glm::uvec4 Batch{ 0 };
 			glm::vec4 Target{ 0.0f };
+			glm::vec4 VolumeParams{ 0.0f };
+			glm::vec4 VolumeGrid{ 0.0f };
 		};
 
 		static_assert(sizeof(ParticleState) == 48 && sizeof(ParticleEmitterRecord) == 288 && sizeof(ParticleEmitterHeader) == 32 &&
-			sizeof(ParticleSpawnRecord) == 32 && sizeof(ParticleDrawData) == 192, "the particle records must match ParticleCommon.glsl and ParticleDraw.glsl");
+			sizeof(ParticleSpawnRecord) == 32 && sizeof(ParticleDrawData) == 224, "the particle records must match ParticleCommon.glsl and ParticleDraw.glsl");
 
 		constexpr uint32_t k_FlagWorldSpace = 1;
 		constexpr uint32_t k_FlagClear = 2;
@@ -238,7 +241,7 @@ namespace Dingo::Internal
 		return entry.Material;
 	}
 
-	void ParticleRenderer::EndScene(const glm::mat4& viewProjection, Renderer3D::Statistics& stats)
+	void ParticleRenderer::EndScene(const glm::mat4& viewProjection, Texture* volume, const glm::vec4& volumeParams, const glm::vec4& volumeGrid, Renderer3D::Statistics& stats)
 	{
 		if (m_Submissions.empty())
 			return;
@@ -392,6 +395,8 @@ namespace Dingo::Internal
 		draw.CameraRight = glm::vec4(glm::normalize(glm::vec3(glm::row(viewProjection, 0))), 0.0f);
 		draw.CameraUp = glm::vec4(glm::normalize(glm::vec3(glm::row(viewProjection, 1))), 0.0f);
 		draw.Target = glm::vec4(1.0f / static_cast<float>(std::max(drawn->GetWidth(), 1u)), 1.0f / static_cast<float>(std::max(drawn->GetHeight(), 1u)), 0.0f, 0.0f);
+		draw.VolumeParams = volumeParams;
+		draw.VolumeGrid = volumeGrid;
 
 		uint32_t first = 0;
 		while (first < m_Submissions.size())
@@ -411,6 +416,7 @@ namespace Dingo::Internal
 			draw.Batch = glm::uvec4(first, end - first, records[first].Ring.z,
 				(depth ? k_DrawSoft : 0) | (params.Texture ? 0 : k_DrawDot) | (params.Blend == ParticleBlend::Additive ? k_DrawAdditive : 0));
 			Material* material = GetDrawMaterial(params.Texture, params.Blend, depth);
+			Internal::MaterialAccess::SetVolumetricResources(material, volume, nullptr);
 			material->SetUniform(draw);
 			Renderer::Draw(material, 6, instances);
 			++stats.ParticleDrawCalls;

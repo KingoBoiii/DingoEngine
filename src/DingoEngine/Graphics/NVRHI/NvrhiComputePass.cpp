@@ -42,19 +42,23 @@ namespace Dingo
 		m_StorageItems.clear();
 	}
 
-	void NvrhiComputePass::SetItem(const nvrhi::BindingSetItem& item, Texture* texture)
+	void NvrhiComputePass::SetItem(const nvrhi::BindingSetItem& item, Texture* texture, uint32_t baseMip, uint32_t mipCount)
 	{
 		m_BindingsValid = false;
+		m_InvalidLogged = false;
+		Binding entry = { item, texture, texture ? texture->GetGeneration() : 0, baseMip, mipCount };
+		if (texture)
+			entry.Error = RefreshTexture(entry);
 		for (Binding& binding : m_Bindings)
 		{
 			const bool sameKind = binding.Item.type == item.type || (NvrhiCommandList::IsRawBufferItem(binding.Item) && NvrhiCommandList::IsRawBufferItem(item));
 			if (binding.Item.slot == item.slot && sameKind)
 			{
-				binding = { item, texture, texture ? texture->GetGeneration() : 0 };
+				binding = entry;
 				return;
 			}
 		}
-		m_Bindings.push_back({ item, texture, texture ? texture->GetGeneration() : 0 });
+		m_Bindings.push_back(entry);
 	}
 
 	void NvrhiComputePass::SetUniformBuffer(uint32_t binding, GraphicsBuffer* buffer)
@@ -71,16 +75,94 @@ namespace Dingo
 		SetItem(readOnly ? nvrhi::BindingSetItem::RawBuffer_SRV(binding, handle) : nvrhi::BindingSetItem::RawBuffer_UAV(binding, handle));
 	}
 
-	void NvrhiComputePass::SetTexture(uint32_t binding, Texture* texture)
+	namespace
 	{
-		DE_CORE_ASSERT(texture, "Texture must not be null.");
-		SetItem(nvrhi::BindingSetItem::Texture_SRV(binding, static_cast<NvrhiTexture*>(texture)->m_Handle), texture);
+		uint32_t ResolvedMipCount(const Texture* texture, uint32_t baseMip, uint32_t mipCount)
+		{
+			return mipCount ? mipCount : texture->GetParams().MipLevels - baseMip;
+		}
 	}
 
-	void NvrhiComputePass::SetStorageTexture(uint32_t binding, Texture* texture)
+	std::string NvrhiComputePass::RefreshTexture(Binding& binding)
+	{
+		const Texture* texture = binding.Texture;
+		const TextureParams& params = texture->GetParams();
+		const bool isStorage = binding.Item.type == nvrhi::ResourceType::Texture_UAV;
+		const uint32_t mipCount = isStorage ? 1 : binding.MipCount;
+
+		binding.Item.resourceHandle = static_cast<const NvrhiTexture*>(texture)->m_Handle;
+		binding.Item.dimension = nvrhi::TextureDimension::Unknown;
+
+		if (binding.BaseMip >= params.MipLevels || (mipCount != 0 && mipCount > params.MipLevels - binding.BaseMip))
+			return std::format("asks for mips {}+{} of a texture with {} mip levels", binding.BaseMip, mipCount, params.MipLevels);
+		if (isStorage && binding.BaseMip > 0 && params.Dimension == TextureDimension::Texture3D)
+			return std::format("asks for storage mip {} of a 3D texture; a 3D storage view is mip 0 only", binding.BaseMip);
+
+		if (isStorage)
+		{
+			binding.Item.subresources = nvrhi::TextureSubresourceSet(binding.BaseMip, 1, 0, nvrhi::TextureSubresourceSet::AllArraySlices);
+			if (params.Dimension == TextureDimension::TextureCube)
+				binding.Item.dimension = nvrhi::TextureDimension::Texture2DArray;
+		}
+		else
+		{
+			binding.Item.subresources = nvrhi::TextureSubresourceSet(binding.BaseMip, ResolvedMipCount(texture, binding.BaseMip, binding.MipCount), 0, nvrhi::TextureSubresourceSet::AllArraySlices);
+		}
+		return {};
+	}
+
+	bool NvrhiComputePass::ValidateBindings()
+	{
+		const char* problem = nullptr;
+		std::string detail;
+		for (const Binding& binding : m_Bindings)
+		{
+			if (!binding.Texture)
+				continue;
+			if (!binding.Error.empty())
+			{
+				detail = std::format("binding {} {}", binding.Item.slot, binding.Error);
+				problem = "has an invalid texture binding";
+				break;
+			}
+			if (binding.Item.type != nvrhi::ResourceType::Texture_UAV)
+				continue;
+			for (const Binding& sampled : m_Bindings)
+			{
+				if (sampled.Texture != binding.Texture || sampled.Item.type != nvrhi::ResourceType::Texture_SRV)
+					continue;
+				const uint32_t first = sampled.BaseMip;
+				const uint32_t last = first + ResolvedMipCount(sampled.Texture, first, sampled.MipCount);
+				if (binding.BaseMip >= first && binding.BaseMip < last)
+				{
+					detail = std::format("storage binding {} writes mip {} of a texture that binding {} samples (mips {}-{}); the ranges must be disjoint", binding.Item.slot, binding.BaseMip, sampled.Item.slot, first, last - 1);
+					problem = "binds one texture as sampled and storage over the same mip";
+					break;
+				}
+			}
+			if (problem)
+				break;
+		}
+		if (!problem)
+			return true;
+		if (!m_InvalidLogged)
+		{
+			DE_CORE_ERROR("ComputePass '{}': {}: {}; dispatch skipped.", m_Params.DebugName, problem, detail);
+			m_InvalidLogged = true;
+		}
+		return false;
+	}
+
+	void NvrhiComputePass::SetTexture(uint32_t binding, Texture* texture, uint32_t baseMip, uint32_t mipCount)
+	{
+		DE_CORE_ASSERT(texture, "Texture must not be null.");
+		SetItem(nvrhi::BindingSetItem::Texture_SRV(binding, static_cast<NvrhiTexture*>(texture)->m_Handle), texture, baseMip, mipCount);
+	}
+
+	void NvrhiComputePass::SetStorageTexture(uint32_t binding, Texture* texture, uint32_t mipLevel)
 	{
 		DE_CORE_ASSERT(texture && texture->GetParams().IsStorage, "SetStorageTexture takes a texture made with TextureParams::IsStorage.");
-		SetItem(nvrhi::BindingSetItem::Texture_UAV(binding, static_cast<NvrhiTexture*>(texture)->m_Handle), texture);
+		SetItem(nvrhi::BindingSetItem::Texture_UAV(binding, static_cast<NvrhiTexture*>(texture)->m_Handle), texture, mipLevel, 1);
 	}
 
 	void NvrhiComputePass::SetSampler(uint32_t binding, Sampler* sampler)
@@ -127,11 +209,14 @@ namespace Dingo
 		{
 			if (binding.Texture && binding.Texture->GetGeneration() != binding.Generation)
 			{
-				binding.Item.resourceHandle = static_cast<NvrhiTexture*>(binding.Texture)->m_Handle;
 				binding.Generation = binding.Texture->GetGeneration();
+				binding.Error = RefreshTexture(binding);
 				m_BindingsValid = false;
 			}
 		}
+
+		if (!m_BindingsValid && !ValidateBindings())
+			return false;
 
 		if (!m_BindingsValid)
 		{
@@ -164,7 +249,7 @@ namespace Dingo
 				}
 				for (const Binding& binding : m_Bindings)
 				{
-					if (NvrhiCommandList::IsStorageItem(binding.Item))
+					if (NvrhiCommandList::IsStorageItem(binding.Item) || binding.Item.type == nvrhi::ResourceType::Texture_SRV)
 						m_StorageItems.push_back(binding.Item);
 				}
 			}

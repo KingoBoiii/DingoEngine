@@ -9,6 +9,7 @@
 #include "DingoEngine/Core/Profiler.h"
 #include "DingoEngine/Graphics/Renderer2D.h"
 #include "DingoEngine/Graphics/Renderer3D.h"
+#include "DingoEngine/Graphics/Renderer3DAccess.h"
 #include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Graphics/ParticleRenderer.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
@@ -31,6 +32,7 @@
 #include <format>
 #include <limits>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -416,6 +418,84 @@ namespace Dingo::Internal
 				if (s_ShowAtlas)
 					ImGui::Image(reinterpret_cast<ImTextureID>(depth->GetTextureHandle()), ImVec2(256.0f, 256.0f));
 			}
+		}
+
+		ImGui::Spacing();
+		ImGui::TextUnformatted("Renderer3D volumetrics  (most recent scene)");
+		ImGui::Separator();
+		{
+			bool volumetrics = caps3D.Volumetrics;
+			if (ImGui::Checkbox("Volumetric fog", &volumetrics))
+				mutableRenderer3D.SetVolumetricsEnabled(volumetrics);
+			if (!caps3D.Volumetrics)
+				ImGui::TextDisabled("Off: scenes use the distance fog.");
+			else if (!stats3D.Volumetrics && stats3D.FogVolumes == 0 && stats3D.RaymarchVolumes == 0)
+				ImGui::TextDisabled("No scene used it: no VolumetricFog and no FogVolume in view.");
+			else
+			{
+				ImGui::Text("Volumes    : %u kept (%u Raymarch), %u out of view, %u dropped", stats3D.FogVolumes, stats3D.RaymarchVolumes, stats3D.FogVolumesCulled, stats3D.FogVolumesDropped);
+				if (stats3D.RaymarchFallbacks > 0)
+					ImGui::TextColored(ImVec4(1.0f, 0.35f, 0.35f, 1.0f),
+						"Fallbacks  : %u Raymarch volumes drawn as Froxel  (no post-process scene target)", stats3D.RaymarchFallbacks);
+				else
+					ImGui::Text("Fallbacks  : 0");
+				ImGui::Text("Dispatches : %u froxel, %u Raymarch%s", stats3D.VolumetricDispatches, stats3D.RaymarchDispatches, stats3D.VolumetricTemporal ? "   (temporal)" : "");
+			}
+
+			static int s_Grid[3] = { 0, 0, 0 };
+			const glm::uvec3 grid = mutableRenderer3D.GetVolumetricGrid();
+			if (s_Grid[0] == 0)
+			{
+				s_Grid[0] = static_cast<int>(grid.x);
+				s_Grid[1] = static_cast<int>(grid.y);
+				s_Grid[2] = static_cast<int>(grid.z);
+			}
+			ImGui::SetNextItemWidth(220.0f);
+			if (ImGui::DragInt3("Grid", s_Grid, 1.0f, 8, 256))
+				mutableRenderer3D.SetVolumetricGrid(glm::uvec3(static_cast<uint32_t>((std::max)(s_Grid[0], 8)), static_cast<uint32_t>((std::max)(s_Grid[1], 8)), static_cast<uint32_t>((std::max)(s_Grid[2], 8))));
+
+			bool quarter = mutableRenderer3D.GetVolumeRaymarchResolution() == RaymarchResolution::Quarter;
+			if (ImGui::Checkbox("Raymarch at quarter resolution", &quarter))
+				mutableRenderer3D.SetVolumeRaymarchResolution(quarter ? RaymarchResolution::Quarter : RaymarchResolution::Half);
+
+			bool shadowSamples = mutableRenderer3D.GetVolumetricDebugView() == VolumetricDebugView::ShadowSamples;
+			if (ImGui::Checkbox("Shadow samples (lit green, shadowed red, outside blue, unshadowed yellow)", &shadowSamples))
+				mutableRenderer3D.SetVolumetricDebugView(shadowSamples ? VolumetricDebugView::ShadowSamples : VolumetricDebugView::None);
+
+			static bool s_ShowSlice = false;
+			static int s_SliceSource = 0;
+			static int s_Slice = 0;
+			static float s_SliceExposure = 1.0f;
+			ImGui::Checkbox("Show a froxel slice", &s_ShowSlice);
+			if (s_ShowSlice)
+			{
+				ImGui::RadioButton("Integrated", &s_SliceSource, 0);
+				ImGui::SameLine();
+				ImGui::RadioButton("Scatter", &s_SliceSource, 1);
+				ImGui::SameLine();
+				ImGui::RadioButton("Transmittance / extinction", &s_SliceSource, 2);
+				ImGui::SetNextItemWidth(220.0f);
+				ImGui::SliderInt("Slice", &s_Slice, 0, static_cast<int>(grid.z) - 1);
+				ImGui::SetNextItemWidth(220.0f);
+				ImGui::SliderFloat("Exposure", &s_SliceExposure, 0.01f, 100.0f, "%.2f", ImGuiSliderFlags_Logarithmic);
+				Internal::Renderer3DAccess::RequestVolumetricSlice(mutableRenderer3D, s_SliceSource == 1, s_SliceSource == 2, static_cast<uint32_t>(s_Slice), s_SliceExposure);
+				if (Texture* slice = Internal::Renderer3DAccess::VolumetricSlice(mutableRenderer3D))
+					ImGui::Image(reinterpret_cast<ImTextureID>(slice->GetTextureHandle()), ImVec2(static_cast<float>(slice->GetParams().Width) * 2.0f, static_cast<float>(slice->GetParams().Height) * 2.0f));
+				else
+					ImGui::TextDisabled("Waiting for a scene that dispatches the froxel volume.");
+			}
+
+			bool anyTimer = false;
+			for (const GpuTimerStats& timer : Renderer::GetGpuTimers())
+			{
+				if (timer.Samples > 0 && (std::string_view(timer.Name) == "Volumetrics" || std::string_view(timer.Name) == "VolumeRaymarch"))
+				{
+					ImGui::Text("%-14s: %.3f ms  (mean %.3f, max %.3f)", timer.Name, timer.LastMs, timer.MeanMs, timer.MaxMs);
+					anyTimer = true;
+				}
+			}
+			if (!anyTimer)
+				ImGui::TextDisabled("No Volumetrics or VolumeRaymarch GPU timer has reported yet.");
 		}
 
 		ImGui::Spacing();

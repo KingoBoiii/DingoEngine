@@ -30,6 +30,7 @@ namespace Dingo
 	class Model;
 	class Font;
 	class AudioClip;
+	class Environment;
 	class AudioEngine;
 
 	namespace Internal
@@ -72,6 +73,7 @@ namespace Dingo
 			uint32_t Height = 0;
 			uint32_t Channels = 0;
 			std::shared_ptr<AudioClip> Clip; // decoded audio payload
+			std::vector<uint16_t> HalfPixels; // decoded environment payload, RGBA16F, Width x Height
 			std::string DebugName;
 			bool IsReload = false;
 		};
@@ -118,6 +120,7 @@ namespace Dingo
 			std::unordered_map<AssetHandle, ModelLoadParams> ModelParams;
 			std::unordered_map<AssetHandle, Font*> Fonts;
 			std::unordered_map<AssetHandle, std::shared_ptr<AudioClip>> AudioClips;
+			std::unordered_map<AssetHandle, Environment*> Environments;
 
 			std::thread Worker;
 			std::mutex JobMutex;
