@@ -4,15 +4,20 @@
 #include "DingoEngine/Graphics/Renderer3DAccess.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 #include "DingoEngine/Graphics/EngineShaders.h"
+#include "DingoEngine/Graphics/EnvironmentAccess.h"
+#include "DingoEngine/Graphics/EnvironmentShaders.h"
 #include "DingoEngine/Graphics/FullscreenPass.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/LightMath.h"
 #include "DingoEngine/Graphics/ShadowAtlasAllocator.h"
 #include "DingoEngine/Graphics/ParticleRenderer.h"
+#include "DingoEngine/Graphics/PbrShaders.h"
+#include "DingoEngine/Graphics/RendererBackend.h"
 #include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Graphics/SkinnedVisibility.h"
 #include "DingoEngine/Graphics/StaticBatchData.h"
 #include "DingoEngine/Graphics/TextureReadback.h"
+#include "DingoEngine/Graphics/VolumeNoise.h"
 
 #include <glm/gtc/matrix_access.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
@@ -200,13 +205,39 @@ namespace
 		return std::isfinite(value) ? value : fallback;
 	}
 
+	float SrgbChannelToLinear(float c)
+	{
+		return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
+	}
+
+	float LinearChannelToSrgb(float c)
+	{
+		c = std::max(c, 0.0f);
+		return c <= 0.0031308f ? c * 12.92f : 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f;
+	}
+
+	glm::vec3 SrgbToLinear(const glm::vec3& c)
+	{
+		return glm::vec3(SrgbChannelToLinear(c.x), SrgbChannelToLinear(c.y), SrgbChannelToLinear(c.z));
+	}
+
+	glm::vec3 LinearToSrgb(const glm::vec3& c)
+	{
+		return glm::vec3(LinearChannelToSrgb(c.x), LinearChannelToSrgb(c.y), LinearChannelToSrgb(c.z));
+	}
+
 	// A lit material is known by its shader, and the renderer that draws it need not be the one that
 	// created it.
 	std::vector<const Dingo::Shader*> s_LitShaders;
 
 	bool IsLitShader(const Dingo::Shader* shader)
 	{
-		return shader && std::find(s_LitShaders.begin(), s_LitShaders.end(), shader) != s_LitShaders.end();
+		return shader && (std::find(s_LitShaders.begin(), s_LitShaders.end(), shader) != s_LitShaders.end() || Dingo::Internal::IsPbrShader(shader));
+	}
+
+	bool IsPbrMaterial(const Dingo::Material& material)
+	{
+		return Dingo::Internal::IsPbrShader(material.GetShader());
 	}
 
 	uint32_t FloorPowerOfTwo(uint32_t value)
@@ -243,22 +274,41 @@ namespace
 	void FillObjectRecord(const Dingo::SurfaceOverride& surface, glm::vec4& emissive, glm::vec4& surfaceParams)
 	{
 		emissive = glm::vec4(IsFinite(surface.EmissiveColor) ? surface.EmissiveColor : glm::vec3(0.0f), FiniteOr(surface.EmissiveStrength, 0.0f));
-		surfaceParams = glm::vec4(glm::clamp(FiniteOr(surface.Roughness, 0.5f), 0.0f, 1.0f), std::max(FiniteOr(surface.Specular, 0.0f), 0.0f), 0.0f, 0.0f);
+		surfaceParams = glm::vec4(glm::clamp(FiniteOr(surface.Roughness, 0.5f), 0.0f, 1.0f), std::max(FiniteOr(surface.Specular, 0.0f), 0.0f), glm::clamp(FiniteOr(surface.Metallic, 0.0f), 0.0f, 1.0f), 0.0f);
 	}
 
-	bool BindsPastSlotZero(const Dingo::Material& material)
+	uint32_t UsedSlots(const Dingo::Material& material)
 	{
-		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxTextureSlots; ++slot)
+		return IsPbrMaterial(material) ? Dingo::Renderer3D::k_PbrTextureSlots : 1u;
+	}
+
+	// A lit shader declares one texture slot and a PBR shader five; a binding set naming more would
+	// name bindings its layout lacks.
+	bool BindsPastSlot(const Dingo::Material& material, uint32_t slots)
+	{
+		for (uint32_t slot = slots; slot < Dingo::Material::k_MaxTextureSlots; ++slot)
 		{
 			if (material.GetTexture(slot))
 				return true;
 		}
-		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxSamplerSlots; ++slot)
+		for (uint32_t slot = slots; slot < Dingo::Material::k_MaxSamplerSlots; ++slot)
 		{
 			if (material.GetSampler(slot))
 				return true;
 		}
 		return false;
+	}
+
+	bool BindsPastItsSlots(const Dingo::Material& material)
+	{
+		return BindsPastSlot(material, UsedSlots(material));
+	}
+
+	void WarnSlotsPast(const Dingo::Material& material)
+	{
+		const std::string& name = material.GetParams().DebugName;
+		DE_CORE_WARN("Renderer3D: {} material '{}' has a texture or sampler past slot {}, which the {} shader has no binding for; it is not drawn until that slot is cleared.",
+			IsPbrMaterial(material) ? "PBR" : "lit", name.empty() ? "<unnamed>" : name.c_str(), UsedSlots(material) - 1, IsPbrMaterial(material) ? "PBR" : "lit");
 	}
 }
 
@@ -275,6 +325,7 @@ namespace Dingo
 	Renderer3D::Renderer3D(const Renderer3DParams& params)
 		: m_Params(params)
 	{
+		m_Params.Capabilities.VolumetricGrid = glm::uvec3(std::clamp(params.Capabilities.VolumetricGrid.x, 8u, 256u), std::clamp(params.Capabilities.VolumetricGrid.y, 8u, 256u), std::clamp(params.Capabilities.VolumetricGrid.z, 8u, 128u));
 	}
 
 	Renderer3D::~Renderer3D()
@@ -357,6 +408,53 @@ namespace Dingo
 			.SetIsRenderTarget(true));
 		SetShadowSettings(m_Params.Shadows);
 
+		m_IblSpecular = Texture::Create(TextureParams()
+			.SetDebugName("Renderer3D_IblSpecular")
+			.SetWidth(Internal::k_IblFaceSize)
+			.SetHeight(Internal::k_IblFaceSize)
+			.SetMipLevels(Internal::k_IblMipLevels)
+			.SetFormat(TextureFormat::RGBA16F)
+			.SetDimension(TextureDimension::TextureCube));
+		m_IblIrradiance = GraphicsBuffer::CreateStorageBuffer(Internal::k_IblIrradianceBytes, "Renderer3D_IblIrradiance");
+		Internal::GetBrdfLut();
+
+		const uint16_t noFogTexel[4] = { 0x0000, 0x0000, 0x0000, 0x3C00 };
+		m_VolumetricIntegrated = Texture::Create(TextureParams()
+			.SetDebugName("Renderer3D_VolumetricIntegrated")
+			.SetWidth(1)
+			.SetHeight(1)
+			.SetDepth(1)
+			.SetFormat(TextureFormat::RGBA16F)
+			.SetDimension(TextureDimension::Texture3D)
+			.SetIsStorage(true)
+			.SetInitialData(noFogTexel));
+		m_VolumetricDataBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Renderer3D_VolumetricData")
+			.SetByteSize(sizeof(VolumetricData))
+			.SetType(BufferType::UniformBuffer)
+			.SetIsVolatile(true)
+			.SetUpload(BufferUpload::Deferred)
+			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
+		m_FogVolumeBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Renderer3D_FogVolumeData")
+			.SetByteSize(sizeof(FogVolumeData))
+			.SetType(BufferType::UniformBuffer)
+			.SetIsVolatile(true)
+			.SetUpload(BufferUpload::Deferred)
+			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
+		{
+			const std::vector<uint8_t> noise = Internal::GenerateVolumeNoise();
+			m_VolumeNoise = Texture::Create(TextureParams()
+				.SetDebugName("Renderer3D_VolumeNoise")
+				.SetWidth(Internal::k_VolumeNoiseSize)
+				.SetHeight(Internal::k_VolumeNoiseSize)
+				.SetDepth(Internal::k_VolumeNoiseSize)
+				.SetFormat(TextureFormat::R8)
+				.SetDimension(TextureDimension::Texture3D)
+				.SetInitialData(noise.data()));
+			m_VolumeNoiseSampler = Sampler::Create(SamplerParams().SetAddressMode(SamplerAddressMode::Wrap));
+		}
+
 		m_Particles = std::make_unique<Internal::ParticleRenderer>(std::clamp(m_Params.Capabilities.MaxParticles, 64u, k_MaxParticlesLimit));
 		m_SkinnedVisibility = std::make_shared<Internal::SkinnedVisibility>();
 
@@ -426,6 +524,9 @@ namespace Dingo
 		for (auto& [id, entry] : m_InstancedTwins)
 			DestroyAndDelete(entry.Twin);
 		m_InstancedTwins.clear();
+		for (auto& [id, entry] : m_SkyboxMaterials)
+			DestroyAndDelete(entry.Sky);
+		m_SkyboxMaterials.clear();
 		m_InstanceGroups.clear();
 		m_InstanceGroupLookup.Clear();
 		m_InstanceRecords.clear();
@@ -455,8 +556,21 @@ namespace Dingo
 		DestroyAndDelete(m_ShadowAtlas);
 		DestroyAndDelete(m_PlaceholderShadowAtlas);
 		DestroyAndDelete(m_ShadowSampler);
+		DestroyAndDelete(m_IblSpecular);
+		DestroyAndDelete(m_IblIrradiance);
+		m_IblSourceId = 0;
+		m_IblSourceGeneration = 0;
 		DestroyAndDelete(m_ShadowDataBuffer);
 		DestroyAndDelete(m_ShadowViewsBuffer);
+		DestroyRaymarchResources();
+		delete m_RaymarchCompositeShader;
+		m_RaymarchCompositeShader = nullptr;
+		DestroyVolumetricResources();
+		DestroyAndDelete(m_VolumetricIntegrated);
+		DestroyAndDelete(m_VolumetricDataBuffer);
+		DestroyAndDelete(m_FogVolumeBuffer);
+		DestroyAndDelete(m_VolumeNoise);
+		DestroyAndDelete(m_VolumeNoiseSampler);
 
 		DestroyAndDelete(m_ProbeMaterial);
 		delete m_ProbeShader;
@@ -529,6 +643,7 @@ namespace Dingo
 
 		ReleaseIdleTwins(m_SkinnedTwins);
 		ReleaseIdleTwins(m_InstancedTwins);
+		ReleaseIdleSkyboxes();
 		m_SkinnedSubmissions.clear();
 		m_SkinnedInstances.clear();
 		m_SkinnedJoints.clear();
@@ -547,6 +662,7 @@ namespace Dingo
 		if (m_SceneSkipped)
 		{
 			ClearSceneLights();
+			ResetLightScatter();
 			if (m_Particles)
 				m_Particles->ClearScene();
 			m_SceneStaticBatches.clear();
@@ -562,7 +678,30 @@ namespace Dingo
 			DE_PROFILE_SCOPE("Renderer3D::ResolveSceneLights");
 			ResolveSceneLights();
 		}
-		m_Statistics.Fogged = m_CameraData.FogParams.w > 0.5f && m_CameraData.CameraPosition.w > 0.5f;
+		const SceneEnvironment environment = m_PendingEnvironment;
+		const bool perspective = m_CameraData.CameraPosition.w > 0.5f;
+		m_SkySun = glm::vec4(0.0f);
+		if (environment.Environment && environment.Environment->IsProcedural())
+			ApplyProceduralSun(environment);
+		if (environment.Environment && Internal::EnvironmentAccess::NeedsBake(environment.Environment))
+		{
+			DE_PROFILE_SCOPE("Renderer3D::PrepareEnvironment");
+			const uint64_t generation = Internal::EnvironmentAccess::GetBakeGeneration(environment.Environment);
+			environment.Environment->Prepare();
+			m_Statistics.EnvironmentBakes += Internal::EnvironmentAccess::GetBakeGeneration(environment.Environment) != generation ? 1 : 0;
+		}
+		const bool drawSky = environment.Environment && environment.DrawSkybox && environment.Environment->IsReady() && perspective;
+		const bool environmentLit = PrepareEnvironmentLighting(environment);
+		m_Statistics.EnvironmentLighting = environmentLit;
+		m_CameraData.EnvironmentParams = glm::vec4(0.0f);
+		if (environmentLit)
+		{
+			const float rotation = environment.Environment->IsProcedural() ? 0.0f : environment.Rotation;
+			const float radians = glm::radians(-rotation);
+			m_CameraData.EnvironmentParams = glm::vec4(1.0f, environment.Intensity * environment.LightingIntensity, std::cos(radians), std::sin(radians));
+		}
+		PrepareVolumetrics(perspective);
+		m_Statistics.Fogged = m_CameraData.FogParams.w > 0.5f && perspective;
 		if (m_Statistics.Fogged)
 		{
 			// Before ClearSceneLights drops the fog. A later unfogged scene of the same Begin leaves it,
@@ -613,6 +752,13 @@ namespace Dingo
 		}
 
 		Texture* shadowAtlas = m_ShadowAtlas ? m_ShadowAtlas->GetDepthAttachment() : m_PlaceholderShadowAtlas;
+		DispatchVolumetrics(shadowAtlas);
+		UploadRaymarchResources();
+		ResetLightScatter();
+		const Framebuffer* skyTarget = Renderer::GetRenderTarget();
+		const bool skyFirst = skyTarget && !skyTarget->GetParams().EnableDepth;
+		if (drawSky && skyFirst)
+			m_Statistics.Skybox = DrawSkybox(environment);
 		{
 			DE_PROFILE_SCOPE("Renderer3D::DrawBatches");
 			for (const ChunkDraw& draw : m_ChunkDraws)
@@ -628,6 +774,8 @@ namespace Dingo
 				Internal::MaterialAccess::SetSkinUniformBuffer(material, nullptr);
 				Internal::MaterialAccess::SetSkinPaletteBuffer(material, nullptr);
 				Internal::MaterialAccess::SetShadowResources(material, m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+				Internal::MaterialAccess::SetEnvironmentResources(material, m_IblIrradiance, m_IblSpecular, Internal::GetBrdfLut(), Renderer::GetClampSampler());
+				Internal::MaterialAccess::SetVolumetricResources(material, m_VolumetricIntegrated, Renderer::GetClampSampler());
 				Internal::MaterialAccess::SetObjectBuffer(material, m_ObjectBuffer);
 				if (instanced)
 				{
@@ -638,6 +786,8 @@ namespace Dingo
 					Renderer::DrawIndexed(material, m_MeshLayout, group.Mesh->m_StaticVertexBuffer, group.Mesh->m_StaticIndexBuffer, group.Mesh->GetIndexCount(), group.Count);
 					++m_Statistics.DrawCalls;
 					++m_Statistics.InstancedDraws;
+					if (IsPbrMaterial(*draw.Key.Material))
+						++m_Statistics.PbrDraws;
 					continue;
 				}
 				const VertexLayout& layout = IsLitShader(material->GetShader()) ? m_LitLayout : m_Layout;
@@ -651,10 +801,15 @@ namespace Dingo
 					Renderer::DrawIndexed(material, layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
 				}
 				++m_Statistics.DrawCalls;
+				if (IsPbrMaterial(*material))
+					++m_Statistics.PbrDraws;
 			}
 		}
 
 		DrawSkinnedSubmissions();
+		if (drawSky && !skyFirst)
+			m_Statistics.Skybox = DrawSkybox(environment);
+		DrawVolumeRaymarch(shadowAtlas);
 		DrawTranslucentPass(shadowAtlas);
 		m_StaticSubmissions.clear();
 		m_StaticSubmissionData.clear();
@@ -669,7 +824,7 @@ namespace Dingo
 		m_SceneStaticBatches.clear();
 
 		if (m_Particles)
-			m_Particles->EndScene(m_CameraData.ViewProjection, m_Statistics);
+			m_Particles->EndScene(m_CameraData.ViewProjection, m_VolumetricIntegrated, m_SceneVolumeParams, m_SceneVolumeGrid, m_Statistics);
 		Renderer::EndGpuTimer();
 	}
 
@@ -942,13 +1097,11 @@ namespace Dingo
 			{
 				// The binding set would name bindings the shader's layout lacks, which Vulkan does
 				// not reject: drawing it is undefined behaviour, so the material is skipped.
-				if (BindsPastSlotZero(*material))
+				if (BindsPastItsSlots(*material))
 				{
 					if (!m_LitSlotsWarned)
 					{
-						const std::string& name = material->GetParams().DebugName;
-						DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-							name.empty() ? "<unnamed>" : name.c_str());
+						WarnSlotsPast(*material);
 						m_LitSlotsWarned = true;
 					}
 					continue;
@@ -1575,6 +1728,12 @@ namespace Dingo
 		if (!IsLitShader(material->GetShader()))
 			return material;
 
+		if (IsPbrMaterial(*material))
+		{
+			if (Shader* pbr = Internal::GetPbrShader(Internal::PbrShaderVariant::Instanced))
+				return GetTwin(m_InstancedTwins, material, pbr, "_Instanced");
+		}
+
 		if (!m_InstancedShader)
 		{
 			m_InstancedShader = CreateLitShader(k_InstancedLitShaderName, "DE_INSTANCED");
@@ -1627,14 +1786,12 @@ namespace Dingo
 			return false;
 		}
 
-		const bool usable = !BindsPastSlotZero(*material);
+		const bool usable = !BindsPastItsSlots(*material);
 		if (usable)
 			PrepareLitMaterial(material);
 		else if (!m_LitSlotsWarned)
 		{
-			const std::string& name = material->GetParams().DebugName;
-			DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-				name.empty() ? "<unnamed>" : name.c_str());
+			WarnSlotsPast(*material);
 			m_LitSlotsWarned = true;
 		}
 		m_TranslucentMaterials.emplace_back(material, usable);
@@ -1839,12 +1996,16 @@ namespace Dingo
 			Internal::MaterialAccess::SetSkinUniformBuffer(material, nullptr);
 			Internal::MaterialAccess::SetSkinPaletteBuffer(material, nullptr);
 			Internal::MaterialAccess::SetShadowResources(material, m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+			Internal::MaterialAccess::SetEnvironmentResources(material, m_IblIrradiance, m_IblSpecular, Internal::GetBrdfLut(), Renderer::GetClampSampler());
+			Internal::MaterialAccess::SetVolumetricResources(material, m_VolumetricIntegrated, Renderer::GetClampSampler());
 			Internal::MaterialAccess::SetObjectBuffer(material, m_ObjectBuffer);
 			const VertexLayout& layout = IsLitShader(material->GetShader()) ? m_LitLayout : m_Layout;
 			Renderer::DrawIndexed(material, layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
 			++m_Statistics.DrawCalls;
 			++m_Statistics.TranslucentDraws;
 			m_Statistics.TranslucentMeshes += draw.Meshes;
+			if (IsPbrMaterial(*material))
+				++m_Statistics.PbrDraws;
 		}
 		m_TranslucentDraws.clear();
 	}
@@ -2062,7 +2223,10 @@ namespace Dingo
 	{
 		Material* requested = material ? material : m_Material;
 		if (IsLitShader(requested->GetShader()))
-			return GetTwin(m_SkinnedTwins, requested, m_SkinnedShader, "_Skinned");
+		{
+			Shader* shader = IsPbrMaterial(*requested) ? Internal::GetPbrShader(Internal::PbrShaderVariant::Skinned) : nullptr;
+			return GetTwin(m_SkinnedTwins, requested, shader ? shader : m_SkinnedShader, "_Skinned");
+		}
 
 		const bool palette = UsesSkinPalette(requested->GetShader());
 		const bool usable = HasUsableSkinBlock(requested);
@@ -2106,6 +2270,8 @@ namespace Dingo
 	Material* Renderer3D::GetTwin(TwinMap& twins, Material* source, Shader* shader, const char* suffix)
 	{
 		SkinnedTwin& entry = twins[source->GetId()];
+		if (entry.Twin && entry.Twin->GetShader() != shader)
+			DestroyAndDelete(entry.Twin);
 		if (!entry.Twin)
 		{
 			MaterialParams twinParams = source->GetParams();
@@ -2117,12 +2283,27 @@ namespace Dingo
 		Material* twin = entry.Twin;
 		// A slot's pointer changing rebuilds the twin's pipelines, so an empty source slot maps to
 		// the same default PrepareLitMaterial would put there.
-		twin->SetTexture(0, source->GetTexture(0) ? source->GetTexture(0) : Renderer::GetWhiteTexture());
-		twin->SetSampler(0, source->GetSampler(0) ? source->GetSampler(0) : Renderer::GetClampSampler());
 		twin->SetEmissiveColor(source->GetEmissiveColor());
 		twin->SetEmissiveStrength(source->GetEmissiveStrength());
 		twin->SetRoughness(source->GetRoughness());
 		twin->SetSpecular(source->GetSpecular());
+		if (Internal::IsPbrShader(shader))
+		{
+			for (uint32_t slot = 0; slot < k_PbrTextureSlots; ++slot)
+			{
+				twin->SetTexture(slot, source->GetTexture(slot) ? source->GetTexture(slot) : Renderer::GetWhiteTexture());
+				twin->SetSampler(slot, source->GetSampler(slot) ? source->GetSampler(slot) : Internal::GetPbrSampler());
+			}
+			twin->SetBaseColor(source->GetBaseColor());
+			twin->SetMetallic(source->GetMetallic());
+			twin->SetOcclusion(source->GetOcclusion());
+			twin->SetNormalScale(source->GetNormalScale());
+		}
+		else
+		{
+			twin->SetTexture(0, source->GetTexture(0) ? source->GetTexture(0) : Renderer::GetWhiteTexture());
+			twin->SetSampler(0, source->GetSampler(0) ? source->GetSampler(0) : Renderer::GetClampSampler());
+		}
 		PrepareLitMaterial(twin);
 		return twin;
 	}
@@ -2326,13 +2507,11 @@ namespace Dingo
 
 		// The same rule as the static path, so a material draws the same way skinned or not.
 		Material* requested = submission.Material ? submission.Material : m_Material;
-		if (IsLitShader(requested->GetShader()) && BindsPastSlotZero(*requested))
+		if (IsLitShader(requested->GetShader()) && BindsPastItsSlots(*requested))
 		{
 			if (!m_LitSlotsWarned)
 			{
-				const std::string& name = requested->GetParams().DebugName;
-				DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-					name.empty() ? "<unnamed>" : name.c_str());
+				WarnSlotsPast(*requested);
 				m_LitSlotsWarned = true;
 			}
 			return 0;
@@ -2346,6 +2525,8 @@ namespace Dingo
 
 		Internal::MaterialAccess::SetSceneUniformBuffer(material, m_SceneUniformBuffer);
 		Internal::MaterialAccess::SetShadowResources(material, m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+		Internal::MaterialAccess::SetEnvironmentResources(material, m_IblIrradiance, m_IblSpecular, Internal::GetBrdfLut(), Renderer::GetClampSampler());
+		Internal::MaterialAccess::SetVolumetricResources(material, m_VolumetricIntegrated, Renderer::GetClampSampler());
 		Internal::MaterialAccess::SetObjectBuffer(material, m_ObjectBuffer);
 
 		// The skinned vertices exist only on the GPU, so a two-sided mesh's sides are split by culling:
@@ -2368,6 +2549,8 @@ namespace Dingo
 
 		m_Statistics.DrawCalls += draws;
 		m_Statistics.SkinnedDraws += draws;
+		if (IsPbrMaterial(*requested))
+			m_Statistics.PbrDraws += draws;
 		++m_Statistics.SubmittedMeshes;
 		return draws;
 	}
@@ -2380,8 +2563,19 @@ namespace Dingo
 		return material;
 	}
 
+	Material* Renderer3D::CreatePbrMaterial(const PbrMaterialParams& params) const
+	{
+		return Internal::CreatePbrMaterial(params);
+	}
+
 	void Renderer3D::PrepareLitMaterial(Material* material) const
 	{
+		if (IsPbrMaterial(*material))
+		{
+			Internal::PreparePbrMaterial(material);
+			return;
+		}
+
 		// The lit shader always samples an albedo texture, and a material's binding set has to
 		// match the shader's exactly.
 		if (!material->GetTexture(0))
@@ -2458,6 +2652,7 @@ namespace Dingo
 		}
 
 		m_CameraData.DirectionalLights[count] = { glm::vec4(light.Direction, 0.0f), glm::vec4(light.Color * light.Intensity, 0.0f) };
+		m_FogVolumeData.DirectionalScatter[count] = std::max(FiniteOr(light.VolumetricIntensity, 1.0f), 0.0f);
 		m_LastSubmittedLight = { count, true };
 		++count;
 		return true;
@@ -2484,6 +2679,7 @@ namespace Dingo
 		candidate->CastShadows = light.CastShadows;
 		candidate->ShadowCasterGroups = light.ShadowCasterGroups;
 		candidate->ShadowStrength = glm::clamp(FiniteOr(light.ShadowStrength, 1.0f), 0.0f, 1.0f);
+		candidate->VolumetricIntensity = std::max(FiniteOr(light.VolumetricIntensity, 1.0f), 0.0f);
 		if constexpr (std::is_same_v<LightType, SpotLight>)
 		{
 			// Past 75 degrees one perspective view would need too wide a field of view.
@@ -2562,6 +2758,264 @@ namespace Dingo
 		m_CameraData.FogParams = glm::vec4(0.0f);
 	}
 
+	bool Renderer3D::SetVolumetricFog(const VolumetricFog& fog)
+	{
+		const bool finite = std::isfinite(fog.Density) && std::isfinite(fog.BaseHeight) && std::isfinite(fog.HeightFalloff) && IsFinite(fog.Albedo)
+			&& std::isfinite(fog.Anisotropy) && std::isfinite(fog.AmbientIntensity) && std::isfinite(fog.LightIntensity)
+			&& std::isfinite(fog.NearDistance) && std::isfinite(fog.MaxDistance) && IsFinite(fog.ScatterTint) && std::isfinite(fog.OutsideShadowLight)
+			&& std::isfinite(fog.LocalLightIntensity) && std::isfinite(fog.MaxInScatter);
+		const bool usable = finite && fog.Density >= 0.0f && fog.HeightFalloff >= 0.0f && fog.AmbientIntensity >= 0.0f && fog.LightIntensity >= 0.0f
+			&& fog.LocalLightIntensity >= 0.0f && fog.MaxInScatter >= 0.0f
+			&& fog.NearDistance > 0.0f && fog.MaxDistance > fog.NearDistance && glm::all(glm::greaterThanEqual(fog.ScatterTint, glm::vec3(0.0f)));
+		if (!usable)
+		{
+			if (!m_VolumetricFogWarned)
+			{
+				DE_CORE_WARN("Renderer3D: a volumetric fog was ignored: it needs finite values, no negative Density, HeightFalloff, intensity, MaxInScatter or ScatterTint, a NearDistance above 0 and a MaxDistance past it.");
+				m_VolumetricFogWarned = true;
+			}
+			return false;
+		}
+
+		m_VolumetricFog = fog;
+		m_VolumetricFog.Anisotropy = std::clamp(fog.Anisotropy, -0.95f, 0.95f);
+		m_VolumetricFog.Albedo = glm::clamp(fog.Albedo, glm::vec3(0.0f), glm::vec3(1.0f));
+		m_VolumetricFog.OutsideShadowLight = std::clamp(fog.OutsideShadowLight, 0.0f, 1.0f);
+		m_VolumetricFogSet = true;
+		return true;
+	}
+
+	void Renderer3D::ClearVolumetricFog()
+	{
+		m_VolumetricFog = {};
+		m_VolumetricFogSet = false;
+	}
+
+	bool Renderer3D::SubmitFogVolume(const FogVolume& volume, const glm::mat4& transform)
+	{
+		const auto finite = [](std::initializer_list<float> values)
+		{
+			return std::all_of(values.begin(), values.end(), [](float value) { return std::isfinite(value); });
+		};
+		const auto nonNegative = [](std::initializer_list<float> values)
+		{
+			return std::all_of(values.begin(), values.end(), [](float value) { return value >= 0.0f; });
+		};
+
+		bool usable = volume.Shape >= FogVolumeShape::Box && volume.Shape <= FogVolumeShape::Sphere
+			&& volume.Mode >= FogVolumeMode::Froxel && volume.Mode <= FogVolumeMode::Raymarch
+			&& finite({ volume.HalfExtents.x, volume.HalfExtents.y, volume.HalfExtents.z, volume.Density, volume.Albedo.x, volume.Albedo.y, volume.Albedo.z, volume.Anisotropy,
+				volume.ScatterTint.x, volume.ScatterTint.y, volume.ScatterTint.z, volume.OutsideShadowLight, volume.AmbientIntensity, volume.LightIntensity, volume.LocalLightIntensity,
+				volume.EdgeFade, volume.HeightFadeStart, volume.HeightFadeEnd, volume.HeightBandBottom, volume.HeightBandTop, volume.HeightBandMultiplier, volume.HeightBandSoftness,
+				volume.NearFadeStart, volume.NearFadeEnd, volume.NearFadeKeep, volume.FarFadeStart, volume.FarFadeEnd, volume.FarFadeKeep, volume.MaxInScatter,
+				volume.NoiseScale, volume.NoiseVelocity.x, volume.NoiseVelocity.y, volume.NoiseVelocity.z, volume.NoiseMin, volume.NoiseMax })
+			&& nonNegative({ volume.Density, volume.ScatterTint.x, volume.ScatterTint.y, volume.ScatterTint.z, volume.AmbientIntensity, volume.LightIntensity, volume.LocalLightIntensity,
+				volume.EdgeFade, volume.HeightBandMultiplier, volume.HeightBandSoftness, volume.MaxInScatter, volume.NoiseMin, volume.NoiseMax })
+			&& volume.HalfExtents.x > 0.0f && volume.HalfExtents.y > 0.0f && volume.HalfExtents.z > 0.0f && volume.NoiseScale > 0.0f;
+
+		if (usable)
+		{
+			const glm::dmat3 axes(transform);
+			const double determinant = glm::determinant(axes);
+			usable = transform[0][3] == 0.0f && transform[1][3] == 0.0f && transform[2][3] == 0.0f && transform[3][3] == 1.0f;
+			for (int column = 0; column < 4 && usable; ++column)
+				usable = finite({ transform[column].x, transform[column].y, transform[column].z, transform[column].w });
+			for (int column = 0; column < 3 && usable; ++column)
+				usable = glm::length(axes[column]) > 1e-6;
+			usable = usable && std::isfinite(determinant) && std::abs(determinant) > 1e-12;
+		}
+
+		if (!usable)
+		{
+			if (!m_FogVolumeWarned)
+			{
+				DE_CORE_WARN("Renderer3D: a fog volume was ignored: it needs finite values, no negative Density, intensity, EdgeFade, ScatterTint, noise value or MaxInScatter, HalfExtents and NoiseScale above 0, a known Shape and Mode, and an affine transform that keeps every axis.");
+				m_FogVolumeWarned = true;
+			}
+			return false;
+		}
+
+		if (m_FogVolumes.size() >= k_MaxPendingFogVolumes)
+		{
+			if (!m_FogVolumePendingWarned)
+			{
+				DE_CORE_WARN("Renderer3D: {} fog volumes are waiting for an EndScene; further ones are ignored.", k_MaxPendingFogVolumes);
+				m_FogVolumePendingWarned = true;
+			}
+			return false;
+		}
+
+		SubmittedFogVolume& submitted = m_FogVolumes.emplace_back();
+		submitted.Settings = volume;
+		submitted.Settings.Albedo = glm::clamp(volume.Albedo, glm::vec3(0.0f), glm::vec3(1.0f));
+		submitted.Settings.Anisotropy = std::clamp(volume.Anisotropy, -0.95f, 0.95f);
+		submitted.Settings.OutsideShadowLight = std::clamp(volume.OutsideShadowLight, 0.0f, 1.0f);
+		submitted.Settings.NearFadeKeep = std::clamp(volume.NearFadeKeep, 0.0f, 1.0f);
+		submitted.Settings.FarFadeKeep = std::clamp(volume.FarFadeKeep, 0.0f, 1.0f);
+		submitted.Settings.RaymarchSteps = std::clamp(volume.RaymarchSteps, 1u, 64u);
+		submitted.World = transform;
+		return true;
+	}
+
+	void Renderer3D::ResetLightScatter()
+	{
+		m_FogVolumeData.DirectionalScatter = glm::vec4(1.0f);
+		for (glm::vec4& scatter : m_FogVolumeData.LocalScatter)
+			scatter = glm::vec4(1.0f);
+	}
+
+	void Renderer3D::SetVolumetricGrid(const glm::uvec3& grid)
+	{
+		const glm::uvec3 clamped(std::clamp(grid.x, 8u, 256u), std::clamp(grid.y, 8u, 256u), std::clamp(grid.z, 8u, 128u));
+		if (clamped == m_Params.Capabilities.VolumetricGrid)
+			return;
+		m_Params.Capabilities.VolumetricGrid = clamped;
+		InvalidateVolumetricHistory();
+		if (m_VolumetricScatter[0])
+			EnsureVolumetricResources();
+	}
+
+	bool Renderer3D::SetEnvironment(const SceneEnvironment& environment)
+	{
+		if (!environment.Environment)
+		{
+			ClearEnvironment();
+			return true;
+		}
+		if (!std::isfinite(environment.Intensity) || environment.Intensity < 0.0f || !std::isfinite(environment.Rotation)
+			|| !std::isfinite(environment.LightingIntensity) || environment.LightingIntensity < 0.0f)
+		{
+			if (!m_EnvironmentWarned)
+			{
+				DE_CORE_WARN("Renderer3D: an environment was ignored: its Intensity and LightingIntensity must be finite and at least 0, and its Rotation finite.");
+				m_EnvironmentWarned = true;
+			}
+			return false;
+		}
+		m_PendingEnvironment = environment;
+		return true;
+	}
+
+	void Renderer3D::ClearEnvironment()
+	{
+		m_PendingEnvironment = {};
+	}
+
+	void Renderer3D::ReleaseIdleSkyboxes()
+	{
+		for (auto it = m_SkyboxMaterials.begin(); it != m_SkyboxMaterials.end();)
+		{
+			SkyboxEntry& entry = it->second;
+			entry.IdleScenes = entry.Used ? 0 : entry.IdleScenes + 1;
+			entry.Used = false;
+			if (entry.IdleScenes > k_MaxIdleBatchScenes)
+			{
+				DestroyAndDelete(entry.Sky);
+				it = m_SkyboxMaterials.erase(it);
+				continue;
+			}
+			++it;
+		}
+	}
+
+	bool Renderer3D::PrepareEnvironmentLighting(const SceneEnvironment& environment)
+	{
+		if (!environment.Environment || !environment.Lighting || !environment.Environment->IsReady() || !m_IblSpecular || !m_IblIrradiance || !Internal::GetBrdfLut())
+			return false;
+
+		const Environment* source = environment.Environment;
+		const uint64_t generation = Internal::EnvironmentAccess::GetBakeGeneration(source);
+		if (m_IblSourceId == source->GetId() && m_IblSourceGeneration == generation)
+			return true;
+
+		Texture* specular = Internal::EnvironmentAccess::GetSpecular(source);
+		GraphicsBuffer* irradiance = Internal::EnvironmentAccess::GetIrradiance(source);
+		Internal::CommandList* list = Internal::RendererBackend::TryGetRecordingCommandList();
+		if (!specular || !irradiance || !list || Renderer::IsFrameSkipped())
+			return false;
+
+		list->CopyTexture(m_IblSpecular, specular);
+		list->CopyBuffer(m_IblIrradiance, irradiance, Internal::k_IblIrradianceBytes);
+		m_IblSourceId = source->GetId();
+		m_IblSourceGeneration = generation;
+		++m_Statistics.EnvironmentLightingCopies;
+		return true;
+	}
+
+	void Renderer3D::ApplyProceduralSun(const SceneEnvironment& environment)
+	{
+		Environment* sky = environment.Environment;
+		glm::vec3 travel = sky->GetSky()->SunDirection;
+		const int directionalCount = m_CameraData.LightCounts.x;
+		if (directionalCount > 0)
+		{
+			const int main = m_ShadowLight >= 0 && m_ShadowLight < directionalCount ? m_ShadowLight : 0;
+			DirectionalLightData& light = m_CameraData.DirectionalLights[main];
+			const glm::vec3 direction = glm::vec3(light.Direction);
+			if (IsFinite(direction) && glm::dot(direction, direction) > 1.0e-12f)
+			{
+				if (environment.FollowSun)
+				{
+					Internal::EnvironmentAccess::SetSunDirection(sky, direction);
+					travel = direction;
+				}
+				if (environment.TintSun)
+				{
+					const glm::vec3 transmittance = sky->GetSunTransmittance(direction);
+					light.Color = glm::vec4(LinearToSrgb(SrgbToLinear(glm::vec3(light.Color)) * transmittance), light.Color.a);
+				}
+			}
+		}
+		m_SkySun = glm::vec4(travel, 1.0f);
+	}
+
+	bool Renderer3D::DrawSkybox(const SceneEnvironment& environment)
+	{
+		DE_PROFILE_SCOPE("Renderer3D::DrawSkybox");
+		Texture* cube = environment.Environment->GetCubeMap();
+		Shader* shader = Internal::GetEnvironmentShader(Internal::EnvironmentShaderVariant::Skybox);
+		if (!cube || !shader)
+			return false;
+
+		SkyboxEntry& entry = m_SkyboxMaterials[cube->GetId()];
+		if (!entry.Sky)
+		{
+			entry.Sky = Material::Create(MaterialParams()
+				.SetDebugName("Renderer3D_Skybox")
+				.SetShader(shader)
+				.SetCullMode(CullMode::None)
+				.SetBlendMode(BlendMode::Opaque)
+				.SetDepthTest(true)
+				.SetDepthWrite(false)
+				.SetDepthCompare(DepthCompare::LessEqual)
+				.SetUniformWritesPerFrame(k_MaxScenesPerFrame));
+			entry.Sky->SetTexture(0, cube);
+			entry.Sky->SetSampler(0, Renderer::GetClampSampler());
+		}
+		entry.Used = true;
+
+		const Environment* source = environment.Environment;
+		const float radians = glm::radians(source->IsProcedural() ? 0.0f : -environment.Rotation);
+		SkyboxData data;
+		data.InverseViewProjection = glm::mat4(glm::inverse(glm::dmat4(m_CameraData.ViewProjection)));
+		data.Params = glm::vec4(std::cos(radians), std::sin(radians), environment.Intensity, 0.0f);
+		if (source->IsProcedural() && m_SkySun.w > 0.5f && source->GetSky()->SunDiscRadius > 0.0f)
+		{
+			const ProceduralSky& sky = *source->GetSky();
+			const glm::vec3 travel = glm::vec3(m_SkySun);
+			const float groundRatio = Internal::EnvironmentAccess::GetGroundRatio(sky);
+			const glm::vec3 radiance = SrgbToLinear(sky.SunColor) * (sky.SunIntensity * sky.SunDiscIntensity * environment.Intensity) * source->GetSunTransmittance(travel);
+			data.Sun = glm::vec4(-glm::normalize(travel), std::cos(glm::radians(sky.SunDiscRadius)));
+			data.SunDisc = glm::vec4(radiance, -std::sqrt(std::max(1.0f - groundRatio * groundRatio, 0.0f)));
+		}
+		if (m_SceneVolumeParams.x > 0.5f)
+			data.Volume = glm::vec4(1.0f, 1.0f - 0.5f / m_SceneVolumeGrid.z, 0.0f, 0.0f);
+		Internal::MaterialAccess::SetVolumetricResources(entry.Sky, m_VolumetricIntegrated, nullptr);
+		entry.Sky->SetUniform(data);
+		Renderer::Draw(entry.Sky, 3);
+		return true;
+	}
+
 	uint32_t Renderer3D::GetLocalLightBudget() const
 	{
 		return std::min(m_Params.Capabilities.MaxLocalLights, k_MaxLocalLights);
@@ -2581,6 +3035,9 @@ namespace Dingo
 	void Renderer3D::ClearSceneLights()
 	{
 		m_CameraData.AmbientColor = glm::vec4(0.0f);
+		m_CameraData.EnvironmentParams = glm::vec4(0.0f);
+		m_CameraData.VolumeParams = glm::vec4(0.0f);
+		m_CameraData.VolumeGrid = glm::vec4(0.0f);
 		m_CameraData.LightCounts = glm::ivec4(0);
 		m_LocalLights.clear();
 		m_SceneLightSubmitted = false;
@@ -2590,6 +3047,9 @@ namespace Dingo
 		m_LastSubmittedLight = {};
 		m_ShadowProbes.clear();
 		ClearFog();
+		ClearVolumetricFog();
+		m_FogVolumes.clear();
+		ClearEnvironment();
 	}
 
 	void Renderer3D::ResolveSceneLights()
@@ -2688,6 +3148,7 @@ namespace Dingo
 			const LocalLightCandidate& candidate = m_LocalLights[m_VisibleLocalLights[slot]];
 			LocalLightData& data = m_CameraData.LocalLights[slot];
 			data = candidate.Data;
+			m_FogVolumeData.LocalScatter[slot / 4][slot % 4] = candidate.VolumetricIntensity;
 			if (fadeCutoff > 0.0f)
 			{
 				const float fade = BudgetFade(candidate.Priority, fadeCutoff, fadeBand);
@@ -3612,7 +4073,7 @@ namespace Dingo
 		{
 			const Material* material = submission.Material ? submission.Material : m_Material;
 			return submission.ShadowDrawn && !m_SkinnedInstanceDropped[submission.Instance] &&
-				!(IsLitShader(material->GetShader()) && BindsPastSlotZero(*material));
+				!(IsLitShader(material->GetShader()) && BindsPastItsSlots(*material));
 		};
 		bool skinnedCasts = false;
 		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)

@@ -6,6 +6,7 @@
 #include "DingoEngine/Graphics/Font.h"
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/Light.h"
+#include "DingoEngine/Graphics/Environment.h"
 #include "DingoEngine/Graphics/SurfaceOverride.h"
 #include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Graphics/Enums/ShadowCasting.h"
@@ -180,6 +181,11 @@ namespace Dingo
 		/// Marks the camera the scene renders through; only one per scene should.
 		bool Primary = true;
 
+		/// One-shot: set it true on a camera cut or a teleport and the next 3D pass drops the
+		/// volumetric fog's temporal history (Renderer3D::ResetVolumetricHistory), then clears the
+		/// flag. Only the perspective camera the scene renders through reads it.
+		bool ResetVolumetricHistory = false;
+
 		/// An orthographic, primary camera showing 10 world units of height.
 		CameraComponent() = default;
 		/// Copies all fields.
@@ -238,6 +244,8 @@ namespace Dingo
 		/// Caster groups this light's shadows take; a mesh casts only if its ShadowGroups share a
 		/// bit.
 		uint32_t ShadowCasterGroups = 0xFFFFFFFFu;
+		/// See DirectionalLight::VolumetricIntensity.
+		float VolumetricIntensity = 1.0f;
 
 		// The special members touch Ambient; only a game's own use of it should warn.
 		DE_SUPPRESS_DEPRECATED_BEGIN
@@ -276,6 +284,7 @@ namespace Dingo
 		bool CastShadows = false;
 		float ShadowStrength = 1.0f; ///< How dark its shadows are, 0 (none) to 1 (full).
 		uint32_t ShadowCasterGroups = 0xFFFFFFFFu; ///< See DirectionalLight.
+		float VolumetricIntensity = 1.0f; ///< See DirectionalLight::VolumetricIntensity.
 
 		/// A white light of intensity 1 and range 10.
 		PointLightComponent() = default;
@@ -308,6 +317,7 @@ namespace Dingo
 		bool CastShadows = false;
 		float ShadowStrength = 1.0f; ///< How dark its shadows are, 0 (none) to 1 (full).
 		uint32_t ShadowCasterGroups = 0xFFFFFFFFu; ///< See DirectionalLight.
+		float VolumetricIntensity = 1.0f; ///< See DirectionalLight::VolumetricIntensity.
 
 		/// A white 20/30 degree cone of intensity 1 and range 10, aimed along the entity's -Z.
 		SpotLightComponent() = default;
@@ -339,6 +349,9 @@ namespace Dingo
 		bool UseClearColor = true;
 		/// False takes this fog out of the choice without removing the component.
 		bool Enabled = true;
+		/// When set, also submitted with Renderer3D::SetVolumetricFog; it acts only with
+		/// Renderer3DCapabilities::Volumetrics on, and then replaces the distance fog.
+		std::optional<VolumetricFog> Volumetric;
 
 		/// Linear fog from 10 to 50 world units, fading to the clear colour.
 		FogComponent() = default;
@@ -354,6 +367,65 @@ namespace Dingo
 			Settings.Start = start;
 			Settings.End = end;
 		}
+	};
+
+	/// A local volume of fog (Renderer3D::SubmitFogVolume): the entity's world transform places and
+	/// sizes Settings.HalfExtents, so the volume's world size is HalfExtents times the entity's
+	/// scale. Scene::SubmitLights submits every enabled one in entity order after the fog; it acts
+	/// only with Renderer3DCapabilities::Volumetrics on and a perspective camera. It is no light.
+	/// Ignored without a Transform3DComponent, like a point light.
+	struct FogVolumeComponent
+	{
+		FogVolume Settings; ///< Shape, mode, medium and fades, as for Renderer3D::SubmitFogVolume.
+		/// False takes this volume out of the scene without removing the component.
+		bool Enabled = true;
+
+		/// A box of half extents 1 with the FogVolume defaults.
+		FogVolumeComponent() = default;
+		/// Copies all fields.
+		FogVolumeComponent(const FogVolumeComponent&) = default;
+		/// A volume with the given settings.
+		explicit FogVolumeComponent(const FogVolume& settings)
+			: Settings(settings) {}
+	};
+
+	/// An Environment drawn as the scene's sky (Renderer3D::SetEnvironment). One on the camera entity
+	/// passed to Scene::SubmitLights (the SceneRenderer's perspective camera) is that camera's sky;
+	/// otherwise the first enabled one in entity order on an entity without a CameraComponent counts.
+	/// One on another camera's entity applies only to a pass that names no camera, and only when
+	/// there is no other. More than one candidate warns once. It is no light. The component does not
+	/// own the Environment: keep it alive while the scene renders, as for a Mesh.
+	struct SkyboxComponent
+	{
+		/// The panorama or procedural sky to draw; null draws no sky. The caller or the AssetManager owns it.
+		Dingo::Environment* Environment = nullptr;
+		/// Linear multiplier on the radiance, 0 or more; 1 shows the panorama as stored.
+		float Intensity = 1.0f;
+		/// Degrees the sky is turned about +Y, as SceneEnvironment::Rotation (ignored by a procedural environment).
+		float Rotation = 0.0f;
+		/// False keeps the environment for lighting without drawing the sky.
+		bool Visible = true;
+		/// True lights PBR materials from the environment instead of the flat ambient colour, as
+		/// SceneEnvironment::Lighting.
+		bool Lighting = true;
+		/// Linear multiplier on the environment's lighting only, 0 or more, as SceneEnvironment::LightingIntensity.
+		float LightingIntensity = 1.0f;
+		/// For a procedural environment, true points its sun along the scene's main directional light, as
+		/// SceneEnvironment::FollowSun. Ignored for a panorama.
+		bool FollowSun = true;
+		/// For a procedural environment, true tints the main directional light by the atmosphere's
+		/// transmittance, as SceneEnvironment::TintSun. Ignored for a panorama.
+		bool TintSun = true;
+		/// False takes this component out of the choice without removing it.
+		bool Enabled = true;
+
+		/// No environment, intensity 1, no rotation.
+		SkyboxComponent() = default;
+		/// Copies all fields.
+		SkyboxComponent(const SkyboxComponent&) = default;
+		/// A sky of `environment` at the given intensity and rotation in degrees.
+		explicit SkyboxComponent(Dingo::Environment* environment, float intensity = 1.0f, float rotation = 0.0f)
+			: Environment(environment), Intensity(intensity), Rotation(rotation) {}
 	};
 
 	// Physics -----------------------------------------------------------------
@@ -476,14 +548,14 @@ namespace Dingo
 	inline PointLight PointLightComponent::ToLight(const Transform3DComponent& transform) const
 	{
 		return PointLight{ .Position = transform.Position, .Color = Color, .Intensity = Intensity, .Range = Range,
-			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength, .ShadowCasterGroups = ShadowCasterGroups };
+			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength, .ShadowCasterGroups = ShadowCasterGroups, .VolumetricIntensity = VolumetricIntensity };
 	}
 
 	inline SpotLight SpotLightComponent::ToLight(const Transform3DComponent& transform) const
 	{
 		return SpotLight{ .Position = transform.Position, .Direction = transform.Rotation * Direction, .Color = Color,
 			.Intensity = Intensity, .Range = Range, .InnerConeAngle = InnerConeAngle, .OuterConeAngle = OuterConeAngle,
-			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength, .ShadowCasterGroups = ShadowCasterGroups };
+			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength, .ShadowCasterGroups = ShadowCasterGroups, .VolumetricIntensity = VolumetricIntensity };
 	}
 
 	/// A renderable mesh drawn by Renderer3D at the entity's Transform3D, tinted by
@@ -552,8 +624,9 @@ namespace Dingo
 		/// The model to draw; not owned. Null draws nothing.
 		Dingo::Model* Model = nullptr;
 		glm::vec4 Color{ 1.0f }; ///< RGBA tint, as on MeshRendererComponent.
-		/// Optional material applied to every submesh; null uses the built-in lit material. Not
-		/// owned.
+		/// Optional material applied to every submesh. Null draws each submesh with its own PBR
+		/// material when the model was imported with ModelLoadParams::PbrMaterials, and the
+		/// built-in lit material otherwise. Not owned.
 		Dingo::Material* Material = nullptr;
 		bool Visible = true; ///< False skips the entity: neither drawn nor casting shadows.
 		ShadowCasting Shadows = ShadowCasting::On; ///< See MeshRendererComponent.

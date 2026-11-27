@@ -12,12 +12,16 @@ namespace Dingo
 	void NvrhiFramebuffer::Initialize()
 	{
 		for (uint32_t index = 0; index < m_Params.Attachments.size(); ++index)
-			m_Attachments.push_back(Texture::Create(MakeColorParams(index)));
+		{
+			Texture* attachment = Texture::Create(MakeColorParams(index));
+			DE_CORE_ASSERT(attachment, "Framebuffer colour texture creation failed.");
+			m_Attachments.push_back(attachment);
+		}
 
 		if (m_Params.EnableDepth)
 		{
 			m_DepthAttachment = Texture::Create(MakeDepthParams());
-			DE_CORE_ASSERT(m_DepthAttachment->GetTextureHandle(), "Framebuffer depth texture creation failed; depth test/write would be silently disabled.");
+			DE_CORE_ASSERT(m_DepthAttachment && m_DepthAttachment->GetTextureHandle(), "Framebuffer depth texture creation failed; depth test/write would be silently disabled.");
 		}
 
 		CreateHandle();

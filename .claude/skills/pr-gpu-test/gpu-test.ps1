@@ -133,7 +133,11 @@ foreach ($jf in Get-ChildItem $root -Filter "jobs-*.txt") {
     $sumFile = Join-Path $out "$key\summary.txt"
     $rows = if (Test-Path $sumFile) { @(Get-Content $sumFile) } else { @() }
     foreach ($l in $rows) {
-        $ok = $l -match 'exit=0 ' -and $l -match 'fail=0 ' -and $l -match 'sync=0 ' -and $l -match 'vuid=0 ' -and $l -match 'close->exit='
+        $ok = $l -match 'exit=0 ' -and $l -match 'fail=0 ' -and $l -match 'sync=0 ' -and $l -match 'vuid=0 ' -and ($l -match 'close->exit=' -or $l -match '-dustlight-check .*EXITED-EARLY')
+        if ($ok -and $l -match '-dustlight-check ') {
+            $jl = Join-Path $out "$key\$(($l -split '\s+')[0]).log"
+            $ok = (Test-Path $jl) -and ((Get-Content $jl -Raw) -match 'DUSTLIGHT CHECK: ([1-9]\d*) passed, 0 failed')
+        }
         if (-not $ok) { $bad++ }
         ($(if ($ok) { "  " } else { "!!" }) + " " + $l.TrimEnd())
     }

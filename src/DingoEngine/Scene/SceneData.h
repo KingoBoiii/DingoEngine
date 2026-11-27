@@ -46,6 +46,9 @@ namespace Dingo
 			float FixedTimeStep = 1.0f / 60.0f;
 			float FixedTimeAccumulator = 0.0f;
 
+			// The clock FogVolume noise drifts by: the capped delta of every OnUpdate, in double so a long session keeps its precision.
+			double FogVolumeTime = 0.0;
+
 			// SceneParams::FixedTick only.
 			std::uint64_t Tick = 0;
 			std::uint32_t FixedStepsLastUpdate = 0;

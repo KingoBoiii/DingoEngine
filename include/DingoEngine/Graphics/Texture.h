@@ -27,16 +27,39 @@ namespace Dingo
 		glm::vec4 GetPixel(uint32_t x, uint32_t y) const;
 	};
 
+	/// The number of mip levels in a full chain for a texture of this size: down to 1x1x1 along
+	/// the largest side. Pass depth only for a 3D texture.
+	constexpr uint32_t GetMipLevelCount(uint32_t width, uint32_t height, uint32_t depth = 1)
+	{
+		uint32_t largest = width > height ? width : height;
+		if (depth > largest)
+			largest = depth;
+		uint32_t levels = 1;
+		while (largest > 1)
+		{
+			largest >>= 1;
+			++levels;
+		}
+		return levels;
+	}
+
 	/// Describes a Texture for Texture::Create.
 	struct TextureParams
 	{
 		std::string DebugName; ///< Name shown in graphics debuggers and logs.
 		uint32_t Width = 0; ///< Width in texels; required.
 		uint32_t Height = 0; ///< Height in texels; required.
+		uint32_t Depth = 1; ///< Depth in texels; above 1 only for Texture3D.
+		/// Mip levels; 0 means the full chain down to 1x1x1 (GetMipLevelCount). InitialData and
+		/// Upload fill mip 0 only; the other mips are undefined until uploaded or written.
+		uint32_t MipLevels = 1;
+		/// Array layers; above 1 only for Texture2D (a 2D array). A TextureCube always has 6.
+		uint32_t ArrayLayers = 1;
 		TextureFormat Format = TextureFormat::Unknown; ///< Pixel format; required.
 		/// Required; Texture2D for ordinary images.
 		TextureDimension Dimension = TextureDimension::Unknown;
-		/// Lets the texture be drawn into as a framebuffer attachment (colour, or depth for D32).
+		/// Lets the texture be drawn into as a framebuffer attachment (colour, or depth for D32);
+		/// only a single-layer Texture2D can be one.
 		bool IsRenderTarget = false;
 		/// A D32 texture can be sampled only with this set, which makes it typeless on D3D (R32
 		/// behind a D32 depth view); without it it is a depth target alone, as the swap chain's is.
@@ -64,6 +87,24 @@ namespace Dingo
 		TextureParams& SetHeight(uint32_t height)
 		{
 			Height = height;
+			return *this;
+		}
+
+		TextureParams& SetDepth(uint32_t depth)
+		{
+			Depth = depth;
+			return *this;
+		}
+
+		TextureParams& SetMipLevels(uint32_t mipLevels)
+		{
+			MipLevels = mipLevels;
+			return *this;
+		}
+
+		TextureParams& SetArrayLayers(uint32_t arrayLayers)
+		{
+			ArrayLayers = arrayLayers;
 			return *this;
 		}
 
@@ -105,7 +146,7 @@ namespace Dingo
 		///@}
 	};
 
-	/// A GPU texture with one mip level: an image, a render target or a storage image. The caller
+	/// A GPU texture (one or more mip levels and layers): an image, a render target or a storage image. The caller
 	/// owns it; delete frees the GPU texture. Wrapping and filtering belong to a Sampler.
 	class Texture : public IBindableShaderResource
 	{
@@ -115,13 +156,19 @@ namespace Dingo
 		/// A relative filepath is looked up under the asset root first, then the working
 		/// directory.
 		[[nodiscard]] static Texture* CreateFromFile(const std::filesystem::path& filepath, const std::string& debugName = "Texture (File)");
+		/// Loads a Radiance .hdr image (looked up like CreateFromFile, and flipped on load the same
+		/// way) as a sampled-only 2D texture of `format`, which must be RGBA16F or RGBA32F; any
+		/// other format, a file that isn't a .hdr, or a load failure logs an error and returns
+		/// nullptr. RGBA16F clamps to the half range (65504), so a sun brighter than that is cut off.
+		[[nodiscard]] static Texture* CreateFromHdrFile(const std::filesystem::path& filepath, TextureFormat format = TextureFormat::RGBA16F, const std::string& debugName = "Texture (HDR)");
 		/// Creates a width x height texture of format from packed pixels, copied before it returns;
 		/// the texture is sampled-only, not a render target. Returns nullptr (with an error) when there
 		/// is no graphics device, as in a headless app.
 		[[nodiscard]] static Texture* CreateFromData(uint32_t width, uint32_t height, const void* data, TextureFormat format = TextureFormat::RGBA8_UNORM, const std::string& debugName = "Texture (Data)");
 		/// Creates the texture from params, ready to use; uploads InitialData when set. The caller
 		/// owns it. Returns nullptr (with an error) when there is no graphics device, as in a headless
-		/// app.
+		/// app, or when the params are invalid (a missing size, format or dimension, or a combination
+		/// the dimension doesn't allow).
 		[[nodiscard]] static Texture* Create(const TextureParams& params);
 
 	public:
@@ -139,14 +186,20 @@ namespace Dingo
 	public:
 		/// Releases the GPU object early; the destructor releases everything anyway.
 		virtual void Destroy() = 0;
-		/// The whole image: Width x Height pixels of the format, packed, first row first. Joins the
+		/// Mip 0 of every layer, in layer order (the six faces of a cube): each Width x Height
+		/// (x Depth for a 3D texture) pixels of the format, packed, first row first. Joins the
 		/// frame's command list when one is recording, else uploads at once.
 		virtual void Upload(const void* data) = 0;
+		/// One mip of one array layer or cube face: the mip's extent in packed pixels (a 3D
+		/// texture takes every slice of the mip, with layer 0). Timing as Upload. Out-of-range
+		/// mip or layer logs an error and uploads nothing.
+		virtual void UploadSubresource(const void* data, uint32_t mip, uint32_t layer = 0) = 0;
 
 		/// Recreates the GPU texture in place from new params (uploading InitialData if
 		/// set), so existing Texture* references survive a content change - the backbone
 		/// of hot-reload. Changes GetGeneration(); the old GPU texture is freed by the
-		/// graphics backend once in-flight frames drop it.
+		/// graphics backend once in-flight frames drop it. Invalid params log an error and leave the
+		/// old texture and its generation as they were.
 		virtual void Reinitialize(const TextureParams& params) = 0;
 
 		/// Copies the texture back to the CPU and hands its pixels to `done`, on the main thread.
@@ -160,11 +213,15 @@ namespace Dingo
 		///   start.
 		///
 		/// A paused app's next frame waits for it to resume, and a frame that renders nothing
-		/// (Renderer::IsFrameSkipped) reads what the texture last held. Any 2D colour format
+		/// (Renderer::IsFrameSkipped) reads what the texture last held. Any colour format
 		/// (not D32): the pixels come back in the texture's format, and TexturePixels::GetPixel
 		/// decodes them. Row 0 is the texture's first row: the top of a render target's picture,
 		/// the bottom of an image CreateFromFile loaded (it flips on load).
 		virtual void ReadPixels(std::function<void(const TexturePixels&)> done) = 0;
+		/// ReadPixels for one mip of one array layer or cube face (for a 3D texture, layer is the z
+		/// slice); the pixels are the mip's extent wide and high. ReadPixels is ReadSubresource(0, 0)
+		/// and works on any dimension but 1D. Out-of-range mip or layer reports empty pixels.
+		virtual void ReadSubresource(uint32_t mip, uint32_t layer, std::function<void(const TexturePixels&)> done) = 0;
 		/// Writes the texture to an image file through ReadPixels and FileSystem::WriteImage (PNG,
 		/// or BMP, TGA, JPEG by extension), with ReadPixels' timing. A texture that isn't a render
 		/// target is written last row first, so an image CreateFromFile loaded comes out as its

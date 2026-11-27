@@ -143,6 +143,92 @@ namespace Dingo::Internal::LightSystem
 			if (chosen->UseClearColor)
 				fog.Color = clearColor;
 			renderer.SetFog(fog);
+			if (chosen->Volumetric)
+				renderer.SetVolumetricFog(*chosen->Volumetric);
+		}
+
+		// Chosen like the fog: the camera's own, else the first on an entity without a camera, else,
+		// for a pass that names no camera, the first on one with.
+		void SubmitSkybox(const entt::registry& registry, Renderer3D& renderer, entt::entity camera)
+		{
+			const SkyboxComponent* chosen = nullptr;
+			if (camera != entt::null && registry.valid(camera))
+			{
+				const SkyboxComponent* own = registry.try_get<const SkyboxComponent>(camera);
+				if (own && own->Enabled && !HierarchySystem::IsInactive(registry, camera))
+					chosen = own;
+			}
+
+			if (!chosen)
+			{
+				const SkyboxComponent* cameraSky = nullptr;
+				uint32_t sceneWide = 0, onCameras = 0;
+				for (entt::entity entity : InEntityOrder<SkyboxComponent>(registry))
+				{
+					const SkyboxComponent& component = registry.get<const SkyboxComponent>(entity);
+					if (!component.Enabled || HierarchySystem::IsInactive(registry, entity))
+						continue;
+
+					if (registry.all_of<CameraComponent>(entity))
+					{
+						if (onCameras++ == 0)
+							cameraSky = &component;
+					}
+					else if (sceneWide++ == 0)
+						chosen = &component;
+				}
+
+				const bool noCamera = camera == entt::null;
+				static bool s_Warned = false;
+				if (!s_Warned && (sceneWide > 1 || (noCamera && sceneWide == 0 && onCameras > 1)))
+				{
+					DE_CORE_WARN("A scene has more than one enabled SkyboxComponent that could draw this view's sky; only the first one in entity order is used. A SkyboxComponent on the rendered camera's entity sets that view's sky alone.");
+					s_Warned = true;
+				}
+
+				if (!chosen && noCamera)
+					chosen = cameraSky;
+			}
+
+			if (!chosen)
+				return;
+
+			SceneEnvironment environment;
+			environment.Environment = chosen->Environment;
+			environment.Intensity = chosen->Intensity;
+			environment.Rotation = chosen->Rotation;
+			environment.DrawSkybox = chosen->Visible;
+			environment.Lighting = chosen->Lighting;
+			environment.LightingIntensity = chosen->LightingIntensity;
+			environment.FollowSun = chosen->FollowSun;
+			environment.TintSun = chosen->TintSun;
+			renderer.SetEnvironment(environment);
+		}
+	}
+
+	namespace
+	{
+		void SubmitFogVolumes(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo)
+		{
+			for (entt::entity entity : InEntityOrder<FogVolumeComponent>(registry))
+			{
+				const FogVolumeComponent& volume = registry.get<const FogVolumeComponent>(entity);
+				if (!volume.Enabled || HierarchySystem::IsInactive(registry, entity))
+					continue;
+
+				const Transform3DComponent* transform = registry.try_get<const Transform3DComponent>(entity);
+				if (!transform)
+				{
+					static bool s_Warned = false;
+					if (!s_Warned)
+					{
+						DE_CORE_WARN("A fog volume component sits on an entity without a Transform3DComponent, so it can't be placed and is ignored.");
+						s_Warned = true;
+					}
+					continue;
+				}
+				renderer.SubmitFogVolume(volume.Settings, memo.Transform(entity, *transform));
+			}
 		}
 	}
 
@@ -172,7 +258,7 @@ namespace Dingo::Internal::LightSystem
 		DE_SUPPRESS_DEPRECATED_BEGIN
 		auto submitDirectional = [&](const DirectionalLightComponent& light, float legacyAmbient)
 		{
-			const bool accepted = renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - legacyAmbient, 0.0f), light.CastShadows, light.ShadowStrength, light.ShadowCasterGroups });
+			const bool accepted = renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - legacyAmbient, 0.0f), light.CastShadows, light.ShadowStrength, light.ShadowCasterGroups, light.VolumetricIntensity });
 			if (accepted && std::isfinite(legacyAmbient))
 				ambient += glm::vec3(legacyAmbient);
 		};
@@ -243,6 +329,8 @@ namespace Dingo::Internal::LightSystem
 		renderer.SetAmbientLight(ambient, 1.0f);
 
 		SubmitFog(registry, renderer, clearColor, camera);
+		SubmitFogVolumes(registry, renderer, memo);
+		SubmitSkybox(registry, renderer, camera);
 	}
 
 }

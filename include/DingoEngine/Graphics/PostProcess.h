@@ -12,6 +12,8 @@ namespace Dingo
 	class Texture;
 	struct Fog;
 
+	namespace Internal { struct PostProcessAccess; }
+
 	/// What happens to light past 1.0. The engine stays display-referred: textures, lights and the
 	/// lit shader mean what they always did, and every operator but Soft is for a game re-tuned to
 	/// it.
@@ -179,6 +181,7 @@ namespace Dingo
 		// Frees the cached targets and passes; Renderer::Destroy calls it.
 		void Shutdown();
 		friend class Renderer;
+		friend struct Internal::PostProcessAccess;
 
 		struct Data;
 		std::unique_ptr<Data> m_Data;

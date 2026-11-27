@@ -7,6 +7,7 @@
 #include "DingoEngine/Graphics/Renderer.h"
 #include "NvrhiCommandList.h"
 #include "NvrhiGraphicsContext.h"
+#include "DingoEngine/Graphics/TextureLayout.h"
 #include "DingoEngine/Graphics/TextureReadback.h"
 #include "DingoEngine/UI/DingoUI/DingoUITextureHook.h"
 
@@ -46,6 +47,7 @@ namespace Dingo
 				case TextureDimension::Texture1D: return nvrhi::TextureDimension::Texture1D;
 				case TextureDimension::Texture2D: return nvrhi::TextureDimension::Texture2D;
 				case TextureDimension::Texture3D: return nvrhi::TextureDimension::Texture3D;
+				case TextureDimension::TextureCube: return nvrhi::TextureDimension::TextureCube;
 				default: break;
 			}
 
@@ -74,18 +76,112 @@ namespace Dingo
 
 	}
 
+	namespace
+	{
+
+		struct SubresourceView
+		{
+			uint32_t Width = 0;
+			uint32_t Height = 0;
+			bool Volume = false;
+			TextureFormat Format = TextureFormat::Unknown;
+		};
+
+		// False when the texture is not a colour texture of a readable format and dimension, or the
+		// mip or layer is out of range; error says which.
+		bool DescribeSubresource(const nvrhi::TextureDesc& desc, uint32_t mip, uint32_t layer, SubresourceView& view, const char*& error)
+		{
+			view.Format = Utils::GetTextureFormat(desc.format);
+			view.Volume = desc.dimension == nvrhi::TextureDimension::Texture3D;
+			const bool readable = desc.dimension == nvrhi::TextureDimension::Texture2D || desc.dimension == nvrhi::TextureDimension::Texture2DArray
+				|| desc.dimension == nvrhi::TextureDimension::TextureCube || view.Volume;
+			if (view.Format == TextureFormat::Unknown || !readable)
+			{
+				error = "is not a colour texture of a format and dimension it reads (RGBA8, RGBA16F, RGBA32F, R11G11B10F, R8, R16F, R32F; not 1D)";
+				return false;
+			}
+			const Internal::TextureExtent extent = Internal::GetMipExtent(desc.width, desc.height, desc.depth, mip);
+			view.Width = extent.Width;
+			view.Height = extent.Height;
+			const uint32_t layers = view.Volume ? extent.Depth : desc.arraySize;
+			if (mip >= desc.mipLevels || layer >= layers)
+			{
+				error = "has no such mip level or layer";
+				return false;
+			}
+			return true;
+		}
+
+		nvrhi::StagingTextureHandle CreateReadbackStaging(nvrhi::IDevice* device, const nvrhi::TextureDesc& desc, const SubresourceView& view)
+		{
+			return device->createStagingTexture(nvrhi::TextureDesc()
+				.setDebugName(desc.debugName + " (readback)")
+				.setWidth(view.Width)
+				.setHeight(view.Height)
+				.setDepth(1)
+				.setFormat(desc.format)
+				.setDimension(view.Volume ? nvrhi::TextureDimension::Texture3D : nvrhi::TextureDimension::Texture2D), nvrhi::CpuAccessMode::Read);
+		}
+
+		// D3D12 caches the state a framebuffer or binding set left the subresource in, so a draw or
+		// sample after the copy would find it a copy source: it gets back the state it had.
+		void RecordSubresourceCopy(nvrhi::ICommandList* list, nvrhi::IStagingTexture* staging, nvrhi::ITexture* source, uint32_t mip, uint32_t layer, const SubresourceView& view)
+		{
+			const nvrhi::TextureDesc& desc = source->getDesc();
+			const uint32_t arraySlice = view.Volume ? 0 : layer;
+			nvrhi::ResourceStates state = list->getTextureSubresourceState(source, arraySlice, mip);
+			if (state == nvrhi::ResourceStates::Unknown)
+				state = desc.initialState;
+
+			nvrhi::TextureSlice slice = nvrhi::TextureSlice()
+				.setMipLevel(mip)
+				.setArraySlice(arraySlice)
+				.setWidth(view.Width)
+				.setHeight(view.Height)
+				.setDepth(1);
+			if (view.Volume)
+				slice.setOrigin(0, 0, layer);
+			list->copyTexture(staging, nvrhi::TextureSlice(), source, slice);
+			if (state != nvrhi::ResourceStates::Unknown)
+			{
+				list->setTextureState(source, nvrhi::TextureSubresourceSet(mip, 1, arraySlice, 1), state);
+				list->commitBarriers();
+			}
+		}
+
+		TexturePixels CopyOutStaging(nvrhi::IDevice* device, nvrhi::IStagingTexture* staging, const SubresourceView& view)
+		{
+			TexturePixels pixels;
+			pixels.Format = view.Format;
+			size_t rowPitch = 0;
+			if (const uint8_t* mapped = static_cast<const uint8_t*>(device->mapStagingTexture(staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &rowPitch)))
+			{
+				const size_t rowBytes = static_cast<size_t>(view.Width) * GetBytesPerPixel(view.Format);
+				pixels.Width = view.Width;
+				pixels.Height = view.Height;
+				pixels.Data.resize(rowBytes * view.Height);
+				for (uint32_t row = 0; row < view.Height; ++row)
+					std::memcpy(pixels.Data.data() + row * rowBytes, mapped + row * rowPitch, rowBytes);
+				device->unmapStagingTexture(staging);
+			}
+			return pixels;
+		}
+
+	}
+
 	void NvrhiTexture::Initialize()
 	{
+		const uint32_t layers = Internal::GetTextureArrayLayers(m_Params);
 		const bool depth = m_Params.Format == TextureFormat::D32;
 		nvrhi::TextureDesc textureDesc = nvrhi::TextureDesc()
 			.setDebugName(m_Params.DebugName)
 			.setWidth(m_Params.Width)
 			.setHeight(m_Params.Height)
 			.setFormat(Utils::GetTextureFormat(m_Params.Format))
-			.setDimension(Utils::GetTextureDimension(m_Params.Dimension))
-			.setDepth(1)
-			.setMipLevels(1)
-			.setArraySize(1)
+			.setDimension(m_Params.Dimension == TextureDimension::Texture2D && layers > 1 ? nvrhi::TextureDimension::Texture2DArray : Utils::GetTextureDimension(m_Params.Dimension))
+			.setDepth(m_Params.Depth > 0 ? m_Params.Depth : 1)
+			.setMipLevels(m_Params.MipLevels > 0 ? m_Params.MipLevels : 1)
+			.setArraySize(layers)
 			.setInitialState(depth ? nvrhi::ResourceStates::DepthWrite : nvrhi::ResourceStates::ShaderResource)
 			.setIsRenderTarget(m_Params.IsRenderTarget || depth)
 			.setIsUAV(m_Params.IsStorage && !depth)
@@ -117,7 +213,15 @@ namespace Dingo
 
 	void NvrhiTexture::Reinitialize(const TextureParams& params)
 	{
-		m_Params = params;
+		TextureParams normalized = params;
+		std::string error;
+		if (!Internal::NormalizeTextureParams(normalized, error))
+		{
+			DE_CORE_ERROR("Texture::Reinitialize: '{}': {}.", params.DebugName, error);
+			return;
+		}
+
+		m_Params = normalized;
 		m_Handle = nullptr; // NVRHI frees the old texture once in-flight frames release it
 		Initialize();
 
@@ -134,7 +238,26 @@ namespace Dingo
 	void NvrhiTexture::Upload(const void* data)
 	{
 		DE_CORE_ASSERT(data, "Texture::Upload needs pixels");
-		const uint64_t rowPitch = Utils::GetImageMemoryRowPitch(m_Params.Format, m_Params.Width);
+		UploadLayers(static_cast<const uint8_t*>(data), 0, 0, Internal::GetTextureArrayLayers(m_Params), Internal::GetSubresourceBytes(m_Params, 0));
+	}
+
+	void NvrhiTexture::UploadSubresource(const void* data, uint32_t mip, uint32_t layer)
+	{
+		DE_CORE_ASSERT(data, "Texture::UploadSubresource needs pixels");
+		const bool volume = m_Params.Dimension == TextureDimension::Texture3D;
+		if (mip >= m_Params.MipLevels || layer >= (volume ? 1u : Internal::GetTextureArrayLayers(m_Params)))
+		{
+			DE_CORE_ERROR("Texture::UploadSubresource: '{}' has no mip {} layer {}.", m_Params.DebugName, mip, layer);
+			return;
+		}
+		UploadLayers(static_cast<const uint8_t*>(data), mip, layer, 1, Internal::GetSubresourceBytes(m_Params, mip));
+	}
+
+	void NvrhiTexture::UploadLayers(const uint8_t* data, uint32_t mip, uint32_t firstLayer, uint32_t layerCount, uint64_t layerBytes)
+	{
+		const Internal::TextureExtent extent = Internal::GetMipExtent(m_Params, mip);
+		const uint64_t rowPitch = Utils::GetImageMemoryRowPitch(m_Params.Format, extent.Width);
+		const uint64_t depthPitch = m_Params.Dimension == TextureDimension::Texture3D ? rowPitch * extent.Height : 0;
 
 		// Join the frame's command list whenever one is open. A list of our own would be
 		// wrong mid-frame on D3D11: NVRHI's open() and close() each call ClearState() on the
@@ -144,7 +267,8 @@ namespace Dingo
 		// Assets panel's Reload button runs after every layer has recorded its draws.
 		if (Internal::CommandList* frameList = Internal::RendererBackend::TryGetRecordingCommandList())
 		{
-			frameList->UploadTexture(this, data, rowPitch);
+			for (uint32_t i = 0; i < layerCount; ++i)
+				frameList->UploadTexture(this, data + i * layerBytes, mip, firstLayer + i, rowPitch, depthPitch);
 			return;
 		}
 
@@ -157,7 +281,8 @@ namespace Dingo
 
 		commandList->open();
 
-		commandList->writeTexture(m_Handle, 0, 0, data, rowPitch);
+		for (uint32_t i = 0; i < layerCount; ++i)
+			commandList->writeTexture(m_Handle, firstLayer + i, mip, data + i * layerBytes, rowPitch, depthPitch);
 
 		commandList->close();
 
@@ -166,69 +291,45 @@ namespace Dingo
 
 	void NvrhiTexture::ReadPixels(std::function<void(const TexturePixels&)> done)
 	{
-		const TextureFormat format = m_Handle ? Utils::GetTextureFormat(m_Handle->getDesc().format) : TextureFormat::Unknown;
-		if (format == TextureFormat::Unknown || m_Handle->getDesc().dimension != nvrhi::TextureDimension::Texture2D)
+		ReadSubresource(0, 0, std::move(done));
+	}
+
+	void NvrhiTexture::ReadSubresource(uint32_t mip, uint32_t layer, std::function<void(const TexturePixels&)> done)
+	{
+		SubresourceView view;
+		const char* error = nullptr;
+		if (!m_Handle || !DescribeSubresource(m_Handle->getDesc(), mip, layer, view, error))
 		{
-			DE_CORE_ERROR("Texture::ReadPixels: '{}' isn't a 2D colour texture of a format it reads (RGBA8, RGBA16F, RGBA32F, R11G11B10F, R8, R16F, R32F).", m_Params.DebugName);
+			DE_CORE_ERROR("Texture::ReadSubresource: '{}' {}.", m_Params.DebugName, error ? error : "has no GPU texture");
 			done(TexturePixels{});
 			return;
 		}
 
 		nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
-		const uint32_t width = m_Handle->getDesc().width;
-		const uint32_t height = m_Handle->getDesc().height;
-
-		nvrhi::StagingTextureHandle staging = device->createStagingTexture(nvrhi::TextureDesc()
-			.setDebugName(m_Params.DebugName + " (readback)")
-			.setWidth(width)
-			.setHeight(height)
-			.setFormat(m_Handle->getDesc().format)
-			.setDimension(nvrhi::TextureDimension::Texture2D), nvrhi::CpuAccessMode::Read);
+		nvrhi::StagingTextureHandle staging = CreateReadbackStaging(device, m_Handle->getDesc(), view);
 
 		// Mapping waits for the GPU to finish the copy, on every backend.
-		auto resolve = [staging, width, height, format, done = std::move(done)]()
+		auto resolve = [staging, view, done = std::move(done)]()
 		{
 			nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
-			TexturePixels pixels;
-			pixels.Format = format;
-			size_t rowPitch = 0;
-			if (const uint8_t* mapped = static_cast<const uint8_t*>(device->mapStagingTexture(staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &rowPitch)))
-			{
-				const size_t rowBytes = static_cast<size_t>(width) * GetBytesPerPixel(format);
-				pixels.Width = width;
-				pixels.Height = height;
-				pixels.Data.resize(rowBytes * height);
-				for (uint32_t row = 0; row < height; ++row)
-					std::memcpy(pixels.Data.data() + row * rowBytes, mapped + row * rowPitch, rowBytes);
-				device->unmapStagingTexture(staging);
-			}
-			done(pixels);
+			done(CopyOutStaging(device, staging, view));
 		};
 
 		// As for Upload: inside a frame the copy joins its list, which keeps it after the frame's
 		// earlier draws and never opens a list of its own mid-frame (D3D11's ClearState).
 		if (Internal::CommandList* frameList = Internal::RendererBackend::TryGetRecordingCommandList())
 		{
-			// D3D12 caches the state a framebuffer or binding set left the texture in, so a draw or
-			// sample after the copy would find it a copy source: put back the state it had.
-			nvrhi::ICommandList* list = static_cast<NvrhiCommandList*>(frameList)->GetNvrhiHandle();
-			const nvrhi::ResourceStates state = list->getTextureSubresourceState(m_Handle, 0, 0);
-			list->copyTexture(staging, nvrhi::TextureSlice(), m_Handle, nvrhi::TextureSlice());
-			if (state != nvrhi::ResourceStates::Unknown)
-			{
-				list->setTextureState(m_Handle, nvrhi::AllSubresources, state);
-				list->commitBarriers();
-			}
+			RecordSubresourceCopy(static_cast<NvrhiCommandList*>(frameList)->GetNvrhiHandle(), staging, m_Handle, mip, layer, view);
 			Renderer::RunAfterFrame(std::move(resolve));
 			return;
 		}
 
-		auto copyAndResolve = [source = m_Handle, staging, resolve = std::move(resolve)]()
+		auto copyAndResolve = [source = m_Handle, staging, mip, layer, view, resolve = std::move(resolve)]()
 		{
 			nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
 			nvrhi::CommandListHandle commandList = device->createCommandList(nvrhi::CommandListParameters().setQueueType(nvrhi::CommandQueue::Graphics));
 			commandList->open();
-			commandList->copyTexture(staging, nvrhi::TextureSlice(), source, nvrhi::TextureSlice());
+			RecordSubresourceCopy(commandList, staging, source, mip, layer, view);
 			commandList->close();
 			device->executeCommandList(commandList);
 			resolve();
@@ -257,33 +358,20 @@ namespace Dingo
 				if (m_Busy || !handle || !frameList)
 					return false;
 				const nvrhi::TextureDesc& desc = handle->getDesc();
-				const TextureFormat format = Utils::GetTextureFormat(desc.format);
-				if (format == TextureFormat::Unknown || desc.dimension != nvrhi::TextureDimension::Texture2D)
+				SubresourceView view;
+				const char* error = nullptr;
+				if (!DescribeSubresource(desc, 0, 0, view, error))
 					return false;
 
 				nvrhi::IDevice* device = GraphicsContext::Get().As<NvrhiGraphicsContext>().GetDeviceHandle();
-				if (!m_Staging || m_Width != desc.width || m_Height != desc.height || m_Format != format)
+				if (!m_Staging || m_View.Width != view.Width || m_View.Height != view.Height || m_View.Format != view.Format || m_View.Volume != view.Volume)
 				{
-					m_Staging = device->createStagingTexture(nvrhi::TextureDesc()
-						.setDebugName(desc.debugName + " (readback)")
-						.setWidth(desc.width)
-						.setHeight(desc.height)
-						.setFormat(desc.format)
-						.setDimension(nvrhi::TextureDimension::Texture2D), nvrhi::CpuAccessMode::Read);
-					m_Width = desc.width;
-					m_Height = desc.height;
-					m_Format = format;
+					m_Staging = CreateReadbackStaging(device, desc, view);
+					m_View = view;
 				}
-				// As in NvrhiTexture::ReadPixels: the copy joins the frame, and the texture gets back the
-				// state it had.
-				nvrhi::ICommandList* list = static_cast<NvrhiCommandList*>(frameList)->GetNvrhiHandle();
-				const nvrhi::ResourceStates state = list->getTextureSubresourceState(handle, 0, 0);
-				list->copyTexture(m_Staging, nvrhi::TextureSlice(), handle, nvrhi::TextureSlice());
-				if (state != nvrhi::ResourceStates::Unknown)
-				{
-					list->setTextureState(handle, nvrhi::AllSubresources, state);
-					list->commitBarriers();
-				}
+				// As in NvrhiTexture::ReadSubresource: the copy joins the frame, and the subresource gets
+				// back the state it had.
+				RecordSubresourceCopy(static_cast<NvrhiCommandList*>(frameList)->GetNvrhiHandle(), m_Staging, handle, 0, 0, view);
 
 				m_Busy = true;
 				// The frame is submitted by the next frame's start, so the event set then follows the copy.
@@ -309,28 +397,14 @@ namespace Dingo
 					return;
 				}
 
-				TexturePixels pixels;
-				pixels.Format = m_Format;
-				size_t rowPitch = 0;
-				if (const uint8_t* mapped = static_cast<const uint8_t*>(device->mapStagingTexture(m_Staging, nvrhi::TextureSlice(), nvrhi::CpuAccessMode::Read, &rowPitch)))
-				{
-					const size_t rowBytes = static_cast<size_t>(m_Width) * GetBytesPerPixel(m_Format);
-					pixels.Width = m_Width;
-					pixels.Height = m_Height;
-					pixels.Data.resize(rowBytes * m_Height);
-					for (uint32_t row = 0; row < m_Height; ++row)
-						std::memcpy(pixels.Data.data() + row * rowBytes, mapped + row * rowPitch, rowBytes);
-					device->unmapStagingTexture(m_Staging);
-				}
+				TexturePixels pixels = CopyOutStaging(device, m_Staging, m_View);
 				m_Busy = false;
 				done(pixels);
 			}
 
 			nvrhi::StagingTextureHandle m_Staging;
 			nvrhi::EventQueryHandle m_Event;
-			uint32_t m_Width = 0;
-			uint32_t m_Height = 0;
-			TextureFormat m_Format = TextureFormat::Unknown;
+			SubresourceView m_View;
 			bool m_Busy = false;
 		};
 

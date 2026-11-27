@@ -51,7 +51,9 @@ examples/                  FlappyBird, Breakout3D, SpaceInvaders (Scene/ECS show
                            Hearthvale (v1.0 release game: cozy farm-and-build sim,
                            grid-owned valley, crops and seasons, DingoUI screens,
                            saves, skinned villagers, autoplay farmer bot and nine
-                           --check suites; plan 2026-10-08-hearthvale-plan.md)
+                           --check suites; plan 2026-10-08-hearthvale-plan.md),
+                           Dustlight (v1.3 showcase: PBR, IBL environments, sun shafts,
+                           froxel and raymarch fog volumes, ImGui panel, --check)
 test/UnitTests/            Dingo-UnitTests — headless doctest unit tests of pure code
 test/                      Dingo-TestFramework — interactive graphics/renderer/asset
                            tests, one per feature under src/Tests/

@@ -15,4 +15,11 @@ namespace Dingo::Internal
 	// Frees a buffer returned by ReadImage or ReadImageFromMemory. Safe on nullptr.
 	void FreeImage(const uint8_t* data);
 
+	// True when the encoded bytes are a Radiance .hdr image.
+	bool IsHdrImage(const void* bytes, size_t size);
+	// Decodes an encoded Radiance .hdr image in memory to width * height RGBA float pixels. Owned by the caller until FreeImageHdr.
+	const float* ReadImageHdrFromMemory(const void* bytes, size_t size, uint32_t* width, uint32_t* height, bool flipVertically = true);
+	// Frees a buffer returned by ReadImageHdrFromMemory. Safe on nullptr.
+	void FreeImageHdr(const float* data);
+
 }

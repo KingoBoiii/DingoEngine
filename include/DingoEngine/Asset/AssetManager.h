@@ -20,6 +20,7 @@ namespace Dingo
 	struct ModelLoadParams;
 	class Font;
 	class AudioClip;
+	class Environment;
 	class AudioEngine;
 
 	namespace Internal { struct AssetManagerData; }
@@ -34,8 +35,8 @@ namespace Dingo
 		/// build, set this via Platform::FindDirectoryUpward("assets").
 		std::filesystem::path RootDirectory = "assets";
 
-		/// Watches loaded textures, shaders and models (with a model's .events sidecar) for on-disk
-		/// changes and reloads them in place (existing Texture*/Shader*/Model* pointers stay valid;
+		/// Watches loaded textures, shaders, models and environments (with a model's .events sidecar) for on-disk
+		/// changes and reloads them in place (existing Texture*/Shader*/Model*/Environment* pointers stay valid;
 		/// pipelines rebuild lazily). A shader compile error or a model that fails to load keeps
 		/// the previous version. Intended for development - leave off in shipping builds.
 		bool EnableHotReload = false;
@@ -160,7 +161,7 @@ namespace Dingo
 		/// Synchronously (re)loads an already-registered asset. Returns true when the
 		/// asset is Ready afterwards.
 		///
-		/// Loaded textures, shaders and models are refreshed IN PLACE (as hot-reload does), so
+		/// Loaded textures, shaders, models and environments are refreshed IN PLACE (as hot-reload does), so
 		/// pointers already handed out stay valid and a failed reload keeps serving the
 		/// previously loaded version. Every other type is destroyed and recreated, which
 		/// invalidates borrowed pointers - re-Get after reloading those. Check
@@ -195,12 +196,16 @@ namespace Dingo
 		Model* GetModel(AssetHandle handle) const;
 		Font* GetFont(AssetHandle handle) const;
 		///@}
+		/// The loaded .hdr panorama, or nullptr as for the getters above; never Destroy() or delete it.
+		/// A hot reload keeps the pointer and its cube map's Texture::GetId, and the environment bakes
+		/// again at the next use.
+		Environment* GetEnvironment(AssetHandle handle) const;
 		/// The loaded clip, or nullptr as for the getters above. Unlike them it is shared
 		/// ownership: the clip lives on while you hold the pointer, even after the manager unloads
 		/// it.
 		std::shared_ptr<AudioClip> GetAudioClip(AssetHandle handle) const;
 
-		/// GetTexture, GetShader, GetModel or GetFont by type; a type that isn't one of these four
+		/// GetTexture, GetShader, GetModel, GetFont or GetEnvironment by type; a type that isn't one of these five
 		/// (use GetAudioClip for audio) does not compile.
 		template<typename T>
 		T* Get(AssetHandle handle) const
@@ -213,8 +218,10 @@ namespace Dingo
 				return GetModel(handle);
 			else if constexpr (std::is_same_v<T, Font>)
 				return GetFont(handle);
+			else if constexpr (std::is_same_v<T, Environment>)
+				return GetEnvironment(handle);
 			else
-				static_assert(k_AlwaysFalseAsset<T>, "AssetManager::Get<T> supports Texture, Shader, Model and Font; use GetAudioClip for audio (shared ownership)");
+				static_assert(k_AlwaysFalseAsset<T>, "AssetManager::Get<T> supports Texture, Shader, Model, Font and Environment; use GetAudioClip for audio (shared ownership)");
 		}
 
 		// --- Queries ----------------------------------------------------------
@@ -234,7 +241,7 @@ namespace Dingo
 		AssetHandle FindByPath(const std::filesystem::path& path) const;
 
 		/// True for exactly the types ReloadInPlace can refresh without destroying the
-		/// loaded object (Texture2D, Shader and Model today). Tooling that offers a Reload
+		/// loaded object (Texture2D, Shader, Model and Environment today). Tooling that offers a Reload
 		/// action - such as the debug panel - should check this first: Reload() on any
 		/// other type destroys and recreates the object, invalidating borrowed pointers.
 		static bool SupportsInPlaceReload(AssetType type);
