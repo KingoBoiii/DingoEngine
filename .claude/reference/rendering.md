@@ -4,7 +4,7 @@ Read on demand from CLAUDE.md. Shaders, Renderer2D/3D, lighting, skinning and an
 
 - DingoUI renderer · Shaders and cache · Renderer2D · Renderer3D and batching · Culling.
 - Upload arena and instancing · Static batches · Translucency · Lighting and fog · Lit materials.
-- Environment and skybox · Volumetric fog · Pipeline state and winding · Skinning · Animator · Animation events · Root motion · Model reload.
+- Environment and skybox · Volumetric fog (and local volumes, raymarch, debug view) · Pipeline state and winding · Skinning · Animator · Animation events · Root motion · Model reload.
 - Render targets and readback (incl. texture mips, arrays, cubes, volumes, HDR) · Post chain · Bloom and ambient occlusion · Shadows and probes.
 - Compute (incl. mip, cube and 3D bindings) · Particles · Vulkan and NVRHI rules.
 
@@ -215,7 +215,7 @@ PBR materials were added in v1.3 Phase 2 (`docs/pbr.md`).
 
 ## Volumetric fog
 
-Froxel fog, v1.3 Phase 5 (`docs/volumetrics.md`; code in `Graphics/Renderer3DVolumetrics.cpp`, `VolumetricShaders.{h,cpp}`).
+Froxel fog, v1.3 Phase 5 (`docs/volumetrics.md`; local volumes, raymarch and the debug view are the subsection below; code in `Graphics/Renderer3DVolumetrics.cpp`, `VolumetricShaders.{h,cpp}`).
 
 **Passes** (`Renderer3D::EndScene`)
 - `PrepareVolumetrics(perspective)` runs before the fog block: active = `Capabilities.Volumetrics` + `SetVolumetricFog` + perspective + not `IsFrameSkipped`. It zeroes `FogColor`/`FogParams` (no distance fog, no AO fog), writes `VolumeParams`/`VolumeGrid`, picks the history parity and uploads the 240 B `VolumetricData` (volatile UBO, one write per dispatching scene).
@@ -236,6 +236,31 @@ Froxel fog, v1.3 Phase 5 (`docs/volumetrics.md`; code in `Graphics/Renderer3DVol
 - A custom shader's world-space vertex stage: `Renderer3D_MeshVertex.glsl` needs `a_ObjectIndex`, so test shaders (Froxel Fog Test check 12) write their own.
 - History: `m_VolumetricHistoryFrame == frame - 1` and unchanged grid/Near/Far; `ResetVolumetricHistory()` (and `CameraComponent::ResetVolumetricHistory`, consumed in `SceneRenderer`) sets it to none.
 - The on-screen view's grid is 64x36x32 until the checks finish, then the default (it exercises `SetVolumetricGrid`).
+
+### Local volumes, raymarch and debug view (v1.3 Phase 6)
+
+Code in `Graphics/Renderer3DVolumetrics.cpp`, `VolumetricMedia.glsl`, `VolumeRaymarch.glsl`, `VolumeRaymarchComposite.glsl`, `VolumetricSlice.glsl`; `docs/volumetrics.md` has the user view.
+
+**Pass order** (`Renderer3D::EndScene`)
+- `PrepareVolumetrics` -> `CullFogVolumes` (frustum, gap ranking, `MaxFogVolumes` <= 16 and <= 4 Raymarch, fallbacks to froxel without the post scene target) -> records into `m_FogVolumeData` (froxel first, then Raymarch) and `Global.z` = debug view -> `PrepareFroxelFog` (global fog or a froxel volume, H15) + `PrepareRaymarch`.
+- `DispatchVolumetrics` uploads `FogVolumeData` once per scene, runs inject + integrate, then `DispatchVolumetricSlice` (one-shot `RequestVolumetricSlice`; not counted in `VolumetricDispatches`). `ResetLightScatter()` runs after it, not before, because the inject reads `DirectionalScatter`/`LocalScatter`.
+- `DrawVolumeRaymarch` after the sky, before the translucent pass, in GPU timer `VolumeRaymarch`: AO first, `PostProcessAccess::RefreshSceneDepth` (re-copies the depth even if an earlier scene of the `Begin` did, unless AO's copy was just made; the timer starts after AO). The low-res scatter/depth pair is cached per scene target's depth-copy id (`AcquireRaymarchTarget`, idle pairs freed after 120 frames); binding sets rebind only when that id changes, compute march, fullscreen composite (`BlendMode::Alpha`, `(L/(1-T), 1-T)`).
+
+**Bindings**
+- Inject: b0 camera, b1 `VolumetricData`, b2 shadow data, t3/s4 atlas, b8 `FogVolumeData`, t9/s10 noise (`VolumetricMedia.glsl`, 32^3 R8 from `Internal::GenerateVolumeNoise`, Wrap sampler), t5/s6 history, u7 scatter.
+- `FogVolumeData` (b8, 3744 B, std140, volatile: `SetMaxWritesPerFrame(k_MaxScenesPerFrame)` and written every frame it is bound): `Global` (x local-light intensity, y `MaxInScatter`, z debug view, w any noise), `DirectionalScatter`, `LocalScatter[8]`, 16 x 224 B records.
+- Raymarch (compute): b0 camera, b1 `RaymarchData`, b2 shadow data, t3/s4 atlas, t5 depth copy (`texelFetch`), u6 `r32f` view distance, u7 `rgba16f` L/T, b8/t9/s10 media, t11/s12 froxel volume (`DE_VOLUMETRIC_FOG_BINDING 11`). Samplers <= 15, UAVs < 8.
+- Composite (fullscreen material): b0 data, t1/s2 scatter, t3/s4 ray depth, t5/s6 scene depth.
+- Slice (compute): b1 `SliceData`, t5 source volume (`texelFetch`), u7 `rgba16f` 2D out.
+
+**Debug view**: `MediaGlobal.z > 0.5` makes `DE_FroxelMediaSample` and `DE_RaymarchSource` return `DE_ShadowSampleColor(world) * mean(coefficient)` instead of the lit sum; the inject takes the media path when it is set, so with `None` the Phase 5 fast path and its 88 checks are bit-identical.
+
+**Gotchas**
+- GLSL record members are `VolumeAlbedo`, `VolumeTint`, `VolumeLight` and `MediaGlobal` (the C++ names clash with locals in the shaders). `Intensities.w` gates the local-light loop (0 unless a medium and a light both scatter locally).
+- Raymarch textures are declared `.SetDimension(Texture2D)`; without it NVRHI makes them 3D.
+- Textures `Reinitialize` in place on a resize or a knob change, so ids stay stable; descriptor sets re-bind only when `GetId()` changes.
+- `Renderer3D::k_MaxPendingFogVolumes` = 256 caps the submissions held per scene.
+- Known limits: reprojection under strong anisotropy is less exact (0.012 vs 0.0078 at g other than 0); the march ignores local lights and does no near-fade clipping of the ray start; a failed raymarch shader drops the volumes with one logged error; translucents and particles do not see raymarch volumes; froxel haze in front of a raymarch box also takes the box's T.
 
 ## Pipeline state and winding
 

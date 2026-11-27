@@ -180,7 +180,9 @@ More than one candidate at step 2 (or, with none there, at step 3) warns once.
   `Density`, or `Linear` with `End` not past `Start`. `MaxOpacity` is clamped to 0..1.
 - **Perspective cameras only.** An orthographic camera's scene draws without fog.
 - **Volumetric fog** (`FogComponent::Volumetric`, `SetVolumetricFog`) replaces the distance fog of a
-  scene that has it and also fogs particles and the sky: see [Volumetric fog](volumetrics.md).
+  scene that has it and also fogs particles and the sky: see [Volumetric fog](volumetrics.md). Local
+  `FogVolume`s and a light's `VolumetricIntensity` (point and spot lights scatter in the haze too) are
+  described there.
 - **What it covers:** the lit shader's static and skinned draws, emissive and highlights included,
   before the post chain's tone curve. Particles, custom material shaders (unless they mirror the
   fog members, see [below](#custom-material-shaders)) and the 2D overlay aren't fogged, and the

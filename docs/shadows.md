@@ -254,7 +254,10 @@ The Animation Test's `--anim-shadow` lights its Foxes with a casting sun, and th
 comparison tap of the cascade that covers it, with no normal bias and no blend between cascades, so
 the medium in a caster's shadow gets no sun and the shafts show. Past the last cascade the shadow
 fades over its tail (the `CascadeBlend` width) to `VolumetricFog::OutsideShadowLight`, so the map's
-edge shows no step. A light that casts no shadow stays unshadowed.
+edge shows no step. A light that casts no shadow stays unshadowed. Point and spot lights that scatter
+in a medium take one comparison tap of their shadow slot per sample, and
+`Renderer3D::SetVolumetricDebugView` paints the sun's samples green (lit), red (shadowed), blue
+(past the last cascade) or yellow (no shadow) to see what the grid and the Raymarch pass read.
 
 ## Limits
 

@@ -594,6 +594,176 @@ Done when Phases 5 and 6 work in `examples/Dustlight` with the toggle panel and 
 - Point/spot in-scatter using `LocalLightShadow` (`Shadows.glsl:128`) and the shadow atlas.
 - ImGui debug panel for the grid (slice view, cost timer).
 
+### Phase 6 design (engine-designer, 2026-11-27)
+
+Read: plan 1-22, 359-595, 720-737; `Renderer3DVolumetrics.cpp`, `VolumetricInject.glsl`, `VolumetricMath.glsl`, `Shadows.glsl`, `Renderer3DCamera.glsl`, `Renderer3D.cpp:609-772, 1913-1954, 2864-2993`, `Renderer3D.h:725-851, 1440-1461`, `PostProcess.cpp:264-286, 578, 617-623`, `FullscreenPass.h`, `Light.h`, `Components.h:270-366`, `ImGuiDebugPanels.cpp:385-420`, `docs/volumetrics.md:180-193`.
+
+**Gaps found**
+- G1. `CopySceneDepth` copies only once per post `Begin` (`PostProcess.cpp:280`, reset at `:559`). If an earlier scene in the same `Begin` made the copy, a second scene's raymarch would read stale depth. Fix: an internal re-copy.
+- G2. The raymarch needs a sampled depth, which only the post scene target has. The swap chain never has one (`NvrhiSwapChainFramebuffer.cpp:46`); other framebuffers only with `DepthSampleable` (`NvrhiFramebuffer.h:26`).
+- G3. `LocalLightData` has no spare float (`Renderer3D.h:781-786`: `Color.w` is the cone scale, `SpotDirection.w` the cone offset). A per-light scatter flag goes in a new engine-only buffer, so `CameraData` and `ShadowData` stay as they are. **Phase 6 appends nothing to `CameraData`; it stays 1888 B.**
+- G4. Volume submissions must become records before `ClearSceneLights` at `Renderer3D.cpp:675`, so all volume work goes into `PrepareVolumetrics` at `:649`.
+- G5. To keep Phase 5's 88 PASS bit-identical: leave `DE_DirectionalShadowVolume` (`Shadows.glsl:134-167`) untouched and add a separate function next to it; the inject keeps the Phase 5 path when `Intensities.z == 0 && Intensities.w == 0`, as a uniform branch.
+- G6. The engine has no timescale. Headstone scales `deltaTime` itself, so the noise drift needs a caller clock.
+- G7. The lit and PBR shaders are **not touched** in Phase 6, so `CreateLitMaterial` output stays the same as v1.2.
+
+**Data layout** (private structs in `Renderer3D.h` beside `:733-748`, each with a static_assert)
+- `VolumetricData` stays 240 B. `Intensities.z` = froxel volume count; `Intensities.w` = local-light slots to loop, 0 unless some medium and some light has a non-zero local scatter.
+- `FogVolumeData` (std140, b8, volatile UBO, `SetMaxWritesPerFrame(k_MaxScenesPerFrame)`, created in `Initialize` next to `:409`), 3744 B. Froxel records first, then raymarch records.
+
+| Offset | Member | Contents |
+|---|---|---|
+| 0 | `Global` | x = global `LocalLightIntensity`, y = global `MaxInScatter` (0 = none), z = debug view, w = 1 if any volume has noise |
+| 16 | `DirectionalScatter` | per directional light `VolumetricIntensity` |
+| 32 | `LocalScatter[8]` | slot s at [s/4][s%4]: per local-light `VolumetricIntensity` |
+| 160 | `Volumes[16]` | `FogVolumeRecord`, 224 B each |
+
+- `FogVolumeRecord`, 224 B:
+
+| Offset | Member | Contents |
+|---|---|---|
+| 0 | `WorldToLocal[3]` | affine rows; box is [-1,1]³, sphere is the unit ball |
+| 48 | `Shape` | xyz = half extents in world units, w = 0 box / 1 sphere |
+| 64 | `Medium` | density, g, edge fade (world units), raymarch steps |
+| 80 | `Albedo` | rgb = albedo, a = ambient intensity |
+| 96 | `ScatterTint` | rgb = tint, a = `OutsideShadowLight` |
+| 112 | `Intensities` | directional, local, `MaxInScatter`, flags |
+| 128 | `HeightFade` | fade start, fade end, band bottom, band top |
+| 144 | `HeightBand` | band multiplier, softness, 2 reserved |
+| 160 | `Fades` | near start, near end, far start, far end |
+| 176 | `FadeKeep` | near keep, far keep, noise min, noise max |
+| 192 | `Noise` | xyz = phase in tiles (fract, computed in double on the CPU), w = 1/scale |
+| 208 | `Drift` | xyz = world displacement since the history frame |
+
+- `RaymarchData` (b1 of the raymarch pass, volatile UBO), 128 B: `mat4 InverseViewProjection` (0), `CameraPosition` (64), `Target` (80: xy low-res size, zw full-res size), `Params` (96: x first raymarch record, y raymarch count, z scale 2/4, w froxel active), `Reserved` (112).
+- Composite UBO (binding 0 of the fullscreen material, 96 B): `InverseViewProjection`, `CameraPosition`, `Low` (size, 1/size).
+- Resources:
+  - Noise: `m_VolumeNoise`, 32³ `R8` unorm, tileable 2-octave gradient noise from `Internal::GenerateVolumeNoise` (CPU, so tests can replicate it), uploaded as `InitialData` (3D upload exists, `NvrhiTexture.cpp:260`), 32 KB, created with the inject passes. `m_VolumeNoiseSampler`: linear Wrap, owned by Renderer3D.
+  - Raymarch, lazy: `m_RaymarchScatter` (2D `RGBA16F` storage, rgb = L, a = T), `m_RaymarchDepth` (2D `R32F` storage, view distance), `m_RaymarchPass`, `m_RaymarchComposite` (a `FullscreenShader` material). On a target resize or knob change they `Reinitialize` in place, so ids stay stable.
+  - Memory at 1080p: 6.2 MB half resolution, 1.6 MB quarter.
+
+**Culling / budget** (`CullFogVolumes()`, new, top of `PrepareVolumetrics`)
+- Returns at once if `!Capabilities.Volumetrics`, the camera is orthographic, or nothing was submitted (zero-cost path).
+- Frustum test of each volume's bounding sphere with `Frustum::Intersects` (as for lights at `Renderer3D.cpp:2909`). Froxel-mode volumes are also culled when their distance gap is past the froxel `MaxDistance`.
+- Rank by distance gap from the camera (0 inside), then submission order. Keep `MaxFogVolumes`, at most `k_MaxRaymarchVolumes = 4` raymarch. Warn once on overflow.
+- Raymarch volumes **fall back to froxel** (warn once, `RaymarchFallbacks++`) unless `post.IsActive() && post.GetSceneTarget() == Renderer::GetRenderTarget()`.
+- New `Statistics`: `FogVolumes`, `RaymarchVolumes`, `FogVolumesCulled`, `FogVolumesDropped`, `RaymarchFallbacks`, `RaymarchDispatches`.
+
+**Pass order** (`Renderer3D::EndScene`)
+1. `:631` `ResolveSceneLights`: in the slot loop (`:2974-2985`) write `LocalScatter[slot]` from a new `LocalLightCandidate::VolumetricIntensity`. `SubmitLight(DirectionalLight)` (`:2597`) writes `DirectionalScatter[count]`.
+2. `:649` `PrepareVolumetrics`: `CullFogVolumes` → build records.
+   - Froxel pass on when `Capabilities.Volumetrics && perspective && (m_VolumetricFogSet || froxelCount > 0)` (H15).
+   - Without a global fog, `VolumetricData` comes from a default `VolumetricFog{}` with `Density = 0`.
+   - `FogColor`/`FogParams` are zeroed **only when `m_VolumetricFogSet`**.
+   - Then `PrepareRaymarch()` fills `RaymarchData`.
+3. `:701` `DispatchVolumetrics` (unchanged place): upload `FogVolumeData` once per scene, then inject and integrate.
+4. **New** `DrawVolumeRaymarch(shadowAtlas)` after the sky (`:754-755`), before `DrawTranslucentPass` (`:756`), in GPU timer `"VolumeRaymarch"`:
+   - (a) `post.ApplyAmbientOcclusion()` (runs once per `Begin`, `PostProcess.cpp:578`), so AO does not darken the raymarched haze;
+   - (b) `Internal::PostProcessAccess::RefreshSceneDepth(post)`, new private method: clear `DepthCopied`, call `CopyDepth` (G1);
+   - (c) upload `FogVolumeData` if step 3 didn't;
+   - (d) dispatch the raymarch, 8×8 groups over the low-res grid;
+   - (e) composite with `Internal::DrawFullscreen(m_RaymarchComposite, Renderer::GetRenderTarget())`.
+   - Re-`SetTexture` the depth copy and atlas only when their `GetId()` changes (as `Renderer3DVolumetrics.cpp:221-228`).
+5. `ClearSceneLights` (`:2864`) clears `m_FogVolumes`.
+
+**Shader changes**
+- `VolumetricMath.glsl` (C++-compilable) gains `DE_DistanceFade(t, start, end, keepBefore, keepAfter)` (linear), `DE_HeightProfile(h, fade, band)`, `DE_BoxEdgeFade` / `DE_EllipsoidEdgeFade`, `DE_RayBoxInterval` / `DE_RayUnitSphereInterval` (local space), `DE_InterleavedGradientNoise`, `DE_CapInScatter(L, cap)` (scales by `cap / maxChannel`, no-op when cap ≤ 0).
+- New `VolumetricMedia.glsl` (internal): `FogVolumeData` block at b8, `u_VolumeNoise` t9, `u_VolumeNoiseSampler` s10; `DE_FogVolumeSample(i, world, t, out sigmaT, out scatterWeight)` covering edge, height, noise and near/far fades. Fades scale in-scatter only; σt is never changed.
+- `Shadows.glsl` adds `vec2 DE_DirectionalShadowVolumeParts(world)` (x = in-cascade shadow with strength, y = outside weight) and `float DE_LocalLightShadowVolume(light, world)` (one hardware compare tap, cube face pick as `:179-189`, `mix(1, s, Record.z)`). The existing function stays (G5).
+- `VolumetricInject.glsl`:
+  - Includes at the top: Camera, Shadows, VolumetricMath, VolumetricMedia.
+  - Accumulates the global medium plus each froxel volume: σt sums; per-medium coefficients `cA += σs⊙tint·Ia`, `cD += σs⊙tint·Id`, `cDo += σs⊙tint·Id·out`, `cL += σs⊙tint·Il`; effective g is the σt-weighted mean.
+  - Lights evaluated once. Directional: `HG·C·dirScatter·(cD⊙(s(1−t)+t(1−S)) + cDo⊙tS)`. Local: `π·HG(dot(normalize(p−L), −ray), g)·C·falloff²·cone²·LocalScatter·DE_LocalLightShadowVolume`, following `Renderer3D_Lit.glsl:93-104`.
+  - Reprojection subtracts the drift of the dominant noisy volume (largest σt): `PreviousViewProjection·(centre − Drift)`.
+  - Debug view: light terms become false colour (lit green, shadowed red, outside blue scaled by t, unshadowed yellow).
+- `VolumetricIntegrate.glsl` adds b8 and stores `DE_CapInScatter(scat, Global.y)` while accumulating the uncapped sum.
+- New `VolumeRaymarch.glsl` (compute):
+  - Bindings: b0 Camera, b1 `RaymarchData`, b2 ShadowData, t3 atlas, s4 shadow sampler, t5 depth copy (`texelFetch`), u6 `r32f` depth out, u7 `rgba16f` scatter out, b8/t9/s10 media, t11/s12 froxel volume (`Volumetrics.glsl` with `DE_VOLUMETRIC_FOG_BINDING 11`, `_SAMPLER_BINDING 12`). Samplers ≤ 15, UAVs < 8.
+  - Per low-res texel: (1) nearest of its s² full-res depths → view distance, sky = +∞; (2) per raymarch volume, intersect in local space, clip to [nearStart if keep = 0, surface]; (3) march `Steps` samples at `t0 + (i + IGN(pixel))·dt` with the analytic step (`DE_SliceTransmittance`/`DE_SliceInScatterFactor`); (4) cap per volume; if froxel is active, multiply by froxel T at the volume's entry; (5) insertion-sort by entry (≤ 4), combine `L += Tprefix·Lv`, `T *= Tv`; (6) store.
+- New `VolumeRaymarchComposite.glsl` (fullscreen): pixel distance from the depth copy; 4 bilinear low-res texels weighted by bilinear × `1/(1e-3 + |di−d|/d)`; if the weight sum < 1e-3, nearest-depth texel. Output `(L/max(1−T,1e-5), 1−T)` with `BlendMode::Alpha` (= `dst·T + L`); discard when T > 0.9999 and L ≈ 0.
+- New `VolumetricSlice.glsl` (compute, debug): copies slice k of the integrated or scatter volume into a 2D `RGBA16F` storage texture with exposure and a T view.
+- Each new file gets a `.inl` and an `s_EmbeddedShaders` row (`EngineShaders.cpp:32-35`, `:78-81`). `VolumetricShaderKind` gains `Raymarch` and `Slice`.
+
+**Raymarch interactions (H10)**
+- Froxel + raymarch: final = `(c·T_f + L_f)·T_r + T_f(entry)·L_r`. Error: froxel haze in front of a box also takes the box's T (documented).
+- Translucents and particles draw after the composite and don't see the raymarch volume (documented).
+- Custom shaders need no change and no new bindings: the composite applies on top of their output, including their own distance fog.
+- Raymarch-only scenes keep the distance `Fog`.
+
+**Noise and temporal stability (H5/H16)**
+- New `Renderer3D::SetFogVolumeTime(double seconds)`, persistent. `Scene::OnUpdate(dt)` adds to a private `m_FogVolumeTime`; `Scene::SubmitLights` passes it on.
+- Phase = `fract(v·time/scale)` in double. `Drift = v·(time − historyTime)`, kept with the history. Δ < 0 or > 0.5 s → no drift, history dropped.
+- At 4× timescale Δ is 4× larger and the reprojection moves 4× further, so stability doesn't depend on timescale.
+- The raymarch has no history; its jitter is frame-stable by construction.
+
+**Debug view (H11)**
+- `Renderer3D::SetVolumetricDebugView(VolumetricDebugView)` writes `Global.z`; works in both paths.
+- A "Renderer3D volumetrics" block in `RendererStatsSection` after the shadow block (`ImGuiDebugPanels.cpp:419`): stats, on/off, grid, resolution and debug-view toggles; slice slider + integrated/scatter/T choice via `Internal::Renderer3DAccess::RequestVolumetricSlice`, run at the end of `DispatchVolumetrics`, shown with `ImGui::Image` as at `:417`; `Volumetrics` and `VolumeRaymarch` timers from `Renderer::GetGpuTimers()` (`:1174`).
+
+**ECS**
+- `FogVolumeComponent { FogVolume Settings; bool Enabled = true; }` after `Components.h:366`: `DE_INSTANTIATE_COMPONENT` (`Entity.cpp`), `Internal::BuiltinComponents`, `Scene::DuplicateSubtree`. Submitted in `LightSystem::SubmitLights` after `SubmitFog` (`LightSystem.cpp:303`), `InEntityOrder`, skipping `InactiveComponent` and `!Enabled`; world matrix from `HierarchySystem::WorldMemo`. `SceneDebug` shows it read-only next to `:706-716`.
+- Light components (`Components.h:275`, `:303`, directional) get `VolumetricIntensity`, through `ToLight`.
+
+**Risks only a real GPU shows**
+- D3D11: debug-layer hazards (CS-UAV → PS-SRV on raymarch textures, depth copy RTV → CS SRV); FXC compile time at -Od of the volume × step × light loops (keep bounds dynamic); `R8` 3D sampled from CS.
+- D3D12: raymarch root signature (4 CBs, 4 SRVs, 2 UAVs, 3 samplers); the #1008 atlas barrier warning will grow.
+- Vulkan: sync validation for depth copy → compute → composite, two scenes a frame, second depth copy in one `Begin`.
+- Visual: upsample halos at quarter res; static IGN pattern on smooth haze; lag on overlapping drifting volumes; Headstone glass (translucent) not hazed by a raymarch box; truss sharpness at half res vs the approved capture.
+- Cost (estimates): raymarch half res, 16 steps 0.2-0.4 ms on the RX 7900 XTX, quarter ≈ 0.1 ms; froxel inject with 8 volumes and 32 local lights ≈ +0.1 ms.
+
+### Phase 6 implementation groups
+
+1. **Math, API, CPU culling, ECS (no GPU change).** `VolumetricMath.glsl` additions, `Light.h` (`FogVolume`, enums, `VolumetricFog::LocalLightIntensity`/`MaxInScatter`, light `VolumetricIntensity`), `Renderer3D.h`/`.cpp` (`SubmitFogVolume`, `SetFogVolumeTime`, capabilities + setters, validation, `CullFogVolumes`, stats), `Components.h`, `Entity.cpp`, `ComponentStorage.h`, `Scene.cpp`, `LightSystem.cpp`, `SceneDebug.cpp`, `Internal::GenerateVolumeNoise`.
+   - Test: doctests in `VolumetricTests.cpp` (fades, height profile, edge fades, ray intervals, IGN range, noise tiling, `DE_CapInScatter`). New "Fog Volume Test" (`--test=volume`), checks 1 (zero dispatches off/culled), 11 (budget, drop order), 12 (Scene records = direct API via `Renderer3DAccess::FogVolumeRecords`), 13 (`Inactive`/`Disabled`/duplicate), 14 (invalid input rejected, warns once).
+2. **Froxel volumes on the GPU.** `FogVolumeData`, noise texture + sampler, `VolumetricMedia.glsl`, `Shadows.glsl` Parts, inject (media, fades, noise, drift reprojection), integrate cap, H15 activation, `.inl`/embedded rows.
+   - Test: Fog Volume checks 2-10 read back as Froxel checks 3-5: 2 box-only keeps distance fog; 3/4 box and sphere σt inside/outside/edge; 5 Headstone height profile at 5/9/13/16 m; 6 near/far fades, T unchanged; 7 noise min = max 0 diff, min 0/max 2 matches CPU noise; 8 drift at 1× and 4× with temporal within 2/255 of non-temporal; 9 per-volume tint, g, `OutsideShadowLight`; 10 two overlapping volumes vs CPU mixture + global `MaxInScatter` cap. `--test=froxel` still 88 PASS; Shadow Test unchanged.
+3. **Local-light scattering.** `DE_LocalLightShadowVolume`, inject local loop, `LocalScatter`/`DirectionalScatter` writes, light-component fields.
+   - Test: check 15: point in-scatter vs CPU HG·falloff²; `LocalLightIntensity = 0` and per-light `VolumetricIntensity = 0` each 0 diff vs directional-only; spot outside cone 0; shadowed spot behind a caster ≈ 0. Froxel test still passes (Phase 5 scenes with point/spot lights set `LocalLightIntensity = 0` if their expected values assumed none).
+4. **Raymarch.** `VolumeRaymarch.glsl`, `VolumeRaymarchComposite.glsl`, resources, `PostProcessAccess::RefreshSceneDepth`, `DrawVolumeRaymarch`, fallback.
+   - Test: new "Raymarch Fog Test" (`--test=raymarch`): 1 fallback without post + capability off; 2 uniform ambient box vs analytic `c·T + A·albedo·(1−T)` at half and quarter; 3 wall inside box; 4 sky behind box; 5 no halo at a depth edge; 6 shaft ratio; 7 cap; 8 fades; 9 8 vs 64 steps within 1/255; 10 froxel + raymarch formula; 11 translucent over box matches doc formula; 12 custom opaque hazed same as lit; 13 two still frames 0 px diff; 14 resize keeps ids; 15 Scene = API; 16 two scenes in one `Begin` refresh depth; 17 half ↔ quarter at runtime.
+5. **Debug view, panel, docs.** `VolumetricSlice.glsl`, `SetVolumetricDebugView`, `ImGuiDebugPanels.cpp` block. Docs: `docs/volumetrics.md` (volumes, raymarch, H2-H15), `scenes-and-ecs.md`, `lighting.md`, `shadows.md`, `.claude/reference/rendering.md` (b8/t9/s10, raymarch 0-12), As built.
+   - Test: Fog Volume check 16 and Raymarch check 18 check false colour at known froxels/pixels; slice texture has the grid's xy size. Panel checked by hand.
+
+### Phase 6 public API choices (owner chose A for P17–P39, 2026-11-27)
+
+| # | Question | Options | Recommended |
+|---|---|---|---|
+| P17 | Settings shape | A `FogVolume` struct (Light.h) + `Renderer3D::SubmitFogVolume(const FogVolume&, const glm::mat4&)` (scene-scoped) + `FogVolumeComponent{Settings, Enabled}`; B component only | A |
+| P18 | Shape | A `FogVolumeShape::Box`/`Sphere`, `HalfExtents{1}` × transform scale (sphere = ellipsoid); B unit shape, transform scale only | A |
+| P19 | Mode | A `FogVolumeMode::Froxel` (default) / `Raymarch` on the volume; B separate component | A |
+| P20 | Budget | A `Capabilities.MaxFogVolumes = 8` (≤ 16), ≤ 4 raymarch inside it, ranked by camera gap; B separate budgets | A |
+| P21 | H2 profile | A `HeightFadeStart/End` (off when End ≤ Start) + `HeightBandBottom/Top/Multiplier = 1/Softness = 0.5`, metres above the volume's bottom along local up; B up to 8 curve keys; C world heights | A |
+| P22 | H3/H14 fades | A `NearFadeStart/End/Keep` (0/0/0, off), `FarFadeStart/End/Keep` (0/0/1, off), linear in camera distance, in-scatter only; B also scale density | A |
+| P23 | H3 cap | A `FogVolume::MaxInScatter` per pixel (raymarch) + `VolumetricFog::MaxInScatter` per pixel for the whole froxel volume (0 = none); B froxel per-volume cap per sample; C no froxel cap | A |
+| P24 | H5 noise | A 32³ R8 CPU tileable texture; `NoiseScale` 4, `NoiseVelocity` (units/s), `NoiseMin`/`NoiseMax` 1/1 (off when equal); B ALU noise | A |
+| P25 | Noise clock | A `Renderer3D::SetFogVolumeTime(double)`, Scene advances it from `OnUpdate` dt; B wall clock; C per-volume offset | A |
+| P26 | Drift vs history | A reproject by the dominant noisy volume's drift; B raise blend on σt change; C no temporal with noise | A |
+| P27 | H6 knobs | A resolution global (`Capabilities.VolumeRaymarchResolution` Half/Quarter + `SetVolumeRaymarchResolution`), steps per volume `RaymarchSteps` 16 (1-64); B both per volume; C both global | A |
+| P28 | Raymarch depth | A post's depth copy, refreshed per raymarch scene; no post scene target → froxel fallback + warning; B Renderer3D-owned copy for any `DepthSampleable` framebuffer | A |
+| P29 | Jitter | A frame-stable per-pixel IGN, no history; B temporal jitter + history; C blue-noise texture | A |
+| P30 | Composite | A after opaque and sky, AO first, `BlendMode::Alpha` with `(L/(1−T), 1−T)`; B new premultiplied blend; C after translucents | A |
+| P31 | H10 translucents | A don't see raymarch (documented; use Froxel for glass); B entry/exit texture sampled by lit/PBR translucents | A |
+| P32 | H10 froxel + raymarch | A raymarch L × froxel T at entry; B no coupling | A |
+| P33 | H15 activation | A froxel on with global fog OR a froxel volume; only global `VolumetricFog` replaces distance `Fog`; range from `VolumetricFog{}` unless set; B volumes also replace `Fog` | A |
+| P34 | H13 local lights | A `LocalLightIntensity` (global + per volume) default 1, plus `VolumetricIntensity = 1` on Directional/Point/Spot lights and components (new buffer, `CameraData` untouched); B global/per-volume only; C default 0 | A |
+| P35 | Local shadow in medium | A one-tap `DE_LocalLightShadowVolume`; B 3×3 `LocalLightShadow` | A |
+| P36 | Overlapping media, different g | A σt-weighted g with per-medium coefficients; B a light loop per medium | A |
+| P37 | H11 debug | A `SetVolumetricDebugView(None/ShadowSamples)` + Renderer Stats block with slice view and timers; B panel only | A |
+| P38 | Overlapping raymarch volumes | A sorted by entry, combined in sequence; B one union march | A |
+| P39 | Other `FogVolume` defaults | A `Density` 0.05, `Albedo{1}`, `Anisotropy` 0.2, `ScatterTint{1}`, `OutsideShadowLight` 1, `AmbientIntensity`/`LightIntensity` 1, `EdgeFade` 0.5; B `EdgeFade` 0 | A |
+
+### Headstone answers that change from the "Proposed answer" column
+
+- **H2**: heights are above the volume's bottom, not world heights; Headstone's numbers hold when the box sits at y = 0.
+- **H3**: per-pixel cap is per volume only in Raymarch mode; froxel volumes share `VolumetricFog::MaxInScatter`; no global fog → no cap.
+- **H6**: resolution global, steps per volume.
+- **H10**: translucents don't see raymarch volumes; Headstone's hall glass must be opaque or the volume Froxel. Raymarch needs the post chain, else falls back to froxel.
+- **H13**: a per-light flag fits (engine-only `FogVolumeData`): `VolumetricIntensity` on every light type.
+- **H14**: near/far fades thin in-scatter only; transmittance and surface dimming unchanged.
+- **H15**: a box-only froxel scene keeps the distance `Fog`; froxel range defaults to 0.5-64; set a `Density` 0 global fog to change it.
+- **H5/H16**: drift reprojected with a caller clock (`SetFogVolumeTime`), so 4× is exact, not just tested.
+- **O5 defaults changed**: per-pixel IGN jitter, not blue noise; composite after the sky too, AO first; the raymarch needs the post scene target.
+
 ## Phase 7: showcase, docs, review
 
 - **D6 changed (owner, 2026-11-27): a fresh example project instead of the Candlewick upgrade.** Candlewick stays as it is. Name: `examples/Dustlight` (owner confirmed 2026-11-27). Content so far (more to come from the owner):
@@ -734,3 +904,39 @@ Built as designed (owner chose A for P1–P14; H1, H4, P15 and P16 approved) in 
 - **Results** (RX 7900 XTX, private desktops, Debug): all PASS on 3 APIs, 0 `VUID-`, 0 sync, 0 error lines; D3D12 shows only the known shadow-atlas barrier warning. Unit tests 250/250.
 - **Docs:** new `docs/volumetrics.md` (incl. the Headstone H1–H16 answers), `README.md`, `lighting.md`, `scenes-and-ecs.md`, `pbr.md` (binding 22), `particles.md`, `environment.md`, `shadows.md`, and `.claude/reference/rendering.md` (section, PBR row 22).
 - **Needs testing on a real GPU:** the list under "Phase 5 design" still stands (D3D11 debug-layer hazards on the integrated volume between scenes, ghosting at blend 0.1 under fast rotation, slice banding near Near, truss shadow sharpness in the Headstone hall, the sky seam at Far); the D3D debug layer was clean in this run.
+
+### Phase 6 (2026-11-27, uncommitted)
+
+Built as designed (owner chose A for P17–P39; H11 debug view approved, binding) in 5 groups, with these changes:
+- **Group 1, API, math, culling, ECS:** `FogVolume`, `FogVolumeShape`, `FogVolumeMode`, `VolumetricDebugView`, `VolumetricFog::LocalLightIntensity`/`MaxInScatter`, `VolumetricIntensity` on `DirectionalLight`/`PointLight`/`SpotLight` and their components, `Renderer3D::SubmitFogVolume`/`SetFogVolumeTime`/`SetVolumeRaymarchResolution`/`SetVolumetricDebugView`, `Capabilities.MaxFogVolumes`/`VolumeRaymarchResolution`, `FogVolumeComponent` (registered, duplicated, shown in `SceneDebug`), `CullFogVolumes`, new `Statistics`, `Internal::GenerateVolumeNoise`.
+- **Group 2, froxel volumes:** `FogVolumeData` (b8, 3744 B), noise t9/s10, `VolumetricMedia.glsl`, `DE_DirectionalShadowVolumeParts`, inject media path with drift reprojection, integrate cap.
+- **Group 3, local lights:** `DE_LocalLightShadowVolume`, inject local loop, `LocalScatter`/`DirectionalScatter`.
+- **Group 4, raymarch:** `VolumeRaymarch.glsl`, `VolumeRaymarchComposite.glsl`, resources, `PostProcessAccess::RefreshSceneDepth`, `DrawVolumeRaymarch`, froxel fallback.
+- **Group 5, debug view, panel, docs:** `SetVolumetricDebugView` writes `FogVolumeData.Global.z` (in `PrepareVolumetrics`, so raymarch-only scenes get it too); `DE_ShadowSampleColor` (lit green, shadowed red, outside blue, unshadowed yellow) in `VolumetricMedia.glsl`, used by `DE_FroxelMediaSample` and `DE_RaymarchSource` scaled by the in-scatter coefficient; the inject takes the media path when the view is on, so with `None` the Phase 5 fast path is untouched (froxel 88/88). `VolumetricSlice.glsl` (+ `.inl`, `s_EmbeddedShaders` row, `VolumetricShaderKind::Slice`), `Internal::Renderer3DAccess::RequestVolumetricSlice`/`VolumetricSlice`, run once at the end of `DispatchVolumetrics` (not counted in `VolumetricDispatches`). New "Renderer3D volumetrics" block in `RendererStatsSection` (`ImGuiDebugPanels.cpp`): stats, on/off, grid, quarter resolution and debug-view toggles, slice picker with `ImGui::Image`, the `Volumetrics` and `VolumeRaymarch` timers.
+- **Deviations from the design:**
+  - `ResetLightScatter()` moved after `DispatchVolumetrics` (the inject reads the scatter values).
+  - GLSL record members are `VolumeAlbedo`, `VolumeTint`, `VolumeLight` and `MediaGlobal` (the C++ names clash with locals in the shaders).
+  - `Intensities.w` is the gating rule for the local-light loop: 0 unless a medium and a light both have a non-zero local scatter.
+  - The raymarch textures need `.SetDimension(Texture2D)`; NVRHI makes them 3D otherwise.
+  - New private `PostProcessAccess::RefreshSceneDepth` (G1).
+  - `k_MaxPendingFogVolumes = 256` caps the submissions held per scene.
+  - Check 14 (Fog Volume Test) does not assert the warn-once; the log is read by hand.
+  - The Raymarch Fog Test's `Scene::SubmitLights` check works around the default sun and ambient the scene adds when it has no light.
+  - The slice dispatch is one-shot per request, answered by the next dispatching scene; the panel re-requests every frame.
+- **Tests:** Fog Volume Test (`--test=volume`) 78 PASS, Raymarch Fog Test (`--test=raymarch`) 34 PASS, `--test=froxel` still 88 PASS, on Vulkan, DX11 and DX12; 0 `VUID-`, 0 sync, 0 error lines; D3D12 shows only the known shadow-atlas barrier warning. Unit tests 257/257. Check 16 (Fog Volume) reads the debug false colours at known froxels (0,0.02,0 lit; 0,0,0.02 outside; 0.02,0.02,0 unshadowed), that `None` returns the normal light, and that the slice texture has the grid's x and y size and equals the scatter slice at the requested exposure. Check 18 (Raymarch) reads red/green/yellow pixels under a roof and an uncasting sun, and the slice size.
+- **Docs:** `docs/volumetrics.md` (local volumes, raymarch, debug view, Headstone H2, H3, H5, H6, H10, H11, H13, H14, H15 answered; H9 open), `README.md`, `lighting.md`, `shadows.md`, `scenes-and-ecs.md`, `.claude/reference/rendering.md`. Known limits are listed in `volumetrics.md` "Limits": the drift reprojection is less exact with strong anisotropy (0.012 at g other than 0, against the 0.0078 limit), the raymarch ignores local lights and does no near-fade clipping of the ray start (the fades weight samples only), a failed raymarch shader drops the volumes with one logged error and no froxel fallback, translucents and particles do not see raymarch volumes, and froxel haze in front of a raymarch box also takes the box's T.
+- **Needs testing on a real GPU (owner):** the raymarch look against the Headstone hall capture, the depth-aware upsample at quarter resolution, the static IGN pattern on smooth haze, the drift lag under overlapping noisy volumes, the F9 volumetrics panel by hand (slice image, toggles). H9, the mid-range cost, stays open.
+
+#### Phase 6 review fixes (2026-11-27, uncommitted)
+
+- **M1 fixed:** the froxel in-scatter multiplies each directional light by `DirectionalScatter[i]` in the fast path too (`VolumetricInject.glsl`); Fog Volume checks 15h (a sun at 0.5 against the CPU model) and 15i (a sun at 0 equals no sun); `--test=froxel` stays 88 PASS.
+- **M2 fixed:** the global `LocalLightIntensity` multiplies each volume's local-light coefficient in the shader and gates the CPU `localMedium` loop; the CPU model multiplies the two as well (15b changed to match); check 15g (global 0, volume 1).
+- **M3 fixed:** the raymarch low-res pair is cached per post scene target (`Renderer3D::AcquireRaymarchTarget`, keyed by the depth-copy id, resized in place, idle pairs freed after 120 frames); `Material::SetTexture` rebinds a same-format, same-size texture without dropping the pipeline; the passes rebind only when the depth id changes. Checks 14a and 17a now assert stable ids per target across frames (they ran several Begins in one frame before); new 16c to 16f: two Begins of different sizes in one frame, stable ids across frames, both match the model.
+- **L1 fixed:** the composite takes `Full / divisor` and samples `grid = uv * Full / divisor - 0.5`; the quarter silhouette tolerance went from 0.12 to 0.08 (half's value); measured 0.046 (half 0.0015).
+- **L2 fixed:** the `VolumeRaymarch` timer starts after AO, and `RefreshSceneDepth` skips the copy when AO's was just made.
+- **L3, L4 fixed:** wording in `Renderer3D.h`, `Light.h` and `docs/volumetrics.md` (Noise and the clock, H16, the per-target textures).
+- **L5 fixed:** the tiling unit check compares the wrap step with the worst interior step.
+- **L6 fixed:** checks 2a, 2b, 3 and 8 also require every interior pixel's error to stay within 20% of the modelled haze there plus 0.004 (measured excess 0); the 0.03 and 0.05 floors are unchanged.
+- **L7 documented:** thin bright haze where T rounds to 1 in RGBA16F is dropped by the composite (Limits in `docs/volumetrics.md`); no code change.
+- **L8 fixed:** `m_RaymarchCompositeShader` is kept until `Destroy`.
+- **Tests after the fixes:** `--test=volume` 81, `--test=raymarch` 38, `--test=froxel` 88, `--test=Post Test` 23 PASS on Vulkan, DX11 and DX12; 0 `VUID-`, 0 sync, 0 error lines; only the known shadow-atlas barrier warning on D3D12. Unit tests 257 cases PASS.

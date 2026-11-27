@@ -1,8 +1,9 @@
 # Volumetric fog
 
 Status: v1.3. Global froxel fog: height fog you can see light through, with sun shafts, on lit and
-PBR meshes, translucent meshes, particles and the sky. Local volumes and local-light scattering
-come in a later v1.3 phase.
+PBR meshes, translucent meshes, particles and the sky. Local `FogVolume`s (boxes and ellipsoids,
+froxel or ray-marched), point and spot light scattering, scrolling noise and a debug view sit on top
+of it.
 
 `Renderer3D` splits the view frustum into a grid of cells ("froxels": 160 x 90 x 64 by default, the
 depth slices spaced exponentially). Two compute passes fill it before the scene is drawn: one writes
@@ -83,6 +84,111 @@ clamps `Albedo`, `Anisotropy` and `OutsideShadowLight`. It takes effect only wit
 `Renderer3D::Statistics` has `Volumetrics` (the last scene was drawn with the volume),
 `VolumetricTemporal` and `VolumetricDispatches`. The GPU timer `Volumetrics` ([Profiling](profiling.md))
 covers both passes; the F9 Scene tab shows a `FogComponent`'s volumetric fields read-only.
+`VolumetricFog::LocalLightIntensity` (default 1) and `MaxInScatter` (default 0, no cap) are the global
+settings the local volumes below build on.
+
+## Local volumes
+
+A `FogVolume` is a box or an ellipsoid of medium that adds to the scene's fog inside it. Submit one
+per scene with `Renderer3D::SubmitFogVolume(volume, transform)` (scene-scoped, like `SetVolumetricFog`;
+it returns `false` and warns once for an invalid value), or put a `FogVolumeComponent` on an entity:
+`Scene::SubmitLights` submits every enabled one in entity order with the entity's world transform.
+The shape is `HalfExtents` scaled by the transform, so a volume's world size is `HalfExtents` times
+the transform's scale; an `InactiveComponent` or `Enabled = false` takes it out.
+
+```cpp
+FogVolume hall;
+hall.Shape = FogVolumeShape::Box;
+hall.HalfExtents = glm::vec3(8.0f, 3.0f, 12.0f);
+hall.Density = 0.04f;
+hall.NoiseMin = 0.4f;                       // scrolling noise: density x 0.4..1.6
+hall.NoiseMax = 1.6f;
+hall.NoiseVelocity = glm::vec3(0.2f, 0.0f, 0.0f);
+renderer.SetFogVolumeTime(sceneTime);       // the Scene advances this clock for you
+renderer.SubmitFogVolume(hall, glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 3.0f, 0.0f)));
+```
+
+| Field | Default | What it does |
+|---|---|---|
+| `Shape`, `Mode`, `HalfExtents` | Box, Froxel, 1 | The shape, how it is drawn (below) and its half sizes before the transform's scale. |
+| `Density`, `Albedo`, `Anisotropy`, `ScatterTint`, `OutsideShadowLight`, `AmbientIntensity`, `LightIntensity` | 0.05, 1, 0.2, 1, 1, 1, 1 | As on `VolumetricFog`. Overlapping media add their extinction and in-scatter; the phase function's `g` is the extinction-weighted mean. |
+| `LocalLightIntensity` | 1 | Scales the point and spot lights in this volume, on top of `VolumetricFog::LocalLightIntensity` and each light's `VolumetricIntensity`. |
+| `EdgeFade` | 0.5 | World units over which the density falls to 0 towards the surface of the shape. 0 is a hard edge. |
+| `HeightFadeStart`, `HeightFadeEnd` | 0, 0 | Metres above the volume's bottom along its local up: full density up to the start, 0 at the end. Off when End is not past Start. |
+| `HeightBandBottom`, `HeightBandTop`, `HeightBandMultiplier`, `HeightBandSoftness` | 0, 0, 1, 0.5 | A band, in metres above the volume's bottom, where the density is multiplied, easing over `HeightBandSoftness` at each edge. Off when Top is not past Bottom or the multiplier is 1. |
+| `NearFadeStart/End/Keep`, `FarFadeStart/End/Keep` | 0/0/0, 0/0/1 | Thins the in-scatter with the distance from the camera (linear). Keep is the share left at the near start and closer (near) or from the far end (far). **Never the density**: transmittance and the dimming of what is behind the volume stay the same. |
+| `MaxInScatter` | 0 | Raymarch mode: the most one pixel's in-scatter may reach, per channel (the strongest channel is scaled down to it). 0 is no cap. Froxel volumes share `VolumetricFog::MaxInScatter` instead. |
+| `RaymarchSteps` | 16 | Raymarch mode: samples along the ray, 1..64. |
+| `NoiseScale`, `NoiseVelocity`, `NoiseMin`, `NoiseMax` | 4, 0, 1, 1 | Scrolling 3D noise: the world size of one tile, the drift per second, and the range the density is multiplied into. Off when Min equals Max. |
+
+- **A box alone is enough** (H15): the froxel pass runs with a global `VolumetricFog` *or* a froxel
+  volume. Only a global `VolumetricFog` replaces the distance `Fog`; a scene with froxel volumes and no
+  global fog keeps its distance fog and a froxel range of 0.5 to 64.
+- **Budget.** `Capabilities.MaxFogVolumes` (default 8, at most `Renderer3D::k_MaxFogVolumes` = 16) is the most
+  a scene draws, at most `k_MaxRaymarchVolumes` = 4 of them Raymarch. Volumes outside the view (and
+  froxel ones past the froxel range) are culled first, then the nearest win; the rest are counted in
+  `Statistics::FogVolumesDropped` and warn once.
+- **Local lights.** Point and spot lights scatter in the medium with the lit shader's falloff and one
+  shadow-map tap, scaled by `VolumetricFog::LocalLightIntensity`, the volume's `LocalLightIntensity` and the
+  light's own `VolumetricIntensity` (on `DirectionalLight`, `PointLight`, `SpotLight` and their
+  components; 0 keeps a light out of the haze while it still lights surfaces) (H13). Set a global
+  `LocalLightIntensity` of 0 for directional-only. Raymarch volumes ignore local lights.
+- **Noise and the clock** (H5). `Renderer3D::SetFogVolumeTime(seconds)` is the caller's clock; the
+  `Scene` advances its own from `OnUpdate`'s delta time, so a game that scales `deltaTime` scales the
+  drift. The temporal history is reprojected by the drift of the densest noisy volume, so the
+  history keeps up at any timescale. While a noisy volume with a non-zero `NoiseVelocity` is kept, a
+  jump back or of more than 0.5 s drops the history; the clock is not looked at otherwise.
+- `FogVolumeComponent` is a built-in component: duplicated with its entity and shown read-only in
+  the F9 Scene tab.
+
+## Raymarch volumes
+
+`FogVolume::Mode = FogVolumeMode::Raymarch` draws the volume per pixel instead of through the grid,
+so a thin shaft keeps its edges and truss shadows at any distance. After the opaque meshes and the
+sky are drawn (and after ambient occlusion, so AO does not darken the haze), a compute pass marches
+each Raymarch volume's ray, at half or quarter resolution (`SetVolumeRaymarchResolution`, global,
+default half; changing it at run time keeps the textures), and a fullscreen pass applies the result with
+`colour * T + L`, upsampled by depth so silhouettes get no halo.
+
+- **Needs the post chain.** The march reads the post chain's copy of the scene depth, so a scene
+  drawn without `PostProcessStack` (or to another target) draws the volume as a froxel one instead,
+  logs one warning and counts it in `Statistics::RaymarchFallbacks`. If the raymarch shader fails to
+  compile, the volumes are dropped with a logged error, with no froxel fallback.
+- **With the froxel fog** (H10): the result is `(c * Tf + Lf) * Tr + Tf(entry) * Lr`: the global
+  fog in front of the box also takes the box's transmittance, a known small error. Several Raymarch
+  volumes are combined in order of entry.
+- **Translucent meshes and particles are drawn after the composite and do not see a Raymarch
+  volume.** Use a Froxel volume where glass or smoke has to sit in the haze. A custom shader needs no
+  change: the composite applies on top of its output, including its own distance fog.
+- The march samples at a frame-stable per-pixel jitter (no history), so a still scene gives a still
+  picture; at quarter resolution a regular pattern can show on smooth haze.
+- **No near-fade clipping of the ray start**: the march starts at the volume's entry, and the near
+  and far fades only weight each sample's in-scatter.
+- Cost: about 0.2 to 0.4 ms at half resolution with 16 steps on the RX 7900 XTX (an estimate; the
+  mid-range figure for H9 is still open). The timer is `VolumeRaymarch`.
+- Each post scene target (one per `Begin` of a frame) owns its own pair of low-resolution textures, so
+  two `Begin`s of different sizes in a frame do not resize each other's. A pair is resized in place when
+  its target changes size or the resolution changes, so its ids stay stable, and is freed after 120 frames
+  without use.
+
+`Renderer3D::Statistics` adds `FogVolumes` (kept), `RaymarchVolumes`, `FogVolumesCulled`,
+`FogVolumesDropped`, `RaymarchFallbacks` and `RaymarchDispatches`.
+
+## Debug view
+
+`Renderer3D::SetVolumetricDebugView(VolumetricDebugView::ShadowSamples)` paints the directional
+light's contribution in false colour, in the froxel grid and in the Raymarch march alike: **green** where the
+shadow map proves the sample lit, **red** in shadow, **blue** past the last cascade (scaled by how
+far past), **yellow** when the sun casts no shadow. The brightness is the in-scatter the sample would have, so a
+uniform medium reads as a flat colour. It is persistent, and the normal picture returns, bit for bit,
+with `VolumetricDebugView::None`.
+
+The F9 panel's **Renderer3D volumetrics** block (renderer stats section, after the shadow atlas) shows the counters above,
+the on/off switch, the grid, the raymarch resolution and the debug view as toggles, the
+`Volumetrics` and `VolumeRaymarch` timers, and a **froxel slice**: pick the integrated volume, the
+scatter volume or its alpha (transmittance, or extinction), a slice and an exposure and it is shown as
+an image. In code, `Internal::Renderer3DAccess::RequestVolumetricSlice` asks the next dispatching
+scene for one, copied into a 2D texture of the grid's width and height after the two fog passes.
 
 ## What gets fogged
 
@@ -92,6 +198,7 @@ covers both passes; the F9 Scene tab shows a `FogComponent`'s volumetric fields 
 | [Particles](particles.md) | Every particle fragment, alpha and additive, before it is premultiplied. |
 | The [sky](environment.md) | The sky takes the fog to `MaxDistance` (the last slice), so the horizon meets the haze. |
 | Custom shaders | Include the contract below. |
+| Raymarch volumes | The composite after the opaque meshes and the sky; translucent meshes and particles are not hazed by them (see Raymarch volumes). |
 
 There is no ambient occlusion fade under the volume: AO is applied after the fog (it multiplies the
 fogged colour), so SSAO darkens dense haze as well as the surfaces.
@@ -155,9 +262,17 @@ vec3 fogged(vec3 color, vec3 worldPosition, int target)   // target: 0 opaque/al
 - An orthographic camera gets no volume.
 - One temporal scene a frame: a second view that frame, such as a minimap or a mirror, draws
   without the history.
-- The volume is a global fog; local volumes, point and spot light scattering and noise come later
-  in v1.3.
 - Only the first casting directional light shadows the shafts, as for surfaces.
+- The temporal reprojection under a drifting noisy volume is less accurate with strong anisotropy:
+  the worst error measured is 0.012 at `Anisotropy` other than 0, against 0.0078 for `g = 0`.
+- Raymarch volumes ignore point and spot lights, do no near-fade clipping of the ray start (the fades
+  weight samples only), are not seen by translucent meshes and particles, and the froxel fog in front
+  of one also takes its transmittance (see Raymarch volumes).
+- A Raymarch volume needs the post chain; a failed raymarch shader compile drops the volumes with a
+  logged error instead of falling back to froxel.
+- The depth-aware upsample can leave a faint pattern on smooth haze at quarter resolution.
+- A very thin bright haze, where the transmittance rounds to 1 in the RGBA16F result, is dropped by
+  the composite: the pixel keeps no in-scatter.
 
 ## Checking it
 
@@ -169,26 +284,33 @@ reset), then a 2 x 2 view: sun shafts through a slatted wall, height fog over bo
 PBR sphere, one sun seen with `Anisotropy` -0.5, 0 and 0.8, and a dense fog over spheres at four
 distances with a translucent sphere, particles and the sky.
 
+`--test=volume` runs the Fog Volume Test (budget and culling, `Scene` records against the direct API,
+density and edge profiles, height profile, fades, noise against the CPU noise, drift, tint and
+overlap mixtures, local lights, the debug view and its slice texture), and `--test=raymarch` the
+Raymarch Fog Test (uniform box against the closed form at half and quarter resolution, depth edges,
+shafts, cap, fades, steps, the froxel mix, translucents, a custom shader, resize, two scenes in
+one `Begin`, and the debug view). Both read results back from the GPU.
+
 ## Headstone questions
 
 A game's hall-haze note (the Coffin Works hall) asked these. Answers: **yes** with the API, **later**
-with the phase, or **no** with why.
+with the phase, or **no** with why. H9 alone is still open.
 
 | # | Question | Answer |
 |---|---|---|
 | H1 | An in-scatter tint apart from the light's colour | **Yes**: `VolumetricFog::ScatterTint`, finite and 0 or more, not clamped, in-scatter only. Per-volume tint comes with local volumes. |
-| H2 | A vertical density profile inside a box | **Later** (local volumes): a height gradient or curve on the volume component. Globally, `BaseHeight` and `HeightFalloff`. |
-| H3 | A cap on the in-scatter per pixel; a per-volume near fade; does the volume dim the surface behind it | **Dims: yes**, the apply is `colour * T + L`. The cap and the near fade come with local volumes. |
+| H2 | A vertical density profile inside a box | **Yes**: `HeightFadeStart/End` and `HeightBandBottom/Top/Multiplier/Softness` on `FogVolume`, in metres above the volume's bottom along its local up, so Headstone's heights hold when the box sits at y = 0. Globally, `BaseHeight` and `HeightFalloff`. |
+| H3 | A cap on the in-scatter per pixel; a per-volume near fade; does the volume dim the surface behind it | **Yes**: `FogVolume::MaxInScatter` per pixel in Raymarch mode (froxel volumes share `VolumetricFog::MaxInScatter`; no global fog, no cap) and `NearFadeStart/End/Keep`, in-scatter only. The volume dims what is behind it (`colour * T + L`). |
 | H4 | A smooth fade where the cascades end | **Yes**, internal: the shadow fades over the last cascade's tail with `CascadeBlend`'s width. |
-| H5 | Scrolling noise: scale, drift, min and max density | **Later** (local volumes): all four as fields. |
-| H6 | High, low and off knobs at runtime | **Yes**: `SetVolumetricsEnabled` and `SetVolumetricGrid`. The ray-march quality knobs come with local volumes. |
+| H5 | Scrolling noise: scale, drift, min and max density | **Yes**: `NoiseScale`, `NoiseVelocity`, `NoiseMin`, `NoiseMax`, with the clock `SetFogVolumeTime` (the Scene advances it). |
+| H6 | High, low and off knobs at runtime | **Yes**: `SetVolumetricsEnabled`, `SetVolumetricGrid`, `SetVolumeRaymarchResolution` (global, half or quarter) and `FogVolume::RaymarchSteps` per volume. |
 | H7 | A box volume with shadows off | **Yes**: an unshadowed light is lit and the ambient in-scatter is separate; both are checked. |
 | H8 | The inject and integrate passes on DX11 and Vulkan, Windows and Linux | **Yes**: compute passes on Vulkan, DX11 and DX12, and Linux runs Vulkan. |
 | H9 | Measured cost on a mid-range GPU | **Later** (the showcase phase): only the RX 7900 XTX is measured so far. |
-| H10 | A ray march and the froxel fog in one view; translucents against the march; the march against a custom shader's own distance fog | **Later** (local volumes). |
-| H11 | A debug view of lit, shadowed and outside-cascade samples | **Later** (local volumes), with the grid debug panel. |
+| H10 | A ray march and the froxel fog in one view; translucents against the march; the march against a custom shader's own distance fog | **Yes, with limits**: a Raymarch volume and the froxel fog combine as `(c * Tf + Lf) * Tr + Tf(entry) * Lr`; translucent meshes and particles do **not** see a Raymarch volume (use a Froxel volume for glass); the composite lands on top of a custom shader's output, its distance fog included. Needs the post chain, else a froxel fallback. |
+| H11 | A debug view of lit, shadowed and outside-cascade samples | **Yes**: `SetVolumetricDebugView(ShadowSamples)` (green lit, red shadowed, blue outside, yellow unshadowed) in both paths, and the F9 volumetrics block with a froxel slice view. |
 | H12 | Past the last cascade: lit or dark, fade kept | **Yes**: `VolumetricFog::OutsideShadowLight`, 0..1, default 1. A light with no shadow stays unshadowed. |
-| H13 | Only the directional light scatters | **Later** (local-light scattering): a local-light intensity where 0 is directional only. |
-| H14 | Ray-length thinning of the in-scatter; a fade when looking along the beam | **Later**: a far fade beside the near fade. Looking along a beam is `Anisotropy` and the cap. |
-| H15 | A box volume as the only fog, no global fog | **Later** (local volumes). Until then a global fog with `Density` 0 works. |
-| H16 | Reset the history on a camera cut; stability at four times the timescale | **Yes**: `Renderer3D::ResetVolumetricHistory()` and `CameraComponent::ResetVolumetricHistory`. The history is per frame and the medium is static, so the timescale doesn't matter. |
+| H13 | Only the directional light scatters | **Yes**: `VolumetricFog::LocalLightIntensity` and `FogVolume::LocalLightIntensity` (0 is directional only) and `VolumetricIntensity` on every light. |
+| H14 | Ray-length thinning of the in-scatter; a fade when looking along the beam | **Yes**: `FarFadeStart/End/Keep` beside the near fade, in-scatter only. Looking along a beam is `Anisotropy` and the cap. |
+| H15 | A box volume as the only fog, no global fog | **Yes**: a froxel volume alone turns the pass on (the distance `Fog` stays; the range is 0.5 to 64 unless a `Density` 0 global fog sets it). |
+| H16 | Reset the history on a camera cut; stability at four times the timescale | **Yes**: `Renderer3D::ResetVolumetricHistory()` and `CameraComponent::ResetVolumetricHistory`. The history is per frame, and drifting noise is reprojected by the drift `SetFogVolumeTime` reports, so the timescale doesn't matter. |
