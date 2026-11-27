@@ -9,7 +9,7 @@
 
 namespace
 {
-	constexpr size_t k_VariantCount = 6;
+	constexpr size_t k_VariantCount = 10;
 	constexpr uint32_t k_BrdfLutSize = 128;
 
 	// A variant that failed to compile stays here, invalid and watched, so it is neither rebuilt nor
@@ -43,8 +43,17 @@ namespace Dingo::Internal
 		case EnvironmentShaderVariant::ShProject:    params.SetName("EnvironmentShShader").AddDefine("DE_ENV_SH"); break;
 		case EnvironmentShaderVariant::SpecularPrefilter: params.SetName("EnvironmentPrefilterShader").AddDefine("DE_ENV_PREFILTER"); break;
 		case EnvironmentShaderVariant::BrdfLut:      params.SetName("IblBrdfLutShader").AddDefine("DE_IBL_BRDF_LUT"); break;
+		case EnvironmentShaderVariant::SkyTransmittance: params.SetName("SkyTransmittanceShader").AddDefine("DE_SKY_TRANSMITTANCE"); break;
+		case EnvironmentShaderVariant::SkyMultiScatter: params.SetName("SkyMultiScatterShader").AddDefine("DE_SKY_MULTISCATTER"); break;
+		case EnvironmentShaderVariant::SkyView:      params.SetName("SkyViewShader").AddDefine("DE_SKY_VIEW"); break;
+		case EnvironmentShaderVariant::SkyCube:      params.SetName("SkyCubeShader").AddDefine("DE_SKY_CUBE"); break;
 		}
-		shader = CreateEngineShader(params, variant == EnvironmentShaderVariant::Skybox ? "Skybox.glsl" : "EnvironmentBake.glsl");
+		const char* file = "EnvironmentBake.glsl";
+		if (variant == EnvironmentShaderVariant::Skybox)
+			file = "Skybox.glsl";
+		else if (variant >= EnvironmentShaderVariant::SkyTransmittance)
+			file = "ProceduralSky.glsl";
+		shader = CreateEngineShader(params, file);
 		if (shader)
 			WatchUnmanagedShader(shader);
 		return shader && shader->IsValid() ? shader : nullptr;

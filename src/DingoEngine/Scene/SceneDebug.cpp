@@ -745,11 +745,13 @@ namespace Dingo
 					Section& section = AddSection(out, "Skybox");
 					Add(section, "Enabled", Text(sky->Enabled));
 					Add(section, "Visible", Text(sky->Visible));
-					Add(section, "Environment", sky->Environment ? std::format("#{} {} px faces, {}", sky->Environment->GetId(), sky->Environment->GetFaceSize(), sky->Environment->IsReady() ? "baked" : "not baked") : std::string("none"));
+					Add(section, "Environment", sky->Environment ? std::format("#{} {} px faces, {}, {}", sky->Environment->GetId(), sky->Environment->GetFaceSize(), sky->Environment->IsProcedural() ? "procedural" : ".hdr", sky->Environment->IsReady() ? "baked" : "not baked") : std::string("none"));
 					Add(section, "Intensity", Text(sky->Intensity));
 					Add(section, "Rotation", std::format("{:.1f} deg", sky->Rotation));
 					Add(section, "Lighting", Text(sky->Lighting));
 					Add(section, "Lighting intensity", Text(sky->LightingIntensity));
+					Add(section, "Follow sun", Text(sky->FollowSun));
+					Add(section, "Tint sun", Text(sky->TintSun));
 				}
 
 				if (const RigidBody2DComponent* body = registry.try_get<RigidBody2DComponent>(handle))

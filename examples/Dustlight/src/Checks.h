@@ -32,6 +32,7 @@ namespace Dingo
 		std::vector<Stage> m_Stages;
 		size_t m_Index = 0;
 		int m_Wait = -1;
+		uint32_t m_StageBakes = 0;
 		int m_ReadyFrames = 0;
 		bool m_SunChecked = false;
 		bool m_Built = false;

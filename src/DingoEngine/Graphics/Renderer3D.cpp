@@ -205,6 +205,27 @@ namespace
 		return std::isfinite(value) ? value : fallback;
 	}
 
+	float SrgbChannelToLinear(float c)
+	{
+		return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
+	}
+
+	float LinearChannelToSrgb(float c)
+	{
+		c = std::max(c, 0.0f);
+		return c <= 0.0031308f ? c * 12.92f : 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f;
+	}
+
+	glm::vec3 SrgbToLinear(const glm::vec3& c)
+	{
+		return glm::vec3(SrgbChannelToLinear(c.x), SrgbChannelToLinear(c.y), SrgbChannelToLinear(c.z));
+	}
+
+	glm::vec3 LinearToSrgb(const glm::vec3& c)
+	{
+		return glm::vec3(LinearChannelToSrgb(c.x), LinearChannelToSrgb(c.y), LinearChannelToSrgb(c.z));
+	}
+
 	// A lit material is known by its shader, and the renderer that draws it need not be the one that
 	// created it.
 	std::vector<const Dingo::Shader*> s_LitShaders;
@@ -659,10 +680,15 @@ namespace Dingo
 		}
 		const SceneEnvironment environment = m_PendingEnvironment;
 		const bool perspective = m_CameraData.CameraPosition.w > 0.5f;
-		if (environment.Environment && !environment.Environment->IsReady())
+		m_SkySun = glm::vec4(0.0f);
+		if (environment.Environment && environment.Environment->IsProcedural())
+			ApplyProceduralSun(environment);
+		if (environment.Environment && Internal::EnvironmentAccess::NeedsBake(environment.Environment))
 		{
 			DE_PROFILE_SCOPE("Renderer3D::PrepareEnvironment");
-			m_Statistics.EnvironmentBakes += environment.Environment->Prepare() ? 1 : 0;
+			const uint64_t generation = Internal::EnvironmentAccess::GetBakeGeneration(environment.Environment);
+			environment.Environment->Prepare();
+			m_Statistics.EnvironmentBakes += Internal::EnvironmentAccess::GetBakeGeneration(environment.Environment) != generation ? 1 : 0;
 		}
 		const bool drawSky = environment.Environment && environment.DrawSkybox && environment.Environment->IsReady() && perspective;
 		const bool environmentLit = PrepareEnvironmentLighting(environment);
@@ -670,7 +696,8 @@ namespace Dingo
 		m_CameraData.EnvironmentParams = glm::vec4(0.0f);
 		if (environmentLit)
 		{
-			const float radians = glm::radians(-environment.Rotation);
+			const float rotation = environment.Environment->IsProcedural() ? 0.0f : environment.Rotation;
+			const float radians = glm::radians(-rotation);
 			m_CameraData.EnvironmentParams = glm::vec4(1.0f, environment.Intensity * environment.LightingIntensity, std::cos(radians), std::sin(radians));
 		}
 		PrepareVolumetrics(perspective);
@@ -2915,6 +2942,33 @@ namespace Dingo
 		return true;
 	}
 
+	void Renderer3D::ApplyProceduralSun(const SceneEnvironment& environment)
+	{
+		Environment* sky = environment.Environment;
+		glm::vec3 travel = sky->GetSky()->SunDirection;
+		const int directionalCount = m_CameraData.LightCounts.x;
+		if (directionalCount > 0)
+		{
+			const int main = m_ShadowLight >= 0 && m_ShadowLight < directionalCount ? m_ShadowLight : 0;
+			DirectionalLightData& light = m_CameraData.DirectionalLights[main];
+			const glm::vec3 direction = glm::vec3(light.Direction);
+			if (IsFinite(direction) && glm::dot(direction, direction) > 1.0e-12f)
+			{
+				if (environment.FollowSun)
+				{
+					Internal::EnvironmentAccess::SetSunDirection(sky, direction);
+					travel = direction;
+				}
+				if (environment.TintSun)
+				{
+					const glm::vec3 transmittance = sky->GetSunTransmittance(direction);
+					light.Color = glm::vec4(LinearToSrgb(SrgbToLinear(glm::vec3(light.Color)) * transmittance), light.Color.a);
+				}
+			}
+		}
+		m_SkySun = glm::vec4(travel, 1.0f);
+	}
+
 	bool Renderer3D::DrawSkybox(const SceneEnvironment& environment)
 	{
 		DE_PROFILE_SCOPE("Renderer3D::DrawSkybox");
@@ -2940,10 +2994,20 @@ namespace Dingo
 		}
 		entry.Used = true;
 
-		const float radians = glm::radians(-environment.Rotation);
+		const Environment* source = environment.Environment;
+		const float radians = glm::radians(source->IsProcedural() ? 0.0f : -environment.Rotation);
 		SkyboxData data;
 		data.InverseViewProjection = glm::mat4(glm::inverse(glm::dmat4(m_CameraData.ViewProjection)));
 		data.Params = glm::vec4(std::cos(radians), std::sin(radians), environment.Intensity, 0.0f);
+		if (source->IsProcedural() && m_SkySun.w > 0.5f && source->GetSky()->SunDiscRadius > 0.0f)
+		{
+			const ProceduralSky& sky = *source->GetSky();
+			const glm::vec3 travel = glm::vec3(m_SkySun);
+			const float groundRatio = Internal::EnvironmentAccess::GetGroundRatio(sky);
+			const glm::vec3 radiance = SrgbToLinear(sky.SunColor) * (sky.SunIntensity * sky.SunDiscIntensity * environment.Intensity) * source->GetSunTransmittance(travel);
+			data.Sun = glm::vec4(-glm::normalize(travel), std::cos(glm::radians(sky.SunDiscRadius)));
+			data.SunDisc = glm::vec4(radiance, -std::sqrt(std::max(1.0f - groundRatio * groundRatio, 0.0f)));
+		}
 		if (m_SceneVolumeParams.x > 0.5f)
 			data.Volume = glm::vec4(1.0f, 1.0f - 0.5f / m_SceneVolumeGrid.z, 0.0f, 0.0f);
 		Internal::MaterialAccess::SetVolumetricResources(entry.Sky, m_VolumetricIntegrated, nullptr);

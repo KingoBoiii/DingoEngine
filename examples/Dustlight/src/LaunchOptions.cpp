@@ -50,7 +50,7 @@ namespace
 		ParseFlag(args, "check", options.Check);
 		ParseFlag(args, "no-raymarch", options.NoRaymarch);
 		ParseFlag(args, "freeze", options.Freeze);
-		ParseNumber(args, "env", 0, 2, options.Environment);
+		ParseNumber(args, "env", 0, 3, options.Environment);
 		ParseNumber(args, "view", 1, 3, options.View);
 		ParseNumber(args, "time", 0.0f, 24.0f, options.TimeHours);
 		return options;

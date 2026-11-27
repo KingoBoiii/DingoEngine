@@ -20,7 +20,11 @@ namespace Dingo::Internal
 		Skybox,
 		ShProject,
 		SpecularPrefilter,
-		BrdfLut
+		BrdfLut,
+		SkyTransmittance,
+		SkyMultiScatter,
+		SkyView,
+		SkyCube
 	};
 
 	// Created on first use, on the main thread, and shared by every Environment; nullptr while it is not valid (it failed to compile, and no hot reload has fixed it).

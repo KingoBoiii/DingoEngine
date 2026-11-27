@@ -21,7 +21,7 @@ On Linux the executable is `build/bin/Debug-linux-x86_64/Dustlight/Dustlight`.
 - Dust motes drifting in the beams, and a raymarch fog volume in the west alcove.
 - Props: a wooden table, a brass vase, crates, and a grid of 24 spheres (roughness left to
   right, metallic bottom to top) next to an emissive sphere that blooms.
-- Three environments (sunny sky, Venice sunset, moonless night), baked over the first frames, one per frame, then switched instantly.
+- Four environments: three HDR panoramas (sunny sky, Venice sunset, moonless night), baked over the first frames, one per frame, then switched instantly, and a procedural sky whose sun disc, colour and re-baked lighting follow the time of day.
 
 ## Controls
 
@@ -34,14 +34,14 @@ On Linux the executable is `build/bin/Debug-linux-x86_64/Dustlight/Dustlight`.
 
 The panel has the time of day, the environment, volumetric fog on/off, the froxel grid size, temporal
 blending, the debug view, the raymarch switch and resolution, the room and sphere volumes and their
-density, the lantern, the dust motes, and the GPU timers `Volumetrics`, `VolumeRaymarch` and `Environment`.
+density, the lantern, the procedural sky's turbidity and sun disc, the dust motes, and the GPU timers `Volumetrics`, `VolumeRaymarch` and `Environment`.
 
 ## Flags
 
 | Flag | Effect |
 |---|---|
 | `--check` | Steps through the feature switches, logs `[PASS]`/`[FAIL]` lines, `Dustlight cost: ...` and `DUSTLIGHT CHECK: N passed, M failed`, then closes |
-| `--env=0\|1\|2` | Starts on that environment |
+| `--env=0\|1\|2\|3` | Starts on that environment |
 | `--time=<hours>` | Starts at that time of day (0 to 24; the sun is up from 7 to 18) |
 | `--view=1\|2\|3` | Starts at that camera preset |
 | `--no-raymarch` | Starts with the raymarch volume off |

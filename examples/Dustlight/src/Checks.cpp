@@ -2,7 +2,9 @@
 
 #include "DustlightLayer.h"
 
+#include <algorithm>
 #include <cmath>
+#include <memory>
 #include <cstring>
 
 namespace
@@ -137,6 +139,43 @@ namespace Dingo
 			});
 		}
 
+		struct SkyProbe
+		{
+			glm::vec3 Direction{ 0.0f };
+			glm::vec3 Transmittance{ 0.0f };
+		};
+		auto probe = std::make_shared<SkyProbe>();
+		add([&layer]
+		{
+			layer.SetEnvironment(Environments::k_ProceduralIndex);
+			layer.SetSunTime(12.5f);
+		}, [&layer, probe, this]
+		{
+			const Environment* sky = layer.GetEnvironments().GetProcedural();
+			Check(sky && sky->IsProcedural() && sky->IsReady(), "procedural sky: the environment is procedural and baked");
+			Check(sky && sky->GetSky() && Stats().Skybox && Stats().EnvironmentLighting, "procedural sky: drawn and lighting PBR");
+			if (!sky || !sky->GetSky())
+				return;
+			probe->Direction = sky->GetSky()->SunDirection;
+			probe->Transmittance = sky->GetSunTransmittance(SunCycle::Evaluate(12.5f).Direction);
+			const glm::vec3 light = layer.GetSunEntity().GetComponent<DirectionalLightComponent>().Direction;
+			Check(glm::dot(glm::normalize(probe->Direction), glm::normalize(light)) > std::cos(glm::radians(0.3f)), "procedural sky: the baked sun follows the light at 12.5 h");
+		});
+		add([&layer] { layer.SetSunTime(17.0f); }, [&layer, probe, this]
+		{
+			const Environment* sky = layer.GetEnvironments().GetProcedural();
+			if (!sky || !sky->GetSky())
+			{
+				Check(false, "procedural sky: the environment exists at 17 h");
+				return;
+			}
+			const glm::vec3 now = sky->GetSky()->SunDirection;
+			const float moved = glm::degrees(std::acos(std::clamp(glm::dot(glm::normalize(now), glm::normalize(probe->Direction)), -1.0f, 1.0f)));
+			Check(moved > 0.25f && m_StageBakes > 0 && sky->IsReady(), "procedural sky: the sky re-bakes when the time of day moves the sun (" + std::to_string(moved) + " deg, " + std::to_string(m_StageBakes) + " bakes)");
+			const glm::vec3 evening = sky->GetSunTransmittance(SunCycle::Evaluate(17.0f).Direction);
+			Check(evening.g < probe->Transmittance.g && evening.b < probe->Transmittance.b, "procedural sky: the sun's transmittance is lower at 17 h than at 12.5 h");
+		});
+
 		add([&layer]
 		{
 			layer.SetEnvironment(0);
@@ -243,9 +282,11 @@ namespace Dingo
 		if (m_Wait < 0)
 		{
 			m_Stages[m_Index].Enter();
+			m_StageBakes = 0;
 			m_Wait = k_SettleFrames;
 			return;
 		}
+		m_StageBakes += Stats().EnvironmentBakes;
 		if (--m_Wait > 0)
 			return;
 
