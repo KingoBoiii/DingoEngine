@@ -2,6 +2,7 @@
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Shader.h"
 #include "DingoEngine/Graphics/Material.h"
+#include "DingoEngine/Graphics/PbrMaterial.h"
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/Frustum.h"
@@ -496,6 +497,14 @@ namespace Dingo
 		/// created it shuts down.
 		[[nodiscard]] Material* CreateLitMaterial(MaterialParams params) const;
 
+		/// How many texture slots a PBR material has (PbrTextureSlot::Count).
+		static constexpr uint32_t k_PbrTextureSlots = 5;
+
+		/// A metallic-roughness PBR material with its five texture slots (PbrTextureSlot) filled
+		/// from params, white where a map is null. Same ownership as CreateLitMaterial. Returns
+		/// nullptr and logs an error when it can't be made.
+		[[nodiscard]] Material* CreatePbrMaterial(const PbrMaterialParams& params) const;
+
 		/// The material meshes with no material of their own are drawn with, for changing their
 		/// shared emissive, Roughness or Specular.
 		Material* GetDefaultMaterial() const { return m_Material; }
@@ -612,6 +621,8 @@ namespace Dingo
 			uint32_t StaticDraws = 0;
 			/// Static batch cells baked (or emptied) by this scene's submissions.
 			uint32_t StaticCellsBaked = 0;
+			/// Draws with a PBR material (CreatePbrMaterial), also counted in DrawCalls.
+			uint32_t PbrDraws = 0;
 			/// Where each cascade ends along the view.
 			float ShadowCascadeEnds[k_MaxShadowCascades] = {};
 			bool Fogged = false; ///< the scene was drawn with fog: SetFog, and a perspective camera
@@ -758,7 +769,7 @@ namespace Dingo
 		struct ObjectRecord
 		{
 			glm::vec4 Emissive{ 0.0f }; // rgb = colour, a = strength
-			glm::vec4 Surface{ 0.0f };  // x = roughness, y = specular
+			glm::vec4 Surface{ 0.0f };  // x = roughness, y = specular, z = metallic (PBR only)
 		};
 		static_assert(sizeof(ObjectRecord) == 32, "ObjectRecord must match the std430 struct in Renderer3D_Lit.glsl");
 		std::vector<ObjectRecord> m_ObjectRecords;

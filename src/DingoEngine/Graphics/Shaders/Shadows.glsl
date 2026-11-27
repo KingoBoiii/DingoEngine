@@ -2,7 +2,8 @@
 // <DingoEngine/Shadows.glsl>. Mirrors Renderer3D::ShadowData. The three resources are found by name
 // (ShadowData, u_ShadowAtlas, u_ShadowSampler), so a custom shader can move them to bindings its own
 // leave free by defining DE_SHADOW_DATA_BINDING (13 at most, D3D11's constant buffers),
-// DE_SHADOW_ATLAS_BINDING and DE_SHADOW_SAMPLER_BINDING (15 at most) before including it. The lit
+// DE_SHADOW_ATLAS_BINDING and DE_SHADOW_SAMPLER_BINDING before including it. The sampler's binding stays
+// at 15 or below (D3D11 has 16 sampler slots); the atlas is a shader resource and may sit higher. The lit
 // shader takes 5, 6 and 7.
 //
 // DirectionalShadow(worldPosition, normal) is 1 where the shadowed directional light reaches the

@@ -552,8 +552,9 @@ namespace Dingo
 		/// The model to draw; not owned. Null draws nothing.
 		Dingo::Model* Model = nullptr;
 		glm::vec4 Color{ 1.0f }; ///< RGBA tint, as on MeshRendererComponent.
-		/// Optional material applied to every submesh; null uses the built-in lit material. Not
-		/// owned.
+		/// Optional material applied to every submesh. Null draws each submesh with its own PBR
+		/// material when the model was imported with ModelLoadParams::PbrMaterials, and the
+		/// built-in lit material otherwise. Not owned.
 		Dingo::Material* Material = nullptr;
 		bool Visible = true; ///< False skips the entity: neither drawn nor casting shadows.
 		ShadowCasting Shadows = ShadowCasting::On; ///< See MeshRendererComponent.

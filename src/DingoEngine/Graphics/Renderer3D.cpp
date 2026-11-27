@@ -9,6 +9,7 @@
 #include "DingoEngine/Graphics/LightMath.h"
 #include "DingoEngine/Graphics/ShadowAtlasAllocator.h"
 #include "DingoEngine/Graphics/ParticleRenderer.h"
+#include "DingoEngine/Graphics/PbrShaders.h"
 #include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Graphics/SkinnedVisibility.h"
 #include "DingoEngine/Graphics/StaticBatchData.h"
@@ -206,7 +207,12 @@ namespace
 
 	bool IsLitShader(const Dingo::Shader* shader)
 	{
-		return shader && std::find(s_LitShaders.begin(), s_LitShaders.end(), shader) != s_LitShaders.end();
+		return shader && (std::find(s_LitShaders.begin(), s_LitShaders.end(), shader) != s_LitShaders.end() || Dingo::Internal::IsPbrShader(shader));
+	}
+
+	bool IsPbrMaterial(const Dingo::Material& material)
+	{
+		return Dingo::Internal::IsPbrShader(material.GetShader());
 	}
 
 	uint32_t FloorPowerOfTwo(uint32_t value)
@@ -243,22 +249,41 @@ namespace
 	void FillObjectRecord(const Dingo::SurfaceOverride& surface, glm::vec4& emissive, glm::vec4& surfaceParams)
 	{
 		emissive = glm::vec4(IsFinite(surface.EmissiveColor) ? surface.EmissiveColor : glm::vec3(0.0f), FiniteOr(surface.EmissiveStrength, 0.0f));
-		surfaceParams = glm::vec4(glm::clamp(FiniteOr(surface.Roughness, 0.5f), 0.0f, 1.0f), std::max(FiniteOr(surface.Specular, 0.0f), 0.0f), 0.0f, 0.0f);
+		surfaceParams = glm::vec4(glm::clamp(FiniteOr(surface.Roughness, 0.5f), 0.0f, 1.0f), std::max(FiniteOr(surface.Specular, 0.0f), 0.0f), glm::clamp(FiniteOr(surface.Metallic, 0.0f), 0.0f, 1.0f), 0.0f);
 	}
 
-	bool BindsPastSlotZero(const Dingo::Material& material)
+	uint32_t UsedSlots(const Dingo::Material& material)
 	{
-		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxTextureSlots; ++slot)
+		return IsPbrMaterial(material) ? Dingo::Renderer3D::k_PbrTextureSlots : 1u;
+	}
+
+	// A lit shader declares one texture slot and a PBR shader five; a binding set naming more would
+	// name bindings its layout lacks.
+	bool BindsPastSlot(const Dingo::Material& material, uint32_t slots)
+	{
+		for (uint32_t slot = slots; slot < Dingo::Material::k_MaxTextureSlots; ++slot)
 		{
 			if (material.GetTexture(slot))
 				return true;
 		}
-		for (uint32_t slot = 1; slot < Dingo::Material::k_MaxSamplerSlots; ++slot)
+		for (uint32_t slot = slots; slot < Dingo::Material::k_MaxSamplerSlots; ++slot)
 		{
 			if (material.GetSampler(slot))
 				return true;
 		}
 		return false;
+	}
+
+	bool BindsPastItsSlots(const Dingo::Material& material)
+	{
+		return BindsPastSlot(material, UsedSlots(material));
+	}
+
+	void WarnSlotsPast(const Dingo::Material& material)
+	{
+		const std::string& name = material.GetParams().DebugName;
+		DE_CORE_WARN("Renderer3D: {} material '{}' has a texture or sampler past slot {}, which the {} shader has no binding for; it is not drawn until that slot is cleared.",
+			IsPbrMaterial(material) ? "PBR" : "lit", name.empty() ? "<unnamed>" : name.c_str(), UsedSlots(material) - 1, IsPbrMaterial(material) ? "PBR" : "lit");
 	}
 }
 
@@ -638,6 +663,8 @@ namespace Dingo
 					Renderer::DrawIndexed(material, m_MeshLayout, group.Mesh->m_StaticVertexBuffer, group.Mesh->m_StaticIndexBuffer, group.Mesh->GetIndexCount(), group.Count);
 					++m_Statistics.DrawCalls;
 					++m_Statistics.InstancedDraws;
+					if (IsPbrMaterial(*draw.Key.Material))
+						++m_Statistics.PbrDraws;
 					continue;
 				}
 				const VertexLayout& layout = IsLitShader(material->GetShader()) ? m_LitLayout : m_Layout;
@@ -651,6 +678,8 @@ namespace Dingo
 					Renderer::DrawIndexed(material, layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
 				}
 				++m_Statistics.DrawCalls;
+				if (IsPbrMaterial(*material))
+					++m_Statistics.PbrDraws;
 			}
 		}
 
@@ -942,13 +971,11 @@ namespace Dingo
 			{
 				// The binding set would name bindings the shader's layout lacks, which Vulkan does
 				// not reject: drawing it is undefined behaviour, so the material is skipped.
-				if (BindsPastSlotZero(*material))
+				if (BindsPastItsSlots(*material))
 				{
 					if (!m_LitSlotsWarned)
 					{
-						const std::string& name = material->GetParams().DebugName;
-						DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-							name.empty() ? "<unnamed>" : name.c_str());
+						WarnSlotsPast(*material);
 						m_LitSlotsWarned = true;
 					}
 					continue;
@@ -1575,6 +1602,12 @@ namespace Dingo
 		if (!IsLitShader(material->GetShader()))
 			return material;
 
+		if (IsPbrMaterial(*material))
+		{
+			if (Shader* pbr = Internal::GetPbrShader(Internal::PbrShaderVariant::Instanced))
+				return GetTwin(m_InstancedTwins, material, pbr, "_Instanced");
+		}
+
 		if (!m_InstancedShader)
 		{
 			m_InstancedShader = CreateLitShader(k_InstancedLitShaderName, "DE_INSTANCED");
@@ -1627,14 +1660,12 @@ namespace Dingo
 			return false;
 		}
 
-		const bool usable = !BindsPastSlotZero(*material);
+		const bool usable = !BindsPastItsSlots(*material);
 		if (usable)
 			PrepareLitMaterial(material);
 		else if (!m_LitSlotsWarned)
 		{
-			const std::string& name = material->GetParams().DebugName;
-			DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-				name.empty() ? "<unnamed>" : name.c_str());
+			WarnSlotsPast(*material);
 			m_LitSlotsWarned = true;
 		}
 		m_TranslucentMaterials.emplace_back(material, usable);
@@ -1845,6 +1876,8 @@ namespace Dingo
 			++m_Statistics.DrawCalls;
 			++m_Statistics.TranslucentDraws;
 			m_Statistics.TranslucentMeshes += draw.Meshes;
+			if (IsPbrMaterial(*material))
+				++m_Statistics.PbrDraws;
 		}
 		m_TranslucentDraws.clear();
 	}
@@ -2062,7 +2095,10 @@ namespace Dingo
 	{
 		Material* requested = material ? material : m_Material;
 		if (IsLitShader(requested->GetShader()))
-			return GetTwin(m_SkinnedTwins, requested, m_SkinnedShader, "_Skinned");
+		{
+			Shader* shader = IsPbrMaterial(*requested) ? Internal::GetPbrShader(Internal::PbrShaderVariant::Skinned) : nullptr;
+			return GetTwin(m_SkinnedTwins, requested, shader ? shader : m_SkinnedShader, "_Skinned");
+		}
 
 		const bool palette = UsesSkinPalette(requested->GetShader());
 		const bool usable = HasUsableSkinBlock(requested);
@@ -2106,6 +2142,8 @@ namespace Dingo
 	Material* Renderer3D::GetTwin(TwinMap& twins, Material* source, Shader* shader, const char* suffix)
 	{
 		SkinnedTwin& entry = twins[source->GetId()];
+		if (entry.Twin && entry.Twin->GetShader() != shader)
+			DestroyAndDelete(entry.Twin);
 		if (!entry.Twin)
 		{
 			MaterialParams twinParams = source->GetParams();
@@ -2117,12 +2155,27 @@ namespace Dingo
 		Material* twin = entry.Twin;
 		// A slot's pointer changing rebuilds the twin's pipelines, so an empty source slot maps to
 		// the same default PrepareLitMaterial would put there.
-		twin->SetTexture(0, source->GetTexture(0) ? source->GetTexture(0) : Renderer::GetWhiteTexture());
-		twin->SetSampler(0, source->GetSampler(0) ? source->GetSampler(0) : Renderer::GetClampSampler());
 		twin->SetEmissiveColor(source->GetEmissiveColor());
 		twin->SetEmissiveStrength(source->GetEmissiveStrength());
 		twin->SetRoughness(source->GetRoughness());
 		twin->SetSpecular(source->GetSpecular());
+		if (Internal::IsPbrShader(shader))
+		{
+			for (uint32_t slot = 0; slot < k_PbrTextureSlots; ++slot)
+			{
+				twin->SetTexture(slot, source->GetTexture(slot) ? source->GetTexture(slot) : Renderer::GetWhiteTexture());
+				twin->SetSampler(slot, source->GetSampler(slot) ? source->GetSampler(slot) : Internal::GetPbrSampler());
+			}
+			twin->SetBaseColor(source->GetBaseColor());
+			twin->SetMetallic(source->GetMetallic());
+			twin->SetOcclusion(source->GetOcclusion());
+			twin->SetNormalScale(source->GetNormalScale());
+		}
+		else
+		{
+			twin->SetTexture(0, source->GetTexture(0) ? source->GetTexture(0) : Renderer::GetWhiteTexture());
+			twin->SetSampler(0, source->GetSampler(0) ? source->GetSampler(0) : Renderer::GetClampSampler());
+		}
 		PrepareLitMaterial(twin);
 		return twin;
 	}
@@ -2326,13 +2379,11 @@ namespace Dingo
 
 		// The same rule as the static path, so a material draws the same way skinned or not.
 		Material* requested = submission.Material ? submission.Material : m_Material;
-		if (IsLitShader(requested->GetShader()) && BindsPastSlotZero(*requested))
+		if (IsLitShader(requested->GetShader()) && BindsPastItsSlots(*requested))
 		{
 			if (!m_LitSlotsWarned)
 			{
-				const std::string& name = requested->GetParams().DebugName;
-				DE_CORE_WARN("Renderer3D: lit material '{}' has a texture or sampler past slot 0, which the lit shader has no binding for; it is not drawn until that slot is cleared.",
-					name.empty() ? "<unnamed>" : name.c_str());
+				WarnSlotsPast(*requested);
 				m_LitSlotsWarned = true;
 			}
 			return 0;
@@ -2368,6 +2419,8 @@ namespace Dingo
 
 		m_Statistics.DrawCalls += draws;
 		m_Statistics.SkinnedDraws += draws;
+		if (IsPbrMaterial(*requested))
+			m_Statistics.PbrDraws += draws;
 		++m_Statistics.SubmittedMeshes;
 		return draws;
 	}
@@ -2380,8 +2433,19 @@ namespace Dingo
 		return material;
 	}
 
+	Material* Renderer3D::CreatePbrMaterial(const PbrMaterialParams& params) const
+	{
+		return Internal::CreatePbrMaterial(params);
+	}
+
 	void Renderer3D::PrepareLitMaterial(Material* material) const
 	{
+		if (IsPbrMaterial(*material))
+		{
+			Internal::PreparePbrMaterial(material);
+			return;
+		}
+
 		// The lit shader always samples an albedo texture, and a material's binding set has to
 		// match the shader's exactly.
 		if (!material->GetTexture(0))
@@ -3612,7 +3676,7 @@ namespace Dingo
 		{
 			const Material* material = submission.Material ? submission.Material : m_Material;
 			return submission.ShadowDrawn && !m_SkinnedInstanceDropped[submission.Instance] &&
-				!(IsLitShader(material->GetShader()) && BindsPastSlotZero(*material));
+				!(IsLitShader(material->GetShader()) && BindsPastItsSlots(*material));
 		};
 		bool skinnedCasts = false;
 		for (const SkinnedSubmission& submission : m_SkinnedSubmissions)

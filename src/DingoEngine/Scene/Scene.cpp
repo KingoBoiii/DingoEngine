@@ -9,6 +9,7 @@
 #include "DingoEngine/Graphics/Renderer3D.h"
 #include "DingoEngine/Graphics/Renderer3DAccess.h"
 #include "DingoEngine/Graphics/Model.h"
+#include "DingoEngine/Graphics/PbrShaders.h"
 
 #include "DingoEngine/Scene/SceneDebug.h"
 #include "DingoEngine/Scene/SceneData.h"
@@ -868,10 +869,14 @@ namespace Dingo
 			const std::span<const glm::mat4> palette = skeleton ? Internal::AnimationSystem::Palette(m_Data->Registry, entity, *skeleton) : std::span<const glm::mat4>();
 			for (const SubMesh& submesh : skinned.Model->GetSubMeshes())
 			{
+				Material* material = skinned.Material;
+				if (!material && submesh.Material && Internal::IsPbrShader(submesh.Material->GetShader()))
+					material = submesh.Material;
+
 				if (skeleton && submesh.Mesh->HasSkin())
-					renderer.SubmitSkinnedMesh(submesh.Mesh, world, palette, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
+					renderer.SubmitSkinnedMesh(submesh.Mesh, world, palette, skinned.Color, material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
 				else
-					renderer.SubmitMesh(submesh.Mesh, world, skinned.Color, skinned.Material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
+					renderer.SubmitMesh(submesh.Mesh, world, skinned.Color, material, skinned.Shadows, skinned.ShadowGroups, skinned.CullDistance);
 			}
 		}
 

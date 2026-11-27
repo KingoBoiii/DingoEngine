@@ -742,6 +742,7 @@ namespace Dingo
 						const SurfaceOverride& surface = *renderer->Surface;
 						Add(section, "Surface emissive", std::format("{} x {:.3f}", Text(surface.EmissiveColor), surface.EmissiveStrength));
 						Add(section, "Surface roughness / specular", std::format("{:.3f} / {:.3f}", surface.Roughness, surface.Specular));
+						Add(section, "Surface metallic", std::format("{:.3f}", surface.Metallic));
 					}
 					else
 					{

@@ -82,6 +82,11 @@ namespace Dingo
 		/// Highlight spread, 0 (small, sharp) to 1 (wide, soft).
 		float       Roughness              = 0.5f;
 		float       Specular               = 0.0f; ///< Highlight strength; 0 is none.
+		/// Base colour multiplier; read only by the PBR shader (Renderer3D::CreatePbrMaterial).
+		glm::vec4   BaseColor              = { 1.0f, 1.0f, 1.0f, 1.0f };
+		float       Metallic               = 0.0f; ///< 0 dielectric to 1 metal; read only by the PBR shader.
+		float       Occlusion              = 1.0f; ///< Ambient occlusion multiplier; read only by the PBR shader.
+		float       NormalScale            = 1.0f; ///< Normal-map strength; read only by the PBR shader.
 
 		///@{
 		/// Each setter sets the field of the same name and returns *this, for chaining.
@@ -107,6 +112,10 @@ namespace Dingo
 		MaterialParams& SetEmissiveStrength(float strength)               { EmissiveStrength = strength; return *this; }
 		MaterialParams& SetRoughness(float roughness)                     { Roughness = roughness; return *this; }
 		MaterialParams& SetSpecular(float specular)                       { Specular = specular; return *this; }
+		MaterialParams& SetBaseColor(const glm::vec4& color)              { BaseColor = color; return *this; }
+		MaterialParams& SetMetallic(float metallic)                       { Metallic = metallic; return *this; }
+		MaterialParams& SetOcclusion(float occlusion)                     { Occlusion = occlusion; return *this; }
+		MaterialParams& SetNormalScale(float scale)                       { NormalScale = scale; return *this; }
 		///@}
 	};
 
@@ -255,12 +264,26 @@ namespace Dingo
 		/// The highlight strength; 0 is none.
 		float             GetSpecular()         const { return m_Params.Specular; }
 		///@{
+		/// The PBR shader's base colour, metallic, occlusion and normal-map strength.
+		const glm::vec4& GetBaseColor()         const { return m_Params.BaseColor; }
+		float             GetMetallic()         const { return m_Params.Metallic; }
+		float             GetOcclusion()        const { return m_Params.Occlusion; }
+		float             GetNormalScale()      const { return m_Params.NormalScale; }
+		///@}
+		///@{
 		/// Change the lit shader's surface settings at run time; free to call every frame and read
 		/// by every mesh drawn with this material that has no SurfaceOverride.
 		void SetEmissiveColor(const glm::vec3& color)  { m_Params.EmissiveColor = color; }
 		void SetEmissiveStrength(float strength)       { m_Params.EmissiveStrength = strength; }
 		void SetRoughness(float roughness)             { m_Params.Roughness = roughness; }
 		void SetSpecular(float specular)               { m_Params.Specular = specular; }
+		///@}
+		///@{
+		/// Change the PBR shader's settings at run time, like the surface setters above.
+		void SetBaseColor(const glm::vec4& color)      { m_Params.BaseColor = color; }
+		void SetMetallic(float metallic)               { m_Params.Metallic = metallic; }
+		void SetOcclusion(float occlusion)             { m_Params.Occlusion = occlusion; }
+		void SetNormalScale(float scale)               { m_Params.NormalScale = scale; }
 		///@}
 
 	private:

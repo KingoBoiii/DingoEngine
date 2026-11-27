@@ -9,6 +9,7 @@
 #include "Tests/Renderer/ShadowTest.h"
 #include "Tests/Renderer/ComputeTest.h"
 #include "Tests/Renderer/TextureSubresourceTest.h"
+#include "Tests/Renderer/PbrMaterialTest.h"
 #include "Tests/Renderer/ParticleTest.h"
 
 #include "Tests/Renderer2D/ColorQuadTest.h"
@@ -82,6 +83,7 @@ namespace Dingo
 		m_Tests.push_back({ "Shadow Test", []() { return new ShadowTest(); } });
 		m_Tests.push_back({ "Compute Test", []() { return new ComputeTest(); } });
 		m_Tests.push_back({ "Texture Subresource Test", []() { return new TextureSubresourceTest(); } });
+		m_Tests.push_back({ "PBR Material Test", []() { return new PbrMaterialTest(); } });
 		m_Tests.push_back({ "Particle Test", []() { return new ParticleTest(); } });
 		m_Tests.push_back({ "Throughput Test", []() { return new ThroughputTest(); } });
 		m_Tests.push_back({ "Display Mode Test", [&]() { return new DisplayModeTest(m_Renderer2D); } });
