@@ -212,6 +212,7 @@ namespace Dingo
 						Set<SpotLightComponent>(Component::SpotLight);
 						Set<FogComponent>(Component::Fog);
 						Set<SkyboxComponent>(Component::Skybox);
+						Set<FogVolumeComponent>(Component::FogVolume);
 						Set<RigidBody2DComponent>(Component::RigidBody2D);
 						Set<BoxCollider2DComponent>(Component::BoxCollider2D);
 						Set<CircleCollider2DComponent>(Component::CircleCollider2D);
@@ -326,6 +327,7 @@ namespace Dingo
 					case Component::SpotLight: return "SpotLight";
 					case Component::Fog: return "Fog";
 					case Component::Skybox: return "Skybox";
+					case Component::FogVolume: return "FogVolume";
 					case Component::RigidBody2D: return "RigidBody2D";
 					case Component::BoxCollider2D: return "BoxCollider2D";
 					case Component::CircleCollider2D: return "CircleCollider2D";
@@ -716,6 +718,26 @@ namespace Dingo
 						Add(section, "Volumetric outside shadow light", Text(volume.OutsideShadowLight));
 						Add(section, "Volumetric temporal", Text(volume.Temporal));
 					}
+				}
+
+				if (const FogVolumeComponent* volume = registry.try_get<FogVolumeComponent>(handle))
+				{
+					const FogVolume& settings = volume->Settings;
+					Section& section = AddSection(out, "FogVolume");
+					Add(section, "Enabled", Text(volume->Enabled));
+					Add(section, "Shape", settings.Shape == FogVolumeShape::Sphere ? "Sphere" : "Box");
+					Add(section, "Mode", settings.Mode == FogVolumeMode::Raymarch ? "Raymarch" : "Froxel");
+					Add(section, "Half extents", Text(settings.HalfExtents));
+					Add(section, "Density", Text(settings.Density));
+					Add(section, "Albedo", Text(settings.Albedo));
+					Add(section, "Anisotropy", Text(settings.Anisotropy));
+					Add(section, "Intensity", std::format("ambient {:.2f}, light {:.2f}, local {:.2f}", settings.AmbientIntensity, settings.LightIntensity, settings.LocalLightIntensity));
+					Add(section, "Edge fade", Text(settings.EdgeFade));
+					Add(section, "Height fade", std::format("{:.2f} to {:.2f}", settings.HeightFadeStart, settings.HeightFadeEnd));
+					Add(section, "Height band", std::format("{:.2f} to {:.2f} x{:.2f} soft {:.2f}", settings.HeightBandBottom, settings.HeightBandTop, settings.HeightBandMultiplier, settings.HeightBandSoftness));
+					Add(section, "Near fade", std::format("{:.2f} to {:.2f} keep {:.2f}", settings.NearFadeStart, settings.NearFadeEnd, settings.NearFadeKeep));
+					Add(section, "Far fade", std::format("{:.2f} to {:.2f} keep {:.2f}", settings.FarFadeStart, settings.FarFadeEnd, settings.FarFadeKeep));
+					Add(section, "Noise", std::format("scale {:.2f}, velocity {}, {:.2f} to {:.2f}", settings.NoiseScale, Text(settings.NoiseVelocity), settings.NoiseMin, settings.NoiseMax));
 				}
 
 				if (const SkyboxComponent* sky = registry.try_get<SkyboxComponent>(handle))

@@ -17,6 +17,7 @@
 #include "DingoEngine/Graphics/SkinnedVisibility.h"
 #include "DingoEngine/Graphics/StaticBatchData.h"
 #include "DingoEngine/Graphics/TextureReadback.h"
+#include "DingoEngine/Graphics/VolumeNoise.h"
 
 #include <glm/gtc/matrix_access.hpp>
 #include <glm/gtc/matrix_inverse.hpp>
@@ -413,6 +414,25 @@ namespace Dingo
 			.SetIsVolatile(true)
 			.SetUpload(BufferUpload::Deferred)
 			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
+		m_FogVolumeBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Renderer3D_FogVolumeData")
+			.SetByteSize(sizeof(FogVolumeData))
+			.SetType(BufferType::UniformBuffer)
+			.SetIsVolatile(true)
+			.SetUpload(BufferUpload::Deferred)
+			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
+		{
+			const std::vector<uint8_t> noise = Internal::GenerateVolumeNoise();
+			m_VolumeNoise = Texture::Create(TextureParams()
+				.SetDebugName("Renderer3D_VolumeNoise")
+				.SetWidth(Internal::k_VolumeNoiseSize)
+				.SetHeight(Internal::k_VolumeNoiseSize)
+				.SetDepth(Internal::k_VolumeNoiseSize)
+				.SetFormat(TextureFormat::R8)
+				.SetDimension(TextureDimension::Texture3D)
+				.SetInitialData(noise.data()));
+			m_VolumeNoiseSampler = Sampler::Create(SamplerParams().SetAddressMode(SamplerAddressMode::Wrap));
+		}
 
 		m_Particles = std::make_unique<Internal::ParticleRenderer>(std::clamp(m_Params.Capabilities.MaxParticles, 64u, k_MaxParticlesLimit));
 		m_SkinnedVisibility = std::make_shared<Internal::SkinnedVisibility>();
@@ -521,9 +541,15 @@ namespace Dingo
 		m_IblSourceGeneration = 0;
 		DestroyAndDelete(m_ShadowDataBuffer);
 		DestroyAndDelete(m_ShadowViewsBuffer);
+		DestroyRaymarchResources();
+		delete m_RaymarchCompositeShader;
+		m_RaymarchCompositeShader = nullptr;
 		DestroyVolumetricResources();
 		DestroyAndDelete(m_VolumetricIntegrated);
 		DestroyAndDelete(m_VolumetricDataBuffer);
+		DestroyAndDelete(m_FogVolumeBuffer);
+		DestroyAndDelete(m_VolumeNoise);
+		DestroyAndDelete(m_VolumeNoiseSampler);
 
 		DestroyAndDelete(m_ProbeMaterial);
 		delete m_ProbeShader;
@@ -615,6 +641,7 @@ namespace Dingo
 		if (m_SceneSkipped)
 		{
 			ClearSceneLights();
+			ResetLightScatter();
 			if (m_Particles)
 				m_Particles->ClearScene();
 			m_SceneStaticBatches.clear();
@@ -699,6 +726,8 @@ namespace Dingo
 
 		Texture* shadowAtlas = m_ShadowAtlas ? m_ShadowAtlas->GetDepthAttachment() : m_PlaceholderShadowAtlas;
 		DispatchVolumetrics(shadowAtlas);
+		UploadRaymarchResources();
+		ResetLightScatter();
 		const Framebuffer* skyTarget = Renderer::GetRenderTarget();
 		const bool skyFirst = skyTarget && !skyTarget->GetParams().EnableDepth;
 		if (drawSky && skyFirst)
@@ -753,6 +782,7 @@ namespace Dingo
 		DrawSkinnedSubmissions();
 		if (drawSky && !skyFirst)
 			m_Statistics.Skybox = DrawSkybox(environment);
+		DrawVolumeRaymarch(shadowAtlas);
 		DrawTranslucentPass(shadowAtlas);
 		m_StaticSubmissions.clear();
 		m_StaticSubmissionData.clear();
@@ -2595,6 +2625,7 @@ namespace Dingo
 		}
 
 		m_CameraData.DirectionalLights[count] = { glm::vec4(light.Direction, 0.0f), glm::vec4(light.Color * light.Intensity, 0.0f) };
+		m_FogVolumeData.DirectionalScatter[count] = std::max(FiniteOr(light.VolumetricIntensity, 1.0f), 0.0f);
 		m_LastSubmittedLight = { count, true };
 		++count;
 		return true;
@@ -2621,6 +2652,7 @@ namespace Dingo
 		candidate->CastShadows = light.CastShadows;
 		candidate->ShadowCasterGroups = light.ShadowCasterGroups;
 		candidate->ShadowStrength = glm::clamp(FiniteOr(light.ShadowStrength, 1.0f), 0.0f, 1.0f);
+		candidate->VolumetricIntensity = std::max(FiniteOr(light.VolumetricIntensity, 1.0f), 0.0f);
 		if constexpr (std::is_same_v<LightType, SpotLight>)
 		{
 			// Past 75 degrees one perspective view would need too wide a field of view.
@@ -2703,14 +2735,16 @@ namespace Dingo
 	{
 		const bool finite = std::isfinite(fog.Density) && std::isfinite(fog.BaseHeight) && std::isfinite(fog.HeightFalloff) && IsFinite(fog.Albedo)
 			&& std::isfinite(fog.Anisotropy) && std::isfinite(fog.AmbientIntensity) && std::isfinite(fog.LightIntensity)
-			&& std::isfinite(fog.NearDistance) && std::isfinite(fog.MaxDistance) && IsFinite(fog.ScatterTint) && std::isfinite(fog.OutsideShadowLight);
+			&& std::isfinite(fog.NearDistance) && std::isfinite(fog.MaxDistance) && IsFinite(fog.ScatterTint) && std::isfinite(fog.OutsideShadowLight)
+			&& std::isfinite(fog.LocalLightIntensity) && std::isfinite(fog.MaxInScatter);
 		const bool usable = finite && fog.Density >= 0.0f && fog.HeightFalloff >= 0.0f && fog.AmbientIntensity >= 0.0f && fog.LightIntensity >= 0.0f
+			&& fog.LocalLightIntensity >= 0.0f && fog.MaxInScatter >= 0.0f
 			&& fog.NearDistance > 0.0f && fog.MaxDistance > fog.NearDistance && glm::all(glm::greaterThanEqual(fog.ScatterTint, glm::vec3(0.0f)));
 		if (!usable)
 		{
 			if (!m_VolumetricFogWarned)
 			{
-				DE_CORE_WARN("Renderer3D: a volumetric fog was ignored: it needs finite values, no negative Density, HeightFalloff, intensity or ScatterTint, a NearDistance above 0 and a MaxDistance past it.");
+				DE_CORE_WARN("Renderer3D: a volumetric fog was ignored: it needs finite values, no negative Density, HeightFalloff, intensity, MaxInScatter or ScatterTint, a NearDistance above 0 and a MaxDistance past it.");
 				m_VolumetricFogWarned = true;
 			}
 			return false;
@@ -2728,6 +2762,79 @@ namespace Dingo
 	{
 		m_VolumetricFog = {};
 		m_VolumetricFogSet = false;
+	}
+
+	bool Renderer3D::SubmitFogVolume(const FogVolume& volume, const glm::mat4& transform)
+	{
+		const auto finite = [](std::initializer_list<float> values)
+		{
+			return std::all_of(values.begin(), values.end(), [](float value) { return std::isfinite(value); });
+		};
+		const auto nonNegative = [](std::initializer_list<float> values)
+		{
+			return std::all_of(values.begin(), values.end(), [](float value) { return value >= 0.0f; });
+		};
+
+		bool usable = volume.Shape >= FogVolumeShape::Box && volume.Shape <= FogVolumeShape::Sphere
+			&& volume.Mode >= FogVolumeMode::Froxel && volume.Mode <= FogVolumeMode::Raymarch
+			&& finite({ volume.HalfExtents.x, volume.HalfExtents.y, volume.HalfExtents.z, volume.Density, volume.Albedo.x, volume.Albedo.y, volume.Albedo.z, volume.Anisotropy,
+				volume.ScatterTint.x, volume.ScatterTint.y, volume.ScatterTint.z, volume.OutsideShadowLight, volume.AmbientIntensity, volume.LightIntensity, volume.LocalLightIntensity,
+				volume.EdgeFade, volume.HeightFadeStart, volume.HeightFadeEnd, volume.HeightBandBottom, volume.HeightBandTop, volume.HeightBandMultiplier, volume.HeightBandSoftness,
+				volume.NearFadeStart, volume.NearFadeEnd, volume.NearFadeKeep, volume.FarFadeStart, volume.FarFadeEnd, volume.FarFadeKeep, volume.MaxInScatter,
+				volume.NoiseScale, volume.NoiseVelocity.x, volume.NoiseVelocity.y, volume.NoiseVelocity.z, volume.NoiseMin, volume.NoiseMax })
+			&& nonNegative({ volume.Density, volume.ScatterTint.x, volume.ScatterTint.y, volume.ScatterTint.z, volume.AmbientIntensity, volume.LightIntensity, volume.LocalLightIntensity,
+				volume.EdgeFade, volume.HeightBandMultiplier, volume.HeightBandSoftness, volume.MaxInScatter, volume.NoiseMin, volume.NoiseMax })
+			&& volume.HalfExtents.x > 0.0f && volume.HalfExtents.y > 0.0f && volume.HalfExtents.z > 0.0f && volume.NoiseScale > 0.0f;
+
+		if (usable)
+		{
+			const glm::dmat3 axes(transform);
+			const double determinant = glm::determinant(axes);
+			usable = transform[0][3] == 0.0f && transform[1][3] == 0.0f && transform[2][3] == 0.0f && transform[3][3] == 1.0f;
+			for (int column = 0; column < 4 && usable; ++column)
+				usable = finite({ transform[column].x, transform[column].y, transform[column].z, transform[column].w });
+			for (int column = 0; column < 3 && usable; ++column)
+				usable = glm::length(axes[column]) > 1e-6;
+			usable = usable && std::isfinite(determinant) && std::abs(determinant) > 1e-12;
+		}
+
+		if (!usable)
+		{
+			if (!m_FogVolumeWarned)
+			{
+				DE_CORE_WARN("Renderer3D: a fog volume was ignored: it needs finite values, no negative Density, intensity, EdgeFade, ScatterTint, noise value or MaxInScatter, HalfExtents and NoiseScale above 0, a known Shape and Mode, and an affine transform that keeps every axis.");
+				m_FogVolumeWarned = true;
+			}
+			return false;
+		}
+
+		if (m_FogVolumes.size() >= k_MaxPendingFogVolumes)
+		{
+			if (!m_FogVolumePendingWarned)
+			{
+				DE_CORE_WARN("Renderer3D: {} fog volumes are waiting for an EndScene; further ones are ignored.", k_MaxPendingFogVolumes);
+				m_FogVolumePendingWarned = true;
+			}
+			return false;
+		}
+
+		SubmittedFogVolume& submitted = m_FogVolumes.emplace_back();
+		submitted.Settings = volume;
+		submitted.Settings.Albedo = glm::clamp(volume.Albedo, glm::vec3(0.0f), glm::vec3(1.0f));
+		submitted.Settings.Anisotropy = std::clamp(volume.Anisotropy, -0.95f, 0.95f);
+		submitted.Settings.OutsideShadowLight = std::clamp(volume.OutsideShadowLight, 0.0f, 1.0f);
+		submitted.Settings.NearFadeKeep = std::clamp(volume.NearFadeKeep, 0.0f, 1.0f);
+		submitted.Settings.FarFadeKeep = std::clamp(volume.FarFadeKeep, 0.0f, 1.0f);
+		submitted.Settings.RaymarchSteps = std::clamp(volume.RaymarchSteps, 1u, 64u);
+		submitted.World = transform;
+		return true;
+	}
+
+	void Renderer3D::ResetLightScatter()
+	{
+		m_FogVolumeData.DirectionalScatter = glm::vec4(1.0f);
+		for (glm::vec4& scatter : m_FogVolumeData.LocalScatter)
+			scatter = glm::vec4(1.0f);
 	}
 
 	void Renderer3D::SetVolumetricGrid(const glm::uvec3& grid)
@@ -2877,6 +2984,7 @@ namespace Dingo
 		m_ShadowProbes.clear();
 		ClearFog();
 		ClearVolumetricFog();
+		m_FogVolumes.clear();
 		ClearEnvironment();
 	}
 
@@ -2976,6 +3084,7 @@ namespace Dingo
 			const LocalLightCandidate& candidate = m_LocalLights[m_VisibleLocalLights[slot]];
 			LocalLightData& data = m_CameraData.LocalLights[slot];
 			data = candidate.Data;
+			m_FogVolumeData.LocalScatter[slot / 4][slot % 4] = candidate.VolumetricIntensity;
 			if (fadeCutoff > 0.0f)
 			{
 				const float fade = BudgetFade(candidate.Priority, fadeCutoff, fadeBand);

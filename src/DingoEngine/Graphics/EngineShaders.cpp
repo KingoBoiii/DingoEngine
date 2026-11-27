@@ -31,8 +31,12 @@ namespace
 #include "Skybox.glsl.inl"
 #include "VolumetricMath.glsl.inl"
 #include "Volumetrics.glsl.inl"
+#include "VolumetricMedia.glsl.inl"
 #include "VolumetricInject.glsl.inl"
 #include "VolumetricIntegrate.glsl.inl"
+#include "VolumeRaymarch.glsl.inl"
+#include "VolumeRaymarchComposite.glsl.inl"
+#include "VolumetricSlice.glsl.inl"
 
 	struct EmbeddedShader
 	{
@@ -77,8 +81,12 @@ namespace
 		{ "Skybox.glsl", View(k_Skybox_glsl) },
 		{ "VolumetricMath.glsl", View(k_VolumetricMath_glsl) },
 		{ "Volumetrics.glsl", View(k_Volumetrics_glsl) },
+		{ "VolumetricMedia.glsl", View(k_VolumetricMedia_glsl) },
 		{ "VolumetricInject.glsl", View(k_VolumetricInject_glsl) },
 		{ "VolumetricIntegrate.glsl", View(k_VolumetricIntegrate_glsl) },
+		{ "VolumeRaymarch.glsl", View(k_VolumeRaymarch_glsl) },
+		{ "VolumeRaymarchComposite.glsl", View(k_VolumeRaymarchComposite_glsl) },
+		{ "VolumetricSlice.glsl", View(k_VolumetricSlice_glsl) },
 	};
 }
 

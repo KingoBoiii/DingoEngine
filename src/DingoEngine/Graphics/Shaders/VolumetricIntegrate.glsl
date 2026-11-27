@@ -7,7 +7,9 @@
 #version 450
 #extension GL_EXT_samplerless_texture_functions : require
 
+#define DE_MEDIA_BLOCK_ONLY
 #include <DingoEngine/VolumetricMath.glsl>
+#include <DingoEngine/VolumetricMedia.glsl>
 
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 
@@ -51,6 +53,6 @@ void main()
 		float tr = DE_SliceTransmittance(s.a, len);
 		scattered += transmittance * s.rgb * DE_SliceInScatterFactor(s.a, len, tr);
 		transmittance *= tr;
-		imageStore(u_Integrated, ivec3(id, k), vec4(scattered, transmittance));
+		imageStore(u_Integrated, ivec3(id, k), vec4(DE_CapInScatter(scattered, MediaGlobal.y), transmittance));
 	}
 }

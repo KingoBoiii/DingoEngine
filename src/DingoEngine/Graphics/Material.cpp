@@ -109,8 +109,22 @@ namespace Dingo
 		if (m_Textures[slot] == texture)
 			return;
 
+		Texture* previous = m_Textures[slot];
 		m_Textures[slot] = texture;
 		++m_BindingRevision;
+
+		// Another texture of the same format and dimension in a slot the passes already bind: their pipelines
+		// stay and only their binding sets are re-baked, so alternating two targets compiles nothing.
+		if (previous && texture && previous->GetParams().Format == texture->GetParams().Format && previous->GetParams().Dimension == texture->GetParams().Dimension)
+		{
+			const uint32_t binding = (m_SceneUniformBuffer ? 2u : 1u) + slot * 2;
+			for (auto& [key, entry] : m_PipelineCache)
+			{
+				entry.RenderPass->SetTexture(binding, texture);
+				entry.RenderPass->Bake();
+			}
+			return;
+		}
 		InvalidatePipelineCache();
 	}
 

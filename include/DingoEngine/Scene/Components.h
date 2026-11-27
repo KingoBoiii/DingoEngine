@@ -244,6 +244,8 @@ namespace Dingo
 		/// Caster groups this light's shadows take; a mesh casts only if its ShadowGroups share a
 		/// bit.
 		uint32_t ShadowCasterGroups = 0xFFFFFFFFu;
+		/// See DirectionalLight::VolumetricIntensity.
+		float VolumetricIntensity = 1.0f;
 
 		// The special members touch Ambient; only a game's own use of it should warn.
 		DE_SUPPRESS_DEPRECATED_BEGIN
@@ -282,6 +284,7 @@ namespace Dingo
 		bool CastShadows = false;
 		float ShadowStrength = 1.0f; ///< How dark its shadows are, 0 (none) to 1 (full).
 		uint32_t ShadowCasterGroups = 0xFFFFFFFFu; ///< See DirectionalLight.
+		float VolumetricIntensity = 1.0f; ///< See DirectionalLight::VolumetricIntensity.
 
 		/// A white light of intensity 1 and range 10.
 		PointLightComponent() = default;
@@ -314,6 +317,7 @@ namespace Dingo
 		bool CastShadows = false;
 		float ShadowStrength = 1.0f; ///< How dark its shadows are, 0 (none) to 1 (full).
 		uint32_t ShadowCasterGroups = 0xFFFFFFFFu; ///< See DirectionalLight.
+		float VolumetricIntensity = 1.0f; ///< See DirectionalLight::VolumetricIntensity.
 
 		/// A white 20/30 degree cone of intensity 1 and range 10, aimed along the entity's -Z.
 		SpotLightComponent() = default;
@@ -363,6 +367,26 @@ namespace Dingo
 			Settings.Start = start;
 			Settings.End = end;
 		}
+	};
+
+	/// A local volume of fog (Renderer3D::SubmitFogVolume): the entity's world transform places and
+	/// sizes Settings.HalfExtents, so the volume's world size is HalfExtents times the entity's
+	/// scale. Scene::SubmitLights submits every enabled one in entity order after the fog; it acts
+	/// only with Renderer3DCapabilities::Volumetrics on and a perspective camera. It is no light.
+	/// Ignored without a Transform3DComponent, like a point light.
+	struct FogVolumeComponent
+	{
+		FogVolume Settings; ///< Shape, mode, medium and fades, as for Renderer3D::SubmitFogVolume.
+		/// False takes this volume out of the scene without removing the component.
+		bool Enabled = true;
+
+		/// A box of half extents 1 with the FogVolume defaults.
+		FogVolumeComponent() = default;
+		/// Copies all fields.
+		FogVolumeComponent(const FogVolumeComponent&) = default;
+		/// A volume with the given settings.
+		explicit FogVolumeComponent(const FogVolume& settings)
+			: Settings(settings) {}
 	};
 
 	/// An Environment drawn as the scene's sky (Renderer3D::SetEnvironment). One on the camera entity
@@ -518,14 +542,14 @@ namespace Dingo
 	inline PointLight PointLightComponent::ToLight(const Transform3DComponent& transform) const
 	{
 		return PointLight{ .Position = transform.Position, .Color = Color, .Intensity = Intensity, .Range = Range,
-			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength, .ShadowCasterGroups = ShadowCasterGroups };
+			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength, .ShadowCasterGroups = ShadowCasterGroups, .VolumetricIntensity = VolumetricIntensity };
 	}
 
 	inline SpotLight SpotLightComponent::ToLight(const Transform3DComponent& transform) const
 	{
 		return SpotLight{ .Position = transform.Position, .Direction = transform.Rotation * Direction, .Color = Color,
 			.Intensity = Intensity, .Range = Range, .InnerConeAngle = InnerConeAngle, .OuterConeAngle = OuterConeAngle,
-			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength, .ShadowCasterGroups = ShadowCasterGroups };
+			.CastShadows = CastShadows, .ShadowStrength = ShadowStrength, .ShadowCasterGroups = ShadowCasterGroups, .VolumetricIntensity = VolumetricIntensity };
 	}
 
 	/// A renderable mesh drawn by Renderer3D at the entity's Transform3D, tinted by

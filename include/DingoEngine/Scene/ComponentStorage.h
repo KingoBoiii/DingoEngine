@@ -52,7 +52,7 @@ namespace Dingo
 			Constraint3DComponent, RagdollComponent, BoxCollider3DComponent, SphereCollider3DComponent,
 			CapsuleCollider3DComponent, MeshCollider3DComponent, CharacterController3DComponent,
 			DirectionalLightComponent, AmbientLightComponent, PointLightComponent, SpotLightComponent,
-			FogComponent, SkyboxComponent, AudioSourceComponent, AudioListenerComponent>;
+			FogComponent, SkyboxComponent, FogVolumeComponent, AudioSourceComponent, AudioListenerComponent>;
 
 		template<typename T>
 		inline constexpr bool IsBuiltinComponent = TypeListContains<std::remove_cv_t<T>, BuiltinComponents>::value;

@@ -191,6 +191,7 @@ namespace Dingo
 		CopyComponentIfExists<SpotLightComponent>(registry, dst, src);
 		CopyComponentIfExists<FogComponent>(registry, dst, src);
 		CopyComponentIfExists<SkyboxComponent>(registry, dst, src);
+		CopyComponentIfExists<FogVolumeComponent>(registry, dst, src);
 		CopyComponentIfExists<RigidBody2DComponent>(registry, dst, src);
 		CopyComponentIfExists<BoxCollider2DComponent>(registry, dst, src);
 		CopyComponentIfExists<CircleCollider2DComponent>(registry, dst, src);
@@ -358,6 +359,7 @@ namespace Dingo
 		// runs slow through the stall instead.
 		deltaTime = std::min(deltaTime, Internal::PhysicsSync::k_MaxStepTime);
 		DE_PROFILE_SCOPE_TEXT("Scene::OnUpdate", m_Name);
+		m_Data->FogVolumeTime += static_cast<double>(deltaTime);
 
 		if (!m_Data->DebugRegistered)
 		{
@@ -910,6 +912,7 @@ namespace Dingo
 	{
 		InterpolatedView view(*this);
 		const entt::entity cameraHandle = IsValid(camera) ? static_cast<entt::entity>(camera.m_Handle) : entt::null;
+		renderer.SetFogVolumeTime(m_Data->FogVolumeTime);
 		Internal::LightSystem::SubmitLights(m_Data->Registry, renderer, m_Data->Memo, glm::vec3(m_ClearColor), shadowProbes ? &m_Data->ShadowProbes : nullptr, cameraHandle);
 	}
 

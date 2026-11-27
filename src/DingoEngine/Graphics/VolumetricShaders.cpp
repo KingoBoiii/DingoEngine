@@ -8,7 +8,7 @@
 
 namespace
 {
-	constexpr size_t k_KindCount = 2;
+	constexpr size_t k_KindCount = 4;
 
 	// A kernel that failed to compile stays here, invalid and watched, so it is neither rebuilt nor
 	// logged again on every call and a hot reload that fixes it makes it usable.
@@ -27,9 +27,9 @@ namespace Dingo::Internal
 			return shader && shader->IsValid() ? shader : nullptr;
 		s_Attempted[index] = true;
 
-		const bool inject = kind == VolumetricShaderKind::Inject;
-		shader = CreateEngineShader(ShaderParams().SetName(inject ? "VolumetricInjectShader" : "VolumetricIntegrateShader"),
-			inject ? "VolumetricInject.glsl" : "VolumetricIntegrate.glsl");
+		const char* names[k_KindCount] = { "VolumetricInjectShader", "VolumetricIntegrateShader", "VolumeRaymarchShader", "VolumetricSliceShader" };
+		const char* files[k_KindCount] = { "VolumetricInject.glsl", "VolumetricIntegrate.glsl", "VolumeRaymarch.glsl", "VolumetricSlice.glsl" };
+		shader = CreateEngineShader(ShaderParams().SetName(names[index]), files[index]);
 		if (shader)
 			WatchUnmanagedShader(shader);
 		return shader && shader->IsValid() ? shader : nullptr;

@@ -204,6 +204,32 @@ namespace Dingo::Internal::LightSystem
 		}
 	}
 
+	namespace
+	{
+		void SubmitFogVolumes(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo)
+		{
+			for (entt::entity entity : InEntityOrder<FogVolumeComponent>(registry))
+			{
+				const FogVolumeComponent& volume = registry.get<const FogVolumeComponent>(entity);
+				if (!volume.Enabled || HierarchySystem::IsInactive(registry, entity))
+					continue;
+
+				const Transform3DComponent* transform = registry.try_get<const Transform3DComponent>(entity);
+				if (!transform)
+				{
+					static bool s_Warned = false;
+					if (!s_Warned)
+					{
+						DE_CORE_WARN("A fog volume component sits on an entity without a Transform3DComponent, so it can't be placed and is ignored.");
+						s_Warned = true;
+					}
+					continue;
+				}
+				renderer.SubmitFogVolume(volume.Settings, memo.Transform(entity, *transform));
+			}
+		}
+	}
+
 	void SubmitLights(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo, const glm::vec3& clearColor, ShadowProbeState* probes, entt::entity camera)
 	{
 		memo.Begin(registry);
@@ -230,7 +256,7 @@ namespace Dingo::Internal::LightSystem
 		DE_SUPPRESS_DEPRECATED_BEGIN
 		auto submitDirectional = [&](const DirectionalLightComponent& light, float legacyAmbient)
 		{
-			const bool accepted = renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - legacyAmbient, 0.0f), light.CastShadows, light.ShadowStrength, light.ShadowCasterGroups });
+			const bool accepted = renderer.SubmitLight(DirectionalLight{ light.Direction, light.Color, light.Intensity * std::max(1.0f - legacyAmbient, 0.0f), light.CastShadows, light.ShadowStrength, light.ShadowCasterGroups, light.VolumetricIntensity });
 			if (accepted && std::isfinite(legacyAmbient))
 				ambient += glm::vec3(legacyAmbient);
 		};
@@ -301,6 +327,7 @@ namespace Dingo::Internal::LightSystem
 		renderer.SetAmbientLight(ambient, 1.0f);
 
 		SubmitFog(registry, renderer, clearColor, camera);
+		SubmitFogVolumes(registry, renderer, memo);
 		SubmitSkybox(registry, renderer, camera);
 	}
 

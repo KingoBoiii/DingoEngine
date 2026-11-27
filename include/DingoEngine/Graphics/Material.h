@@ -167,7 +167,8 @@ namespace Dingo
 		///@{
 		/// Puts a texture or sampler in a slot (null clears it); the material does not take
 		/// ownership. A change rebuilds the material's cached pipelines at its next draw, so avoid
-		/// swapping a slot every frame. A texture created at a freed one's address is noticed at
+		/// swapping a slot every frame, except to another texture of the same format and dimension,
+		/// which only re-binds the cached passes. A texture created at a freed one's address is noticed at
 		/// the next draw (Texture::GetGeneration), and a sampler at the next SetSampler
 		/// (Sampler::GetId), but don't draw the material while a slot holds a freed texture or sampler.
 		void SetTexture(uint32_t slot, Texture* texture);
