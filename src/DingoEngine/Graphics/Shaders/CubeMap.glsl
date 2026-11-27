@@ -7,17 +7,17 @@
 
 vec3 DE_CubeFaceDirection(uint face, vec2 uv)
 {
-	float a = uv.x * 2.0 - 1.0;
-	float b = uv.y * 2.0 - 1.0;
+	float a = uv.x * 2.0f - 1.0f;
+	float b = uv.y * 2.0f - 1.0f;
 	vec3 dir;
 	switch (face)
 	{
-		case 0u: dir = vec3(1.0, -b, -a); break;
-		case 1u: dir = vec3(-1.0, -b, a); break;
-		case 2u: dir = vec3(a, 1.0, b); break;
-		case 3u: dir = vec3(a, -1.0, -b); break;
-		case 4u: dir = vec3(a, -b, 1.0); break;
-		default: dir = vec3(-a, -b, -1.0); break;
+		case 0u: dir = vec3(1.0f, -b, -a); break;
+		case 1u: dir = vec3(-1.0f, -b, a); break;
+		case 2u: dir = vec3(a, 1.0f, b); break;
+		case 3u: dir = vec3(a, -1.0f, -b); break;
+		case 4u: dir = vec3(a, -b, 1.0f); break;
+		default: dir = vec3(-a, -b, -1.0f); break;
 	}
 	return normalize(dir);
 }

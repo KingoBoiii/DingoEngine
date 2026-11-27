@@ -76,8 +76,19 @@ namespace Dingo
 			m_CommandListHandle->setTextureState(nvrhiFB->m_DepthTextureHandle, nvrhi::AllSubresources, nvrhi::ResourceStates::CopyDest);
 
 		// A depth-only framebuffer (a shadow map) has no colour to clear.
-		if (attachmentIndex < nvrhiFB->m_FramebufferHandle->getDesc().colorAttachments.size())
+		const auto& colorAttachments = nvrhiFB->m_FramebufferHandle->getDesc().colorAttachments;
+		if (attachmentIndex < colorAttachments.size() && colorAttachments[attachmentIndex].texture)
+		{
 			nvrhi::utils::ClearColorAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, clearColor.a });
+
+			// NVRHI's Vulkan clear doesn't make the command buffer hold the texture, so a target only
+			// cleared in a frame could be freed while the GPU clears it. setTextureState does, and
+			// re-requiring the state the clear left it in records no barrier on any backend.
+			const nvrhi::FramebufferAttachment& color = colorAttachments[attachmentIndex];
+			const nvrhi::TextureSubresourceSet cleared = color.subresources.resolve(color.texture->getDesc(), false);
+			m_CommandListHandle->setTextureState(color.texture, cleared,
+				m_CommandListHandle->getTextureSubresourceState(color.texture, cleared.baseArraySlice, cleared.baseMipLevel));
+		}
 
 		if (hasDepth)
 			nvrhi::utils::ClearDepthStencilAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, k_DepthClearValue, 0);

@@ -4,6 +4,7 @@
 #include "DingoEngine/Graphics/Renderer3DAccess.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 #include "DingoEngine/Graphics/EngineShaders.h"
+#include "DingoEngine/Graphics/EnvironmentShaders.h"
 #include "DingoEngine/Graphics/FullscreenPass.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
 #include "DingoEngine/Graphics/LightMath.h"
@@ -451,6 +452,9 @@ namespace Dingo
 		for (auto& [id, entry] : m_InstancedTwins)
 			DestroyAndDelete(entry.Twin);
 		m_InstancedTwins.clear();
+		for (auto& [id, entry] : m_SkyboxMaterials)
+			DestroyAndDelete(entry.Sky);
+		m_SkyboxMaterials.clear();
 		m_InstanceGroups.clear();
 		m_InstanceGroupLookup.Clear();
 		m_InstanceRecords.clear();
@@ -554,6 +558,7 @@ namespace Dingo
 
 		ReleaseIdleTwins(m_SkinnedTwins);
 		ReleaseIdleTwins(m_InstancedTwins);
+		ReleaseIdleSkyboxes();
 		m_SkinnedSubmissions.clear();
 		m_SkinnedInstances.clear();
 		m_SkinnedJoints.clear();
@@ -587,7 +592,15 @@ namespace Dingo
 			DE_PROFILE_SCOPE("Renderer3D::ResolveSceneLights");
 			ResolveSceneLights();
 		}
-		m_Statistics.Fogged = m_CameraData.FogParams.w > 0.5f && m_CameraData.CameraPosition.w > 0.5f;
+		const SceneEnvironment environment = m_PendingEnvironment;
+		const bool perspective = m_CameraData.CameraPosition.w > 0.5f;
+		if (environment.Environment && !environment.Environment->IsReady())
+		{
+			DE_PROFILE_SCOPE("Renderer3D::PrepareEnvironment");
+			m_Statistics.EnvironmentBakes += environment.Environment->Prepare() ? 1 : 0;
+		}
+		const bool drawSky = environment.Environment && environment.DrawSkybox && environment.Environment->IsReady() && perspective;
+		m_Statistics.Fogged = m_CameraData.FogParams.w > 0.5f && perspective;
 		if (m_Statistics.Fogged)
 		{
 			// Before ClearSceneLights drops the fog. A later unfogged scene of the same Begin leaves it,
@@ -638,6 +651,10 @@ namespace Dingo
 		}
 
 		Texture* shadowAtlas = m_ShadowAtlas ? m_ShadowAtlas->GetDepthAttachment() : m_PlaceholderShadowAtlas;
+		const Framebuffer* skyTarget = Renderer::GetRenderTarget();
+		const bool skyFirst = skyTarget && !skyTarget->GetParams().EnableDepth;
+		if (drawSky && skyFirst)
+			m_Statistics.Skybox = DrawSkybox(environment);
 		{
 			DE_PROFILE_SCOPE("Renderer3D::DrawBatches");
 			for (const ChunkDraw& draw : m_ChunkDraws)
@@ -684,6 +701,8 @@ namespace Dingo
 		}
 
 		DrawSkinnedSubmissions();
+		if (drawSky && !skyFirst)
+			m_Statistics.Skybox = DrawSkybox(environment);
 		DrawTranslucentPass(shadowAtlas);
 		m_StaticSubmissions.clear();
 		m_StaticSubmissionData.clear();
@@ -2626,6 +2645,82 @@ namespace Dingo
 		m_CameraData.FogParams = glm::vec4(0.0f);
 	}
 
+	bool Renderer3D::SetEnvironment(const SceneEnvironment& environment)
+	{
+		if (!environment.Environment)
+		{
+			ClearEnvironment();
+			return true;
+		}
+		if (!std::isfinite(environment.Intensity) || environment.Intensity < 0.0f || !std::isfinite(environment.Rotation))
+		{
+			if (!m_EnvironmentWarned)
+			{
+				DE_CORE_WARN("Renderer3D: an environment was ignored: its Intensity must be finite and at least 0, and its Rotation finite.");
+				m_EnvironmentWarned = true;
+			}
+			return false;
+		}
+		m_PendingEnvironment = environment;
+		return true;
+	}
+
+	void Renderer3D::ClearEnvironment()
+	{
+		m_PendingEnvironment = {};
+	}
+
+	void Renderer3D::ReleaseIdleSkyboxes()
+	{
+		for (auto it = m_SkyboxMaterials.begin(); it != m_SkyboxMaterials.end();)
+		{
+			SkyboxEntry& entry = it->second;
+			entry.IdleScenes = entry.Used ? 0 : entry.IdleScenes + 1;
+			entry.Used = false;
+			if (entry.IdleScenes > k_MaxIdleBatchScenes)
+			{
+				DestroyAndDelete(entry.Sky);
+				it = m_SkyboxMaterials.erase(it);
+				continue;
+			}
+			++it;
+		}
+	}
+
+	bool Renderer3D::DrawSkybox(const SceneEnvironment& environment)
+	{
+		DE_PROFILE_SCOPE("Renderer3D::DrawSkybox");
+		Texture* cube = environment.Environment->GetCubeMap();
+		Shader* shader = Internal::GetEnvironmentShader(Internal::EnvironmentShaderVariant::Skybox);
+		if (!cube || !shader)
+			return false;
+
+		SkyboxEntry& entry = m_SkyboxMaterials[cube->GetId()];
+		if (!entry.Sky)
+		{
+			entry.Sky = Material::Create(MaterialParams()
+				.SetDebugName("Renderer3D_Skybox")
+				.SetShader(shader)
+				.SetCullMode(CullMode::None)
+				.SetBlendMode(BlendMode::Opaque)
+				.SetDepthTest(true)
+				.SetDepthWrite(false)
+				.SetDepthCompare(DepthCompare::LessEqual)
+				.SetUniformWritesPerFrame(k_MaxScenesPerFrame));
+			entry.Sky->SetTexture(0, cube);
+			entry.Sky->SetSampler(0, Renderer::GetClampSampler());
+		}
+		entry.Used = true;
+
+		const float radians = glm::radians(-environment.Rotation);
+		SkyboxData data;
+		data.InverseViewProjection = glm::mat4(glm::inverse(glm::dmat4(m_CameraData.ViewProjection)));
+		data.Params = glm::vec4(std::cos(radians), std::sin(radians), environment.Intensity, 0.0f);
+		entry.Sky->SetUniform(data);
+		Renderer::Draw(entry.Sky, 3);
+		return true;
+	}
+
 	uint32_t Renderer3D::GetLocalLightBudget() const
 	{
 		return std::min(m_Params.Capabilities.MaxLocalLights, k_MaxLocalLights);
@@ -2654,6 +2749,7 @@ namespace Dingo
 		m_LastSubmittedLight = {};
 		m_ShadowProbes.clear();
 		ClearFog();
+		ClearEnvironment();
 	}
 
 	void Renderer3D::ResolveSceneLights()

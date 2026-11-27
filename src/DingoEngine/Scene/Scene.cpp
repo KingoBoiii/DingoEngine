@@ -190,6 +190,7 @@ namespace Dingo
 		CopyComponentIfExists<PointLightComponent>(registry, dst, src);
 		CopyComponentIfExists<SpotLightComponent>(registry, dst, src);
 		CopyComponentIfExists<FogComponent>(registry, dst, src);
+		CopyComponentIfExists<SkyboxComponent>(registry, dst, src);
 		CopyComponentIfExists<RigidBody2DComponent>(registry, dst, src);
 		CopyComponentIfExists<BoxCollider2DComponent>(registry, dst, src);
 		CopyComponentIfExists<CircleCollider2DComponent>(registry, dst, src);

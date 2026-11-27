@@ -1,5 +1,6 @@
 #include "depch.h"
 #include "DingoEngine/Graphics/PbrShaders.h"
+#include "DingoEngine/Graphics/EnvironmentShaders.h"
 #include "DingoEngine/Graphics/MaterialAccess.h"
 #include "DingoEngine/Graphics/Renderer.h"
 #include "DingoEngine/Graphics/Material.h"
@@ -176,6 +177,7 @@ namespace Dingo
 			return;
 
 		Internal::DestroyPbrShaders();
+		Internal::DestroyEnvironmentShaders();
 		s_Data->PostProcess.Shutdown();
 		DestroyAndDelete(s_Data->WhiteTexture);
 		DestroyAndDelete(s_Data->ClampSampler);

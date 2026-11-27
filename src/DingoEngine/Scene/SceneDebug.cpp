@@ -211,6 +211,7 @@ namespace Dingo
 						Set<PointLightComponent>(Component::PointLight);
 						Set<SpotLightComponent>(Component::SpotLight);
 						Set<FogComponent>(Component::Fog);
+						Set<SkyboxComponent>(Component::Skybox);
 						Set<RigidBody2DComponent>(Component::RigidBody2D);
 						Set<BoxCollider2DComponent>(Component::BoxCollider2D);
 						Set<CircleCollider2DComponent>(Component::CircleCollider2D);
@@ -324,6 +325,7 @@ namespace Dingo
 					case Component::PointLight: return "PointLight";
 					case Component::SpotLight: return "SpotLight";
 					case Component::Fog: return "Fog";
+					case Component::Skybox: return "Skybox";
 					case Component::RigidBody2D: return "RigidBody2D";
 					case Component::BoxCollider2D: return "BoxCollider2D";
 					case Component::CircleCollider2D: return "CircleCollider2D";
@@ -701,6 +703,16 @@ namespace Dingo
 					Add(section, "Density", Text(fog->Settings.Density));
 					Add(section, "Max opacity", Text(fog->Settings.MaxOpacity));
 					Add(section, "Color", fog->UseClearColor ? "the clear colour" : Text(fog->Settings.Color));
+				}
+
+				if (const SkyboxComponent* sky = registry.try_get<SkyboxComponent>(handle))
+				{
+					Section& section = AddSection(out, "Skybox");
+					Add(section, "Enabled", Text(sky->Enabled));
+					Add(section, "Visible", Text(sky->Visible));
+					Add(section, "Environment", sky->Environment ? std::format("#{} {} px faces, {}", sky->Environment->GetId(), sky->Environment->GetFaceSize(), sky->Environment->IsReady() ? "baked" : "not baked") : std::string("none"));
+					Add(section, "Intensity", Text(sky->Intensity));
+					Add(section, "Rotation", std::format("{:.1f} deg", sky->Rotation));
 				}
 
 				if (const RigidBody2DComponent* body = registry.try_get<RigidBody2DComponent>(handle))

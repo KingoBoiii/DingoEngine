@@ -72,6 +72,7 @@
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/Material.h"
 #include "DingoEngine/Graphics/PbrMaterial.h"
+#include "DingoEngine/Graphics/Environment.h"
 #include "DingoEngine/Graphics/StaticBatch.h"
 #include "DingoEngine/Graphics/SurfaceOverride.h"
 #include "DingoEngine/Graphics/Model.h"

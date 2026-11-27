@@ -6,6 +6,7 @@
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/Frustum.h"
+#include "DingoEngine/Graphics/Environment.h"
 #include "DingoEngine/Graphics/Light.h"
 #include "DingoEngine/Graphics/Particles.h"
 #include "DingoEngine/Graphics/Pipeline.h"
@@ -322,8 +323,8 @@ namespace Dingo
 		/// Particles of the pool taken by the live emitters' rings.
 		uint32_t GetParticlePoolUsed() const;
 
-		/// Distance fog over this scene's lit draws (static and skinned; particles, custom shaders
-		/// and the 2D overlay aren't fogged), scene-scoped like the lights: set it before EndScene,
+		/// Distance fog over this scene's lit draws (static and skinned; particles, custom shaders,
+		/// the skybox and the 2D overlay aren't fogged: with a skybox, match Fog.Color to its horizon), scene-scoped like the lights: set it before EndScene,
 		/// which clears it. It is no light, so a scene with fog and no light keeps the default
 		/// light. Returns false for a fog it ignores: a non-finite value, a negative Density, or
 		/// Linear with End not past Start. FogMode::None clears it, as ClearFog does; MaxOpacity is
@@ -331,6 +332,16 @@ namespace Dingo
 		bool SetFog(const Fog& fog);
 		/// Removes the scene's fog, as SetFog with FogMode::None does.
 		void ClearFog();
+
+		/// Draws environment.Environment as the sky behind this scene's opaque meshes, at the far plane
+		/// and under translucents and particles, scene-scoped like SetFog: the last call before EndScene
+		/// wins and EndScene clears it. The first scene that uses an Environment bakes it (Environment::Prepare).
+		/// Returns false for an Intensity that is negative or not finite, or a Rotation that is not
+		/// finite, leaving the scene as it was. The sky is skipped for an orthographic camera and while
+		/// the Environment is not ready; a null Environment clears it.
+		bool SetEnvironment(const SceneEnvironment& environment);
+		/// Removes the scene's environment.
+		void ClearEnvironment();
 
 		/// Replaces the default light (Renderer3DParams::LightDirection/Ambient).
 		[[deprecated("submit the light each scene with SubmitLight and SetAmbientLight, or set Renderer3DParams::LightDirection/Ambient; removed in 2.0")]]
@@ -626,6 +637,8 @@ namespace Dingo
 			/// Where each cascade ends along the view.
 			float ShadowCascadeEnds[k_MaxShadowCascades] = {};
 			bool Fogged = false; ///< the scene was drawn with fog: SetFog, and a perspective camera
+			bool Skybox = false; ///< the scene drew a sky: SetEnvironment with DrawSkybox, a ready Environment and a perspective camera
+			uint32_t EnvironmentBakes = 0; ///< Environments this scene baked (1 the first time one is used)
 		};
 
 		/// The statistics of the latest scene; the reference stays valid and is rewritten by
@@ -649,6 +662,26 @@ namespace Dingo
 		void BeginSceneInternal(const glm::mat4& viewProjection, const glm::vec4& cameraPosition);
 		void ResolveSceneLights();
 		void ClearSceneLights();
+
+		// std140, mirrored by SkyboxData in Skybox.glsl: binding 0 of the sky material.
+		struct SkyboxData
+		{
+			glm::mat4 InverseViewProjection{ 1.0f };
+			glm::vec4 Params{ 1.0f, 0.0f, 1.0f, 0.0f }; // x = cos and y = sin of the lookup's turn, z = intensity
+			glm::vec4 Reserved{ 0.0f };
+		};
+		static_assert(sizeof(SkyboxData) == 96, "SkyboxData must match the std140 block in Skybox.glsl");
+		struct SkyboxEntry
+		{
+			Material* Sky = nullptr;
+			uint32_t IdleScenes = 0;
+			bool Used = false;
+		};
+		SceneEnvironment m_PendingEnvironment;
+		bool m_EnvironmentWarned = false;
+		std::unordered_map<uint64_t, SkyboxEntry> m_SkyboxMaterials;
+		void ReleaseIdleSkyboxes();
+		bool DrawSkybox(const SceneEnvironment& environment);
 		bool PrepareShadows();
 		void EnsureShadowResources();
 		void DrawShadowPass();

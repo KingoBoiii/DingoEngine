@@ -52,7 +52,7 @@ namespace Dingo
 				Transform, Transform3D,
 				SpriteRenderer, CircleRenderer, Text,
 				Camera, PostProcess,
-				DirectionalLight, AmbientLight, PointLight, SpotLight, Fog,
+				DirectionalLight, AmbientLight, PointLight, SpotLight, Fog, Skybox,
 				RigidBody2D, BoxCollider2D, CircleCollider2D,
 				MeshRenderer, SkinnedMeshRenderer, Animator, ParticleEmitter, ParticleEvent,
 				RigidBody3D, BoxCollider3D, SphereCollider3D, CapsuleCollider3D, MeshCollider3D, CharacterController3D, Constraint3D, Ragdoll,

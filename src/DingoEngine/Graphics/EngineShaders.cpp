@@ -24,6 +24,9 @@ namespace
 #include "Renderer3DScene.glsl.inl"
 #include "Brdf.glsl.inl"
 #include "Renderer3D_Pbr.glsl.inl"
+#include "Environment.glsl.inl"
+#include "EnvironmentBake.glsl.inl"
+#include "Skybox.glsl.inl"
 
 	struct EmbeddedShader
 	{
@@ -61,6 +64,9 @@ namespace
 		{ "Renderer3DScene.glsl", View(k_Renderer3DScene_glsl) },
 		{ "Brdf.glsl", View(k_Brdf_glsl) },
 		{ "Renderer3D_Pbr.glsl", View(k_Renderer3D_Pbr_glsl) },
+		{ "Environment.glsl", View(k_Environment_glsl) },
+		{ "EnvironmentBake.glsl", View(k_EnvironmentBake_glsl) },
+		{ "Skybox.glsl", View(k_Skybox_glsl) },
 	};
 }
 

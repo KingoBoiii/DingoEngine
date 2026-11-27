@@ -288,6 +288,7 @@ namespace Dingo
 
 		static struct RendererData* s_Data;
 
+		friend class Environment;
 		friend class NvrhiTexture;
 		friend class NvrhiGraphicsBuffer;
 		friend class Internal::NvrhiTextureReadback;

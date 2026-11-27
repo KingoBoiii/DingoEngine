@@ -6,6 +6,7 @@
 #include "DingoEngine/Graphics/Font.h"
 #include "DingoEngine/Graphics/Mesh.h"
 #include "DingoEngine/Graphics/Light.h"
+#include "DingoEngine/Graphics/Environment.h"
 #include "DingoEngine/Graphics/SurfaceOverride.h"
 #include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Graphics/Enums/ShadowCasting.h"
@@ -354,6 +355,34 @@ namespace Dingo
 			Settings.Start = start;
 			Settings.End = end;
 		}
+	};
+
+	/// An Environment drawn as the scene's sky (Renderer3D::SetEnvironment). One on the camera entity
+	/// passed to Scene::SubmitLights (the SceneRenderer's perspective camera) is that camera's sky;
+	/// otherwise the first enabled one in entity order on an entity without a CameraComponent counts.
+	/// One on another camera's entity applies only to a pass that names no camera, and only when
+	/// there is no other. More than one candidate warns once. It is no light. The component does not
+	/// own the Environment: keep it alive while the scene renders, as for a Mesh.
+	struct SkyboxComponent
+	{
+		/// The panorama to draw; null draws no sky. The caller or the AssetManager owns it.
+		Dingo::Environment* Environment = nullptr;
+		/// Linear multiplier on the radiance, 0 or more; 1 shows the panorama as stored.
+		float Intensity = 1.0f;
+		/// Degrees the sky is turned about +Y, as SceneEnvironment::Rotation.
+		float Rotation = 0.0f;
+		/// False keeps the environment for lighting without drawing the sky.
+		bool Visible = true;
+		/// False takes this component out of the choice without removing it.
+		bool Enabled = true;
+
+		/// No environment, intensity 1, no rotation.
+		SkyboxComponent() = default;
+		/// Copies all fields.
+		SkyboxComponent(const SkyboxComponent&) = default;
+		/// A sky of `environment` at the given intensity and rotation in degrees.
+		explicit SkyboxComponent(Dingo::Environment* environment, float intensity = 1.0f, float rotation = 0.0f)
+			: Environment(environment), Intensity(intensity), Rotation(rotation) {}
 	};
 
 	// Physics -----------------------------------------------------------------

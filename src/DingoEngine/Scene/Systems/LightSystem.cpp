@@ -144,6 +144,60 @@ namespace Dingo::Internal::LightSystem
 				fog.Color = clearColor;
 			renderer.SetFog(fog);
 		}
+
+		// Chosen like the fog: the camera's own, else the first on an entity without a camera, else,
+		// for a pass that names no camera, the first on one with.
+		void SubmitSkybox(const entt::registry& registry, Renderer3D& renderer, entt::entity camera)
+		{
+			const SkyboxComponent* chosen = nullptr;
+			if (camera != entt::null && registry.valid(camera))
+			{
+				const SkyboxComponent* own = registry.try_get<const SkyboxComponent>(camera);
+				if (own && own->Enabled && !HierarchySystem::IsInactive(registry, camera))
+					chosen = own;
+			}
+
+			if (!chosen)
+			{
+				const SkyboxComponent* cameraSky = nullptr;
+				uint32_t sceneWide = 0, onCameras = 0;
+				for (entt::entity entity : InEntityOrder<SkyboxComponent>(registry))
+				{
+					const SkyboxComponent& component = registry.get<const SkyboxComponent>(entity);
+					if (!component.Enabled || HierarchySystem::IsInactive(registry, entity))
+						continue;
+
+					if (registry.all_of<CameraComponent>(entity))
+					{
+						if (onCameras++ == 0)
+							cameraSky = &component;
+					}
+					else if (sceneWide++ == 0)
+						chosen = &component;
+				}
+
+				const bool noCamera = camera == entt::null;
+				static bool s_Warned = false;
+				if (!s_Warned && (sceneWide > 1 || (noCamera && sceneWide == 0 && onCameras > 1)))
+				{
+					DE_CORE_WARN("A scene has more than one enabled SkyboxComponent that could draw this view's sky; only the first one in entity order is used. A SkyboxComponent on the rendered camera's entity sets that view's sky alone.");
+					s_Warned = true;
+				}
+
+				if (!chosen && noCamera)
+					chosen = cameraSky;
+			}
+
+			if (!chosen)
+				return;
+
+			SceneEnvironment environment;
+			environment.Environment = chosen->Environment;
+			environment.Intensity = chosen->Intensity;
+			environment.Rotation = chosen->Rotation;
+			environment.DrawSkybox = chosen->Visible;
+			renderer.SetEnvironment(environment);
+		}
 	}
 
 	void SubmitLights(const entt::registry& registry, Renderer3D& renderer, HierarchySystem::WorldMemo& memo, const glm::vec3& clearColor, ShadowProbeState* probes, entt::entity camera)
@@ -243,6 +297,7 @@ namespace Dingo::Internal::LightSystem
 		renderer.SetAmbientLight(ambient, 1.0f);
 
 		SubmitFog(registry, renderer, clearColor, camera);
+		SubmitSkybox(registry, renderer, camera);
 	}
 
 }

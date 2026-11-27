@@ -519,9 +519,10 @@ namespace Dingo
 	DE_INSTANTIATE_COMPONENT(PointLightComponent)
 	DE_INSTANTIATE_COMPONENT(SpotLightComponent)
 	DE_INSTANTIATE_COMPONENT(FogComponent)
+	DE_INSTANTIATE_COMPONENT(SkyboxComponent)
 	DE_INSTANTIATE_COMPONENT(AudioSourceComponent)
 	DE_INSTANTIATE_COMPONENT(AudioListenerComponent)
-	static_assert(Internal::BuiltinComponents::Size == 30 + 2, "Internal::BuiltinComponents lists a type DE_INSTANTIATE_COMPONENT does not");
+	static_assert(Internal::BuiltinComponents::Size == 30 + 3, "Internal::BuiltinComponents lists a type DE_INSTANTIATE_COMPONENT does not");
 #undef DE_INSTANTIATE_COMPONENT
 
 }
