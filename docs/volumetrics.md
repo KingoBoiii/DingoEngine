@@ -295,7 +295,7 @@ one `Begin`, and the debug view). Both read results back from the GPU.
 
 ## Showcase
 
-[examples/Dustlight](../examples/Dustlight/README.md) puts the froxel fog, local volumes, the raymarch mode and the lantern scattering in one room, with a panel and `--check`.
+`examples/Dustlight` puts the froxel fog, local volumes, the raymarch mode and the lantern scattering in one room, with a panel and `--check`.
 
 ## Headstone questions
 
