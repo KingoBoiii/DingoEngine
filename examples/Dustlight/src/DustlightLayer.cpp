@@ -228,10 +228,15 @@ namespace Dingo
 			sphere.Shape = FogVolumeShape::Sphere;
 			sphere.Mode = FogVolumeMode::Froxel;
 			sphere.HalfExtents = glm::vec3(1.3f);
-			sphere.Density = 0.08f;
-			sphere.Anisotropy = 0.4f;
-			sphere.ScatterTint = { 1.0f, 0.82f, 0.6f };
-			sphere.EdgeFade = 0.8f;
+			sphere.Density = 0.6f;
+			sphere.Anisotropy = 0.3f;
+			sphere.ScatterTint = { 1.0f, 0.7f, 0.4f };
+			sphere.LocalLightIntensity = 2.0f;
+			sphere.NoiseScale = 1.5f;
+			sphere.NoiseVelocity = { 0.0f, 0.15f, 0.0f };
+			sphere.NoiseMin = 0.3f;
+			sphere.NoiseMax = 1.7f;
+			sphere.EdgeFade = 0.35f;
 
 			m_SphereVolume = m_Scene->CreateEntity("LanternFog");
 			m_SphereVolume.AddComponent<Transform3DComponent>().Position = { Lantern::k_Position.x, 1.2f, Lantern::k_Position.z };

@@ -130,7 +130,7 @@ namespace Dingo
 		if (ImGui::Checkbox("Sphere volume", &m_SphereEnabled))
 			layer.GetSphereVolume().GetComponent<FogVolumeComponent>().Enabled = m_SphereEnabled;
 		m_SphereDensity = VolumeOf(layer.GetSphereVolume()).Density;
-		if (ImGui::SliderFloat("Sphere density", &m_SphereDensity, 0.0f, 0.4f))
+		if (ImGui::SliderFloat("Sphere density", &m_SphereDensity, 0.0f, 1.5f))
 			VolumeOf(layer.GetSphereVolume()).Density = m_SphereDensity;
 
 		bool lantern = layer.IsLanternEnabled();
