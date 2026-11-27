@@ -1,4 +1,4 @@
-**Status**: open — Phases 1–4 committed (`3d33d8fc`, `97235b5e`, `13c54ffb`, `a94c3af8`, `04693ec3`, `e15b509f`); next: Phase 5
+**Status**: open — Phases 1–4 committed (`3d33d8fc`, `97235b5e`, `13c54ffb`, `a94c3af8`, `04693ec3`, `e15b509f`); Phase 5 built and reviewed (uncommitted); left: L1 failed-dispatch case logs once but still samples a stale volume that scene (explain in PR); D3D12 #1008 shadow-atlas duplicate-barrier warning rises to ~2.5k lines in the froxel run (atlas used as compute SRV), same known warning
 
 # v1.3: PBR materials, image-based lighting and volumetric fog
 
@@ -16,7 +16,7 @@
 - **D3. Cube maps join `TextureDimension`** (`Enums/TextureDimension.h`) as `TextureCube`, with `MipLevels` and `ArrayLayers` on `TextureParams` (`Texture.h:31`). Needed by IBL; also gives games a skybox.
 - **D4. IBL bakes at load, on the GPU**: equirect `.hdr` → cube (compute), diffuse irradiance as 9 SH coefficients, prefiltered specular mips (GGX), and one BRDF LUT made at renderer start-up. No offline baking or new pack format in v1.3.
 - **D5. Volumetric fog is off by default** (`Renderer3DCapabilities` flag, like `LightBudgetFade`). When on, the global volume replaces the distance `Fog` (`Light.h:93`) for both lit paths; when off, nothing changes.
-- **D6. Showcase: upgrade Candlewick** (lantern stealth, v0.7) — fog volumes in the halls, lantern cones, moon shafts through windows, PBR props — with a `--check` mode. Plus Dingo-TestFramework cases: a PBR material sphere grid, an IBL sphere grid, a froxel fog scene.
+- **D6. Showcase** (*changed 2026-11-27: a fresh example project, see Phase 7*)**: upgrade Candlewick** (lantern stealth, v0.7) — fog volumes in the halls, lantern cones, moon shafts through windows, PBR props — with a `--check` mode. Plus Dingo-TestFramework cases: a PBR material sphere grid, an IBL sphere grid, a froxel fog scene.
 
 ---
 
@@ -394,6 +394,199 @@ Defaults until the Phase 6 design session (the owner can change them then):
 
 Open for that design: how it combines with froxel fog in the same view, and whether translucents see it.
 
+### Headstone follow-up (2026-11-27, note `engine-volumetrics-hall-haze.md` @ Headstone `4dbd48b`)
+
+Use case: the Coffin Works hall, 24 m, six 55° east-window shafts cut by roof trusses. The haze is cool-blue dust visible only in the shaft light. Today it is a 12-step march in `graveyard_light.glsl`, with 1 atlas tap per step and HG phase, costing +1.3 ms of a 2.7 ms frame. Every gap below gets its answer in `docs/volumetrics.md`.
+
+| # | Gap | Phase | First answer (to confirm in the phase design) |
+|---|---|---|---|
+| H1 | Per-volume in-scatter tint apart from light colour: haze (0.60, 0.74, 1.00) under (0.64, 0.58, 1.02) | 5 (global) + 6 | Needs a `ScatterTint` multiplier on in-scatter, ≥ 0, not clamped, separate from `Albedo`. The owner decides whether it joins `VolumetricFog` in Phase 5 |
+| H2 | Vertical density profile inside a box: full below 11 m, 0 from 15 m, ×2.5 at 7–12 m | 6 | Height gradient or curve on `FogVolumeComponent` |
+| H3 | Max in-scatter cap per pixel; per-volume near fade (0 within 1 m, full from 4 m); does the volume really dim the surface behind it? | 6 (cap, near fade) / 5 (dimming) | Dimming: yes, froxel apply is `color·T + L` (check 2). Cap and near fade go in the Phase 6 design |
+| H4 | Smooth fade where cascades end; behaviour past the last cascade | 5 | Today `DE_DirectionalShadowVolume` (`Shadows.glsl:137`) returns 1, fully lit, past the last cascade: a hard edge. Add a fade to lit over the last cascade's tail. Internal only, no API |
+| H5 | Scrolling noise as scale, drift velocity, min/max density | 6 | Already planned (noise); expose those four fields |
+| H6 | HIGH/LOW/OFF knobs at runtime: raymarch resolution and step count, per volume or global | 5 (grid) + 6 | Froxel: `SetVolumetricsEnabled` + `SetVolumetricGrid` are already runtime. Raymarch: Phase 6 design |
+| H7 | Box volume with shadows off | 5 + 6 | Yes: unshadowed returns 1 (`Shadows.glsl:134`) and ambient in-scatter is separate. Test both |
+| H8 | Compute inject + raymarch on DX11 and Vulkan (Windows + Linux) | 5 + 6 | Froxel inject/integrate pass on Vulkan, DX11 and DX12 (group 3). Linux runs Vulkan |
+| H9 | Measured cost on a mid-range GPU, froxel and raymarch | 7 | Only the owner's RX 7900 XTX is available. Open: which mid-range GPU (owner) |
+| H10 | Raymarch + froxel in one view; translucents vs raymarch; raymarch vs a custom shader's own distance fog | 6 | Phase 6 design questions |
+| H11 | Debug view of lit / shadowed / outside-cascade samples | 6 | Joins the planned grid debug panel |
+
+**Owner (2026-11-27): H1 and H4 join Phase 5**, built with group 5.
+- H1 adds `VolumetricFog::ScatterTint`, a `glm::vec3{1}` that must be ≥ 0, finite and unclamped. It multiplies in-scatter only, never extinction. `VolumetricData` gains a vec4 `ScatterTint` at 224, making it 240 B; the mirror sits in the inject kernel.
+- H4 fades `DE_DirectionalShadowVolume` toward lit over the last cascade's tail, internally.
+- Tests:
+  - a tint check: in-scatter scales by the tint and transmittance is unchanged;
+  - a fade check: no step at the cascade end.
+
+**Owner approved P15 and P16 (2026-11-27)**: both are built with group 5, alongside H1 and H4.
+
+**Headstone round 2 (2026-11-27, note @ `8840dda`).** The dust shows only where the shaft light provably reaches; unreached or unverifiable air is dark (fill 0). The map also has point and spot lamps.
+
+| # | Ask | Phase | Proposed answer |
+|---|---|---|---|
+| H12 | Past the last cascade: lit or dark, with the fade kept | 5 | **P15**: `VolumetricFog::OutsideShadowLight` (0..1, default 1 = lit, today's behaviour; 0 = dark). Used for samples outside every cascade and outside the cascade map; a light with no shadow at all stays unshadowed (H7). Phase 6 volumes get the same field |
+| H13 | Only the directional light scatters | 6 | Per-volume and global `LocalLightIntensity`, where 0 = directional only. A per-light flag only if it fits without changing the mirrored light structs in `CameraData` |
+| H14 | Ray-length in-scatter thinning (full to 8 m, 25 % from 24 m); fade when looking along the beam | 6 | Lean: a far fade with a keep fraction beside the H3 near fade (same code). The view-along-beam fade is left to `Anisotropy` (lower g) and the cap. If the Phase 6 design rejects either, it's a look change for Headstone |
+| H15 | Box volume in froxel mode as the only fog, no global fog | 6 | Yes: froxel is the default `FogVolumeComponent` mode. Activation becomes "global fog set OR any volume". Until then, a global fog with `Density` 0 works |
+| H16 | Reset history on a camera cut; stability at a 4× timescale | 5 | **P16**: public `Renderer3D::ResetVolumetricHistory()` (`InvalidateVolumetricHistory` exists internally) and an ECS route on the camera. Timescale doesn't matter in Phase 5, because history is per frame and the medium is static; the Phase 6 noise drift must reproject, or be tested at 4× |
+
+Constraints:
+- Custom shaders mirror `CameraData` byte for byte. `Renderer3DCamera.glsl` only grows by appending, and every change is documented.
+- `u_VolumetricFog` stays at 12/13 by default (Headstone uses 0–3 and 5–7).
+- Off by default, with zero cost when off.
+- `CreateLitMaterial` output is identical to v1.2.
+
+Done when Phases 5 and 6 work in `examples/Dustlight` with the toggle panel and cost timer, `docs/volumetrics.md` answers H1–H11, and the v1.3 release notes list the final API names.
+
+### Phase 5 design (engine-designer, 2026-11-27)
+
+**Gaps found**
+- G1. The froxel pass sits between `ClearSceneLights` and the opaque draws. `EndScene` uploads `CameraData` at `Renderer3D.cpp:644` and `ShadowData` at `:650`, then `ClearSceneLights` (`:652`) wipes fog, lights and environment; the shadow atlas is drawn only at `:671-675`. So the volumetric decision and its UBO upload happen before `:644`, and the dispatches after `:675` but before the sky-first draw at `:680`.
+- G2. Custom shaders see only the 96 B `CameraData` prefix, and `Renderer3DScene.glsl` also carries varyings. Split the block into `Renderer3DCamera.glsl`.
+- G3. Declaring the volume inside `Renderer3DScene.glsl` would break custom shaders that use bindings 12/13, so lit, PBR, particles and sky each include `Volumetrics.glsl` explicitly.
+- G4. The new bindings go into cached material binding sets. Sampled textures are not in `m_RenderPassStorageItems` (`NvrhiCommandList.cpp:432-436`), but each scene's dispatch resets graphics state (`setComputeState`), so the first draw re-requires every set's states. No new barrier API.
+- G5. Two compute files, not `#ifdef` variants (includes paste regardless of `#if`; binding sets must match reflection, Phase 4 G5).
+- G6. Up to 32 scenes a frame but one history pair: only one scene per frame is temporal; others never write the history.
+- G7. Nothing serializes `FogComponent` (only `Scene.cpp:192` duplicates it). No save-format change.
+
+**Resources** (Renderer3D-owned, created in `Initialize` next to `:388-396`, deleted in `Shutdown` next to `:499`; code in new `src/DingoEngine/Graphics/Renderer3DVolumetrics.cpp`)
+- `m_VolumetricIntegrated`: `Texture3D RGBA16F`, `IsStorage`. Created 1×1×1 with (0,0,0,1) as the dummy every material binds; on the first active scene `Reinitialize`d to the grid (same pointer and `GetId()`, new generation, so cached sets re-point; IBL G1 holds). rgb = in-scatter from the camera to slice k's far boundary, a = transmittance.
+- `m_VolumetricScatter[2]` (history pair): `Texture3D RGBA16F`, storage, lazy at grid size. rgb = σs·L_in, a = σt.
+- Memory at 160×90×64: 7.03 MiB per texture, 21.1 MiB total; 8 B when off.
+- `m_VolumetricDataBuffer`: volatile UBO, `SetMaxWritesPerFrame(k_MaxScenesPerFrame)`, uploaded only by scenes that dispatch.
+- `m_VolumetricInject[2]` (pass i writes `Scatter[i]`, samples `Scatter[1−i]`) and `m_VolumetricIntegrate[2]` (pass i reads `Scatter[i]`): fixed resources, so binding sets never rebuild on a swap; only the atlas is re-set with `SetTexture` when its `GetId()`/pointer changes.
+- Shaders via `Internal::GetVolumetricShader(Inject|Integrate)` in new `Graphics/VolumetricShaders.{h,cpp}` (pattern `EnvironmentShaders.cpp:27-48`); `DestroyVolumetricShaders()` beside `Renderer.cpp:180`.
+- `SetVolumetricGrid`: `Reinitialize` all three in place, invalidate history. Lazy-create failure: log once, scene treated as off.
+
+**Slices and mapping** (`VolumetricMath.glsl`, C++-compilable like `Brdf.glsl`)
+- Boundary b at view depth `z_b = Near·(Far/Near)^(b/D)`; slice 0 integrates from depth 0. View depth `d = clip.w` of `ViewProjection·(p,1)`.
+- Froxel uv = `(ndc.x·0.5+0.5, 0.5−ndc.y·0.5)` on both inject and apply sides (same matrix, no backend y-flip).
+- Inject world position = `CameraPosition + ray(uv)·d`; `ray(uv)` = bilinear blend of 4 CPU (double) corner rays scaled so `dot(row3(VP).xyz, ray) = 1` (exact with infinite far). Segment length `Δd·|ray(uv)|`, so transmittance is radial like `Renderer3DScene.glsl:60`.
+- Apply: `s = D·log2(d/Near)/log2(Far/Near)`, `w = clamp((s−0.5)/D, 0.5/D, 1−0.5/D)`, `textureLod(...,0)`; for `d < z_1` `mix(vec4(0,0,0,1), sample, d/z_1)`; beyond Far, the last slice.
+
+**`CameraData`** (append after `EnvironmentParams`, `Renderer3D.h:755`)
+- `vec4 VolumeParams` @ **1856**: x = 1 when this scene samples the volume, y = Near, z = 1/log2(Far/Near), w = Far.
+- `vec4 VolumeGrid` @ **1872**: xyz = grid size, w = 1/z_1. `sizeof` = **1888**; extend the static_assert `:763-765`.
+- Mirrors: block moves from `Renderer3DScene.glsl:12-42` to new `Renderer3DCamera.glsl` (included at the top of `Renderer3DScene.glsl`); `docs/lighting.md` CameraData row; `.claude/reference/rendering.md`. `Renderer3D_MeshVertex.glsl:5-8` unchanged.
+- Set every `EndScene` (0 when inactive), zeroed in `ClearSceneLights` (`:2792-2806`).
+
+**`VolumetricData`** (std140, 224 B, private struct + static_assert in `Renderer3D.h`, mirrored in both kernels)
+
+| Offset | Member | Contents |
+|---|---|---|
+| 0 | `CameraPosition` | camera position |
+| 16 | `FrustumRays[4]` | corner rays, uv (0,0), (1,0), (0,1), (1,1) |
+| 80 | `mat4 PreviousViewProjection` | last temporal scene's view-projection |
+| 144 | `Grid` | xyz = size, w = 1 if history valid |
+| 160 | `Slices` | x = Near, y = Far, z = log2(Far/Near), w = jitter |
+| 176 | `Medium` | x = Density, y = BaseHeight, z = HeightFalloff, w = g |
+| 192 | `Albedo` | rgb = albedo, a = current-frame weight (1 = no history) |
+| 208 | `Intensities` | x = ambient, y = directional, zw reserved (Phase 6 volume/light counts) |
+
+**Pass sequence in `EndScene`** (main thread, frame list; #337 not widened)
+1. Before the fog block at `:627`, `PrepareVolumetrics(perspective)`:
+   - Active = `Capabilities.Volumetrics && m_VolumetricFogSet && perspective && !IsFrameSkipped()`.
+   - Lazily allocate; write `VolumeParams`/`VolumeGrid`; zero `FogColor`/`FogParams` when active (distance fog skipped, `Fogged` false, no AO fog).
+   - Parity: temporal = `settings.Temporal` and no temporal scene yet this frame (`Renderer::GetFrameIndex()`): reads `Scatter[h]`, writes `Scatter[1−h]`, `h = 1−h`. Non-temporal writes `Scatter[1−h]` without touching history.
+   - History valid when `m_VolumetricHistoryFrame == frame−1` and grid/Near/Far unchanged.
+   - Jitter: temporal = Halton base 2 of `(frame % 8)+1`, the same for every froxel (frame-stable, no spatial dither, Headstone #5); non-temporal 0.5.
+   - Upload `VolumetricData`.
+2. Move `shadowAtlas` (`:677`) above the shadow block; after `:671-675`, `DispatchVolumetrics(shadowAtlas)` in GPU timer `"Volumetrics"`:
+   - **Inject** (4×4×4 groups, 40×23×16): SRV atlas t3 (DepthWrite → ShaderResource via `RequireStorageStates`), history t5; UAV `Scatter[w]` u7; UBOs b0/b1/b2.
+   - **Integrate** (8×8×1, 20×12×1, loop over D): `Scatter[w]` t5 (UAV → SRV); `m_VolumetricIntegrated` u7 (SRV → UAV); b1.
+   - The first draw after re-requires ShaderResource through its set (G4). A later scene's inject puts the SRV → UAV barrier after the earlier scene's reads.
+3. `Statistics`: `Volumetrics`, `VolumetricTemporal`, `VolumetricDispatches += 2`.
+
+**Compute kernels**
+- `VolumetricInject.glsl`: includes `Renderer3DCamera.glsl` (b0), `Shadows.glsl` with `DE_SHADOW_DATA_BINDING 2`, `ATLAS 3`, `SAMPLER 4`, and `VolumetricMath.glsl`; declares `VolumetricData` b1, `texture3D u_History` t5, `sampler u_HistorySampler` s6 (`Renderer::GetClampSampler()`), `writeonly image3D rgba16f` u7.
+  1. Bounds-check and return.
+  2. `d = z(k + jitter)`.
+  3. `DE_FroxelMedium(world)`: σt = Density·exp(−HeightFalloff·max(y−BaseHeight, 0)), σs = Albedo·σt.
+  4. `DE_FroxelInScatter(world, rayDir)` = `AmbientColor·Ia + Σ_{i<LightCounts.x} π·HG(dot(Dir_i, −rayDir), g)·Color_i·Id·(i == ShadowCounts.y ? DE_DirectionalShadowVolume(world) : 1)`.
+  5. Current = (σs·L, σt).
+  6. Reproject the froxel centre (k+0.5) with `PreviousViewProjection`; if valid and inside [0,1]³, `mix(textureLod(history, uvw, 0), current, Albedo.a)` with `k_VolumetricHistoryBlend = 0.1`, else current.
+  7. `imageStore`.
+  - Phase 6 adds volumes to `DE_FroxelMedium` and local lights to `DE_FroxelInScatter` (t8+, `Intensities.zw`).
+- `VolumetricIntegrate.glsl`: `GL_EXT_samplerless_texture_functions`, `texelFetch` only (X3676). Per slice: `len = (z_{k+1} − z_k)·|ray|` (z_0 = 0); `Tr = exp(−σt·len)`; `S_int = σt > 1e-6 ? (S − S·Tr)/σt : S·len`; `scat += trans·S_int`; `trans *= Tr`; store.
+- `Shadows.glsl` (after `:127`): `DE_DirectionalShadowVolume(worldPosition)` — cascade pick, one `textureLod` compare (hardware 2×2), no normal offset or cascade blend, `mix(1, s, ShadowParams.x)`, 1 when `ShadowCounts.x == 0`. Lit and PBR don't call it.
+- D3D11 limits: CBs b0–b2, UAV u7 (< 8), samplers s4/s6; typed UAV store of R16G16B16A16_FLOAT is required at FL11 (Phase 1 proved 3D storage writes on all three backends).
+
+**Applying the fog** (`Volumetrics.glsl`, public)
+- `texture3D u_VolumetricFog` at `DE_VOLUMETRIC_FOG_BINDING` (default 12); sampler `u_VolumetricFogSampler` at `DE_VOLUMETRIC_FOG_SAMPLER_BINDING` (default 13) unless `DE_VOLUMETRIC_FOG_SAMPLER` names an existing sampler (`#ifndef`, honoured by the GLSL compiler).
+- `vec4 DE_SampleVolumetricFog(mat4 viewProjection, vec4 volumeParams, vec4 volumeGrid, vec3 worldPosition)`; `vec3 DE_ApplyVolumetricFog(vec3 color, vec4 fog, int target)` returns `color·T + (target == 0 ? L : target == 1 ? 0 : 1−T)` (lit fog's targets).
+- Callers branch on uniform `VolumeParams.x > 0.5` with `textureLod` inside (no implicit derivatives; X3570/X4014 don't apply). Off costs no fetch.
+- Lit (`Renderer3D_Lit.glsl:113-119`): distance-fog block unchanged byte for byte; volumetric block after it. t12, s13 (`GetClampSampler`). Lit uses 0–3, 5–9, 11; 4 is `SkinData` (custom shaders only).
+- PBR: `#define DE_VOLUMETRIC_FOG_BINDING 22`, `#define DE_VOLUMETRIC_FOG_SAMPLER u_EnvironmentSampler` next to `Renderer3D_Pbr.glsl:21-24`; `ApplySceneFog` (`:134-142`) branches the same way; call stays at `:214`.
+- Translucent lit and PBR: free (same shaders, call site `:1917`).
+- Particles (`ParticleDraw.glsl`): vertex adds `v_WorldPosition` (location 4); fragment `#define DE_VOLUMETRIC_FOG_BINDING 7`, sampler alias `u_SpriteSampler` (clamp, `ParticleRenderer.cpp:233`); applied before the premultiply at `:121`, target 1 when `Batch.w & 4` (additive). `ParticleDrawData` appends `VolumeParams`/`VolumeGrid` (192 → 224 B, assert `ParticleRenderer.cpp:65`); `ParticleRenderer::EndScene` (`:241`, called at `Renderer3D.cpp:745`) takes the texture and both vec4s; bound by name at `:232-235`.
+- Sky (`Skybox.glsl`): `SkyboxData::Reserved` (`Renderer3D.h:675`, `Skybox.glsl:27`) becomes `Volume` (x = on, y = last slice's w); texture binding 3, sampler alias `u_Sampler`; `ApplySkyFog` (`:42-45`) samples (uv from `v_Ndc`, last slice), target 0 — the sky gets fog to `Far`; bound in `DrawSkybox` (`Renderer3D.cpp:2762`).
+- Material: `k_VolumetricFogName = "u_VolumetricFog"` and `k_VolumetricFogSamplerName` next to `Material.h:236-248`; private `SetVolumetricResources(Texture*, Sampler*)` next to `:323` + `MaterialAccess::SetVolumetricResources` (`MaterialAccess.h:15`); bound by name in `GetOrCreateRenderPass` (`Material.cpp:331-348`, after `:399`; texture required, sampler only if reflected); both ids join `MakeCacheKey` (`:23-58`). Call sites next to every `SetEnvironmentResources`: `Renderer3D.cpp:697`, `:1917`, `:2445`.
+
+**Public API**
+- `struct VolumetricFog` in `Light.h` after `Fog` (`:101`): `Density` 0.02, `BaseHeight` 0, `HeightFalloff` 0, `Albedo{1}`, `Anisotropy` 0.2, `AmbientIntensity` 1, `LightIntensity` 1, `NearDistance` 0.5, `MaxDistance` 64, `Temporal` true. Display-space units like the lit shader: a white volume under ambient A scatters A.
+- `Renderer3D::SetVolumetricFog(const VolumetricFog&)` / `ClearVolumetricFog()`, scene-scoped like `SetFog`, next to `Renderer3D.h:332-334`. Returns false (warn once) for non-finite values, negative `Density`/intensity, `NearDistance ≤ 0` or `MaxDistance ≤ NearDistance`; clamps Anisotropy to ±0.95 and Albedo to 0..1. Effect only with the capability on.
+- `Renderer3DCapabilities` (`:63-130`): `bool Volumetrics = false`, `glm::uvec3 VolumetricGrid{160, 90, 64}` (x, y clamped 8–256, z 8–128). Runtime `SetVolumetricsEnabled`/`IsVolumetricsEnabled`/`SetVolumetricGrid`/`GetVolumetricGrid` beside `:537-540`; update the "only Instancing and LightBudgetFade can change" doc at `:60-62`.
+- `Statistics` (after `:645`): `Volumetrics`, `VolumetricTemporal`, `VolumetricDispatches`.
+- `FogComponent` (`Components.h:336-358`): `std::optional<VolumetricFog> Volumetric` (precedent `MeshRendererComponent::Surface`). `SubmitFog` (`LightSystem.cpp:139-142`) calls `SetVolumetricFog(*Volumetric)` when present; `UseClearColor` still affects only `Fog.Color`. SceneDebug shows the fields read-only (`SceneDebug.cpp:697-705`).
+- `Internal::Renderer3DAccess` gains integrated/scatter texture getters for tests.
+
+**Test: "Froxel Fog Test"** (`--test=froxel`, `test/src/Tests/Renderer/FroxelFogTest.{h,cpp}`, registered after `TestLayer.cpp:90`)
+- Checks run on a second renderer, grid 32×18×16, Temporal off unless stated, RGBA16F target, starting after 10 frames. The on-screen renderer runs at 64×36×32 until checks finish, then `SetVolumetricGrid` to the default (also exercises check 14).
+- Checks:
+  1. Off is unchanged: capability off / on but unset / set then toggled off give 0 px vs each other with distance fog; 0 dispatches; integrated stays 1×1×1.
+  2. Ambient-only uniform volume (g = 0, falloff 0): centre lit and PBR quad matches CPU `mix(c, A, 1−e^{−σr})` and `FogMode::Exponential` within 2/255.
+  3. Readback of slices D/2 and D−1: α = e^{−σ·z_{k+1}·|ray|}, rgb = A(1−α), within 2e-3.
+  4. Height falloff: closed-form column transmittance at top and bottom of the centre column.
+  5. HG: toward-sun vs away ratio = HG ratio; g = 0 gives σs·C/4.
+  6. Shafts: a texel in a caster's shadow has sun in-scatter ≈ 0; `ShadowStrength` 0.5 halves it.
+  7. Temporal: after 30 still frames within 1/255 of Temporal off; consecutive frames differ ≤ 1/255 at 8 px; a teleport gives no history.
+  8. Two scenes in one frame: only the first temporal; the second equals the reference.
+  9. Fog targets: Additive takes only T, Multiply goes to white; lit and PBR translucent fogged.
+  10. Particles: alpha and additive quads vs CPU.
+  11. Sky pixel = `sky·T(Far) + L(Far)`.
+  12. Test-only custom shader via `Volumetrics.glsl` + `Renderer3DCamera.glsl` equals CPU.
+  13. Scene path vs direct API: 0 px at 1.5/255; a `FogComponent` without `Volumetric` keeps distance fog.
+  14. Grid resize: same id, new generation, cached materials draw, no errors.
+  15. Orthographic camera has no volume.
+  16. Invalid settings rejected, warn once.
+- On-screen 2×2: sun shafts through a slatted wall (temporal); height fog over boxes with lit and PBR spheres; g −0.5 / 0 / 0.8 toward the sun; translucent, particles and sky in fog.
+- Doctests `test/UnitTests/src/VolumetricTests.cpp`: slice depth/coordinate round trip (z_0 = Near, z_D = Far, monotone); HG integrates to 1, HG(0) = 1/4π; integrate step vs closed form + σt → 0 limit; height density; Halton values and mean.
+
+**Build groups**
+1. `VolumetricMath.glsl` + `Renderer3DCamera.glsl` split (`.inl` + `s_EmbeddedShaders` rows, `EngineShaders.cpp:5-29`, `:45-70`), doctests. Verify: unit tests; Lighting 43, PBR 61 unchanged.
+2. Public API + Scene plumbing, no rendering. Verify: full build.
+3. Resources, `VolumetricShaders`, inject/integrate kernels, `Shadows.glsl` tap, `EndScene` hooks. Verify: checks 3–8, Shadow 32.
+4. `CameraData` +32 B, `Volumetrics.glsl`, lit/PBR/particle/sky, Material binding + cache key, call sites. Verify: checks 1, 2, 9–16; Lighting, PBR, Skybox, IBL, Particle, Batch, Post unchanged.
+5. On-screen panel, GPU timer, cost log.
+6. Docs: new `docs/volumetrics.md`; `lighting.md` (CameraData 1888 B, `:552` limitation), `scenes-and-ecs.md`, `pbr.md` (22), `particles.md`, `environment.md` (sky fog), `shadows.md`; `.claude/reference/rendering.md` section + PBR row 22; As built.
+
+**Needs testing on a real GPU**
+- D3D11 debug layer: CS-UAV / PS-SRV hazard on `m_VolumetricIntegrated` between scenes; atlas as CS SRV after the DSV pass.
+- D3D12 root signature with t12/s13/t22/t7/t3. Vulkan sync validation: inject → integrate → draw, two scenes a frame.
+- FXC compile time of the integrate loop at -Od; RGBA16F transmittance precision at long range.
+- Visual: ghosting under fast rotation at blend 0.1; slice banding near Near; truss shadow sharpness at 160×90 (G-H2, Headstone hall `--spawn=0,8,180,10` vs the approved capture); sky seam at Far.
+- Cost estimate: inject ~0.15 ms, integrate ~0.05 ms on the RX 7900 XTX at default; per pixel 1 trilinear fetch + ~15 ALU; 21 MiB.
+
+### Phase 5 public API choices (owner chose A for P1–P14, 2026-11-27)
+
+| # | Question | Options | Recommended |
+|---|---|---|---|
+| P1 | Capability name | A `Volumetrics` + `SetVolumetricsEnabled`; B `VolumetricFog`; C enum mode | A |
+| P2 | Grid size lives | A `Capabilities.VolumetricGrid` + runtime `SetVolumetricGrid`; B per scene; C create-time only | A |
+| P3 | Settings shape | A `VolumetricFog` struct + `FogComponent::Volumetric` optional; B `FogMode::Volumetric`; C new component | A |
+| P4 | Units | A `Density` = extinction/unit (= `Fog::Density` Exponential), falloff/unit, …; B visibility distance | A |
+| P5 | Flag on, only distance fog set | A distance fog stays; B auto-convert | A |
+| P6 | Colour space | A display (like lit fog); B linear | A |
+| P7 | Dispatches | A inject+temporal, integrate (2); B separate temporal (3) | A |
+| P8 | Shaft shadow lookup | A single-tap `DE_DirectionalShadowVolume`; B 3×3 PCF | A |
+| P9 | Temporal, many scenes | A first temporal scene only; B per-view history | A |
+| P10 | Custom-shader contract | A includes + auto-bound names + binding macros; B also a public texture getter | A |
+| P11 | Translucent, particles, sky in Phase 5 | A all three; B translucent only | A |
+| P12 | AO fade under volume | A none, documented + issue; B crude exponential | A |
+| P13 | Orthographic | A no volume; B ortho grid | A |
+| P14 | History blend | A fixed 0.1 internal; B public `TemporalBlend` | A |
+
 ## Phase 6: local volumes and local-light scattering
 
 - O5 raymarch mode for box volumes (see "Headstone request" above).
@@ -403,7 +596,16 @@ Open for that design: how it combines with froxel fog in the same view, and whet
 
 ## Phase 7: showcase, docs, review
 
-- Candlewick upgrade + `--check`, test cases (D6).
+- **D6 changed (owner, 2026-11-27): a fresh example project instead of the Candlewick upgrade.** Candlewick stays as it is. Name: `examples/Dustlight` (owner confirmed 2026-11-27). Content so far (more to come from the owner):
+  - A room built with Phase 6 local volumes, with windows letting sunlight in to make sun shafts.
+  - Owner picked all five (2026-11-27): a sun/time-of-day slider so the shafts sweep; dust-mote particles in the beams; PBR props lit by the window sky (IBL); a lantern whose cone scatters (Phase 6 point/spot); a toggle panel (volumetrics on/off, grid size, temporal) with the GPU cost timer.
+  - **Scope (owner, 2026-11-27): the example showcases every v1.3 feature**, not only the room. That means:
+    - PBR materials with glTF texture maps (albedo, normal, metallic-roughness, AO, emissive), and a metal/roughness grid;
+    - HDR environments with the skybox, IBL on PBR props, and switching between environments;
+    - global height fog and sun shafts;
+    - Phase 6 local volumes (box/sphere, noise), the O5 raymarch mode, and point/spot scattering.
+  - `--check` mode as before.
+- Test cases (D6).
 - Docs: new `docs/pbr.md` and `docs/volumetrics.md`, updates to `lighting.md`, `post-processing.md`, `asset-pipeline.md`; `.claude/reference/rendering.md` sections.
 - Milestone review `.claude/reviews/YYYY-MM-DD-v1.3-review.md`; open findings become issues.
 
@@ -514,3 +716,21 @@ Built as designed (owner chose A for P1–P10) in 5 code groups plus docs and re
 - **Review** (engine-reviewer): 1 High, 1 Medium, 6 Low. Fixed H1, M1, L1, L2, L3, L5. Left: L4 (editing a bake shader at runtime doesn't re-bake until restart; Debug only), L6 (GPU check above).
 - **Needs testing on a real GPU:** a real sun `.hdr` on a roughness grid (L6); one RenderDoc/PIX capture of the environment copy's barriers; lit versus PBR-with-IBL brightness in a real level.
 - **Docs:** `docs/environment.md` ("Image-based lighting"), `pbr.md`, `scenes-and-ecs.md`, `lighting.md` (`CameraData` row, now 1856 B), `.claude/reference/rendering.md` (PBR bindings 14/15/20/21, copy-restore rule, include rule).
+
+### Phase 5 (2026-11-27, uncommitted)
+
+Built as designed (owner chose A for P1–P14; H1, H4, P15 and P16 approved) in 6 groups, with these changes:
+- **Public API:** `Renderer3DCapabilities::Volumetrics` and `VolumetricGrid`, `SetVolumetricsEnabled`/`SetVolumetricGrid`, `VolumetricFog`, `SetVolumetricFog`/`ClearVolumetricFog`, `ResetVolumetricHistory`, `FogComponent::Volumetric`, `CameraComponent::ResetVolumetricHistory` (one-shot, consumed in `SceneRenderer`), `Statistics::Volumetrics/VolumetricTemporal/VolumetricDispatches`.
+- **H1** `VolumetricFog::ScatterTint` (`vec3{1}`, finite, ≥ 0, unclamped, in-scatter only): `VolumetricData` is 240 B, `ScatterTint` at 224 (rgb = tint, a = `OutsideShadowLight`), mirrored in the inject kernel.
+- **H4 + P15** `DE_DirectionalShadowVolume(world, outside)`: the last cascade's shadow fades to `OutsideShadowLight` over `(end − start) × CascadeBlend` (the surface shadow's width), also used outside every cascade and outside the map; `ShadowCounts.x == 0` stays unshadowed. `OutsideShadowLight` is clamped to 0..1 (NaN rejected).
+- **P16** `Renderer3D::ResetVolumetricHistory()` drops the history for the next scene; the ECS route is the camera's one-shot flag.
+- **Deviations from the design:**
+  - `SetVolumetricFog` also rejects a negative `HeightFalloff`.
+  - The integrate step is two functions in `VolumetricMath.glsl`, `DE_SliceTransmittance` and `DE_SliceInScatterFactor`, instead of one.
+  - Check 12's custom shader has its own world-space vertex stage, because `Renderer3D_MeshVertex.glsl` needs `a_ObjectIndex`.
+  - Check 14b fails on empty or black images, so a failed readback no longer passes.
+- **Froxel Fog Test** (`--test=froxel`): 88 PASS lines on Vulkan, DX11 and DX12 after the review fixes (checks 1–20, with 1d/1e added: the original 1–16 plus 17 `ScatterTint`, 18 the cascade-end fade, 19 `OutsideShadowLight`, 20 the history reset by API and by camera). Checks 18/19 use the on-screen renderer at Near 30, Far 90 and a 600 m slab, and read the inject slices around the last cascade's end. The on-screen 2×2 view now has a PBR sphere (height panel) and, in the dense panel, a translucent sphere, an alpha and an additive particle emitter and the environment's sky. One log line after the checks gives the `Volumetrics` timer: 0.13–0.17 ms mean over four scenes a frame at 160×90×64 on the RX 7900 XTX.
+- **Review (engine-reviewer, high): M1, M2, L1-L9 fixed.** M1 non-finite values now fail every check helper (`MaxChannel`, `Relative`, the 18/19 series, 4b, 17); M2 the top-left panel is a sun behind slats lit toward the camera under a roof, so beams show; L1 `EnsureVolumetricResources` re-checks the shaders each scene and a failure leaves `VolumeParams` zero, logging once; L2 no sticky create flag, the shaders are re-queried (hot reload recovers); L3 docs and `///` say the grid is allocated at first use and kept; L4 the create-time grid is clamped in the `Renderer3D` constructor; L5 past `MaxDistance` surfaces take the fog at `MaxDistance` (docs and `Light.h`); L6 AO is applied after the fog and darkens dense haze (docs); L7 `DE_DirectionalShadowVolume` scales the outside value by `ShadowStrength`; L8 custom-shader docs note `FogColor`/`FogParams` are zeroed with the volume active; L9 `IsUnused` needs a non-null texture and checks 1d/1e cover a used volume switched off (0 px, 0 dispatches). Froxel test now 88 PASS lines per backend.
+- **Results** (RX 7900 XTX, private desktops, Debug): all PASS on 3 APIs, 0 `VUID-`, 0 sync, 0 error lines; D3D12 shows only the known shadow-atlas barrier warning. Unit tests 250/250.
+- **Docs:** new `docs/volumetrics.md` (incl. the Headstone H1–H16 answers), `README.md`, `lighting.md`, `scenes-and-ecs.md`, `pbr.md` (binding 22), `particles.md`, `environment.md`, `shadows.md`, and `.claude/reference/rendering.md` (section, PBR row 22).
+- **Needs testing on a real GPU:** the list under "Phase 5 design" still stands (D3D11 debug-layer hazards on the integrated volume between scenes, ghosting at blend 0.1 under fast rotation, slice banding near Near, truss shadow sharpness in the Headstone hall, the sky seam at Far); the D3D debug layer was clean in this run.

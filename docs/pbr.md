@@ -59,6 +59,12 @@ limits are in [Environment and skybox](environment.md#image-based-lighting).
   not reflect the ground into the sky.
 - The post chain's [ambient occlusion](post-processing.md#ambient-occlusion) is separate and darkens the finished pixel.
 
+## Fog
+
+A PBR material takes distance fog like a lit one and, when the scene has [volumetric fog](volumetrics.md),
+samples the froxel volume at texture binding 22 (a custom shader that mirrors the PBR bindings
+leaves 22 to it).
+
 ## Importing a glTF model
 
 `ModelLoadParams().SetPbrMaterials(true)` makes `Model::LoadFromFile` build a PBR material for every

@@ -116,8 +116,8 @@ PBR shaders output, so a radiance of 1 shows as white, like a fully lit white su
 ## Fog
 
 Distance fog does not apply to the sky. To make the horizon meet the fog, set `FogComponent::UseClearColor`
-to `false` and `Fog.Color` to the colour of the sky's horizon. Fog through the air (froxel fog) comes in
-a later phase.
+to `false` and `Fog.Color` to the colour of the sky's horizon. Fog through the air ([volumetric fog](volumetrics.md)) does: a scene with it
+fogs the sky to the volume's `MaxDistance`, so the horizon meets the haze without matching colours.
 
 ## Image-based lighting
 

@@ -4,7 +4,7 @@ Read on demand from CLAUDE.md. Shaders, Renderer2D/3D, lighting, skinning and an
 
 - DingoUI renderer · Shaders and cache · Renderer2D · Renderer3D and batching · Culling.
 - Upload arena and instancing · Static batches · Translucency · Lighting and fog · Lit materials.
-- Environment and skybox · Pipeline state and winding · Skinning · Animator · Animation events · Root motion · Model reload.
+- Environment and skybox · Volumetric fog · Pipeline state and winding · Skinning · Animator · Animation events · Root motion · Model reload.
 - Render targets and readback (incl. texture mips, arrays, cubes, volumes, HDR) · Post chain · Bloom and ambient occlusion · Shadows and probes.
 - Compute (incl. mip, cube and 3D bindings) · Particles · Vulkan and NVRHI rules.
 
@@ -168,7 +168,7 @@ PBR materials were added in v1.3 Phase 2 (`docs/pbr.md`).
 | 15 | `DE_EnvironmentSh` (`readonly` std430 buffer: 9 SH irradiance coefficients) |
 | 20 | `u_EnvironmentSpecular` (cube, 6 mips) |
 | 21 | `u_EnvironmentBrdf` (128² LUT) |
-| 22 | reserved for Phase 5 froxels |
+| 22 | `u_VolumetricFog` (3D, the froxel volume; `DE_VOLUMETRIC_FOG_BINDING 22`, sampler aliased to `u_EnvironmentSampler`) |
 
 - D3D11 limits: constant buffers b0, b1, b2 (push constants) and b12; samplers ≤ s13.
 
@@ -180,7 +180,7 @@ PBR materials were added in v1.3 Phase 2 (`docs/pbr.md`).
 - Albedo, emissive, the mesh colour, the ambient colour and every light colour are authored in sRGB like lit and decoded in the shader (`SrgbToLinear`). Lighting is linear, with light colours × π, so a white surface under a full-strength white light or ambient matches lit; mid-tone light colours and falloff come out brighter than lit (gamma-correct).
 - Mips of albedo and emissive maps are filtered in linear space (`MipFilter::Srgb`, cache suffix `|mips-srgb`); normal maps average as vectors.
 - `LinearToSrgb` is applied before the cascade tint and fog, so post effects see display-space values, like lit.
-- Hook points: `PbrAmbient` (IBL, Phase 4) and `ApplySceneFog` (Phase 5 froxels).
+- Hook points: `PbrAmbient` (IBL, Phase 4) and `ApplySceneFog` (distance fog, and the froxel volume when `VolumeParams.x > 0.5`).
 
 **Normal maps**
 - The frame comes from screen derivatives, with `sign(det)` so mirrored UVs and the D3D y flip both work. Without UVs it falls back to the geometric normal.
@@ -201,17 +201,41 @@ PBR materials were added in v1.3 Phase 2 (`docs/pbr.md`).
 - **Bindings**: UBO `SkyboxData` at 0 (std140, 96 bytes: inverse view-projection, `Params` = cos/sin of the turn `-Rotation` and intensity, reserved), the cube at 1, `Renderer::GetClampSampler()` at 2.
 - **Material cache**: `m_SkyboxMaterials`, keyed by the cube's `Texture::GetId()` (an in-place reload keeps it), each with `SetUniformWritesPerFrame(k_MaxScenesPerFrame)`; one not used for more than `k_MaxIdleBatchScenes` scenes is destroyed by `ReleaseIdleSkyboxes` (called from `BeginSceneInternal`, next to `ReleaseIdleTwins`), so a deleted `Environment` leaves nothing but a short-lived material. All are freed in the destructor.
 - **Scene side**: `LightSystem::SubmitSkybox` (called at the end of `SubmitLights`) picks the `SkyboxComponent` like the fog and calls `SetEnvironment`; `Visible` becomes `DrawSkybox`.
-- **Hooks for later**: `ApplySkyFog(color, dir)` in `Skybox.glsl` is the identity (Phase 5 froxel fog); `Visible = false` keeps the environment for IBL.
+- **Hooks**: `ApplySkyFog(color, dir)` in `Skybox.glsl` samples the volume's last slice (see Volumetric fog); `Visible = false` keeps the environment for IBL.
 
 **Image-based lighting** (v1.3 Phase 4, `Shaders/Ibl.glsl`, `docs/environment.md`)
 - `SceneEnvironment` and `SkyboxComponent` carry `Lighting` (default true) and `LightingIntensity` (default 1). `LightSystem::SubmitSkybox` copies both; `Visible = false` still lights.
 - **Bake** (inside `Environment::Prepare`, after the cube mips): SH9 radiance coefficients into `m_Irradiance` (a `GraphicsBuffer`) and a GGX prefiltered 128 cube (6 mips, roughness m/5) into `m_Specular`. `m_BakeGeneration` changes on each bake. The shared 128² BRDF LUT (`Internal::GetBrdfLut`) bakes lazily on the first Environment bake inside a frame. No multiscatter. `IsReady()` covers all of it.
 - **Renderer copy** (`PrepareEnvironmentLighting`): `Renderer3D` owns `m_IblSpecular` and `m_IblIrradiance` and copies the environment's in via `CommandList::CopyTexture` / `CopyBuffer` when `m_IblSourceId` or `m_IblSourceGeneration` changes (`EnvironmentLightingCopies`). Materials bind only these (`MaterialAccess::SetEnvironmentResources`, names `k_Environment*Name`), never the Environment's own textures, so cached binding sets stay valid.
 - **Copy-restore rule**: a copy into a texture or buffer that stable binding sets sample must put it back in its usual state afterwards (`NvrhiCommandList::CopyTexture`/`CopyBuffer` do), or the sets go stale.
-- `CameraData::EnvironmentParams` (last member, after `FogParams`): x = 1 when lit by the environment, y = `Intensity` x `LightingIntensity`, z/w = cos/sin of the lookup's turn (`DE_RotateY`). The static_assert in `Renderer3D.h` pins it; custom materials only see the frozen prefix.
+- `CameraData::EnvironmentParams` (last member, after `FogParams`): x = 1 when lit by the environment, y = `Intensity` x `LightingIntensity`, z/w = cos/sin of the lookup's turn (`DE_RotateY`). The static_assert in `Renderer3D.h` pins it; custom materials only see the frozen prefix. `VolumeParams` (@1856) and `VolumeGrid` (@1872) follow it (x = 1 when the froxel volume is sampled; Phase 5), making the block 1888 bytes.
 - **Shader** (`PbrAmbient`): every fetch happens before the final select between the IBL result and the flat path (`EnvBRDFApprox`, unchanged), so derivatives stay uniform. Diffuse = irradiance x AO; specular = prefiltered x (F0 x A + B) x Lagarde specular occlusion (`DE_SpecularOcclusion(NoV, ao, a)`) x a horizon fade. Radiance enters undecoded and is encoded with the rest.
 - **Include preprocessor**: it pastes each include once and ignores `#if`, so put includes at the top of the file; an include inside a conditional is pasted regardless. `Ibl.glsl` does not pull in `Brdf.glsl` (which has no guard): include `Brdf.glsl` first.
 - IBL resources are internal only; there is no new exposure control (post exposure acts on the encoded sky and PBR alike). Stats: `EnvironmentLighting`, `EnvironmentLightingCopies`.
+
+## Volumetric fog
+
+Froxel fog, v1.3 Phase 5 (`docs/volumetrics.md`; code in `Graphics/Renderer3DVolumetrics.cpp`, `VolumetricShaders.{h,cpp}`).
+
+**Passes** (`Renderer3D::EndScene`)
+- `PrepareVolumetrics(perspective)` runs before the fog block: active = `Capabilities.Volumetrics` + `SetVolumetricFog` + perspective + not `IsFrameSkipped`. It zeroes `FogColor`/`FogParams` (no distance fog, no AO fog), writes `VolumeParams`/`VolumeGrid`, picks the history parity and uploads the 240 B `VolumetricData` (volatile UBO, one write per dispatching scene).
+- `DispatchVolumetrics(shadowAtlas)` runs after the shadow pass and before the sky and opaque draws, in GPU timer `Volumetrics`: **inject** (`VolumetricInject.glsl`, 4x4x4 groups; writes `Scatter[w]` = (sigmaS L, sigmaT), blends with the reprojected `Scatter[1-w]` at 0.1) then **integrate** (`VolumetricIntegrate.glsl`, 8x8x1, loops the slices; writes `m_VolumetricIntegrated`: rgb in-scatter, a transmittance). The integrate step is two functions in `VolumetricMath.glsl` (`DE_SliceTransmittance`, `DE_SliceInScatterFactor`).
+- Resources: `m_VolumetricIntegrated` is 1x1x1 until a scene is active, then `Reinitialize`d in place (same id, new generation, so cached sets re-point); `m_VolumetricScatter[2]` is the history pair. Only the first temporal scene of a frame touches the history; later scenes write the free half without swapping.
+- `VolumetricData` (`Renderer3D.h`, static_assert) mirrors into both kernels: `ScatterTint` at 224 (rgb tint, a = `OutsideShadowLight`). SetVolumetricFog rejects negative Density, HeightFalloff, intensities and ScatterTint.
+- The sun shadow tap is `DE_DirectionalShadowVolume(world, outside)` in `Shadows.glsl`: one `textureLod` compare, no normal bias, fades the last cascade over `(end - start) * CascadeBlend` to `outside`; a light with `ShadowCounts.x == 0` returns 1. Only the inject kernel calls it.
+
+**Bindings**
+- Lit: texture 12, sampler 13 (`GetClampSampler`). PBR: 22 with `u_EnvironmentSampler`. Particles: 7 with `u_SpriteSampler`. Sky: 3 with `u_Sampler`. Custom: `Volumetrics.glsl` with `DE_VOLUMETRIC_FOG_BINDING`, `DE_VOLUMETRIC_FOG_SAMPLER_BINDING` or `DE_VOLUMETRIC_FOG_SAMPLER`.
+- Bound by name `u_VolumetricFog` (`Material::SetVolumetricResources`, both ids in `MakeCacheKey`); the sampler only if the shader declares it.
+- `CameraData` ends with `VolumeParams` (1856) and `VolumeGrid` (1872), 1888 B, in `Renderer3DCamera.glsl` (append-only). Custom shaders mirror the 96 B prefix.
+
+**Gotchas**
+- Includes are pasted once and ignore `#if`: `Volumetrics.glsl` and the camera block sit at the top of every shader that uses them, and a new include needs an `.inl` and an `s_EmbeddedShaders` row.
+- No `imageLoad` on `rgba16f` (not a readable format on every backend): the history is a sampled texture, the kernel only `imageStore`s. The integrate kernel uses `texelFetch` (`GL_EXT_samplerless_texture_functions`).
+- `textureLod` only inside the uniform `VolumeParams.x` branch; X3570/X4014 do not apply.
+- A custom shader's world-space vertex stage: `Renderer3D_MeshVertex.glsl` needs `a_ObjectIndex`, so test shaders (Froxel Fog Test check 12) write their own.
+- History: `m_VolumetricHistoryFrame == frame - 1` and unchanged grid/Near/Far; `ResetVolumetricHistory()` (and `CameraComponent::ResetVolumetricHistory`, consumed in `SceneRenderer`) sets it to none.
+- The on-screen view's grid is 64x36x32 until the checks finish, then the default (it exercises `SetVolumetricGrid`).
 
 ## Pipeline state and winding
 

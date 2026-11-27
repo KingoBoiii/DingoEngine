@@ -248,6 +248,14 @@ and at once for a light without a shadow, and in between at the sun's PCF edge.
 The Animation Test's `--anim-shadow` lights its Foxes with a casting sun, and the Lighting Test's
 `--budget-fade` fades its overbudget scene.
 
+## Volumetric fog
+
+[Volumetric fog](volumetrics.md) reads the sun's cascades too: each cell of its grid takes one
+comparison tap of the cascade that covers it, with no normal bias and no blend between cascades, so
+the medium in a caster's shadow gets no sun and the shafts show. Past the last cascade the shadow
+fades over its tail (the `CascadeBlend` width) to `VolumetricFog::OutsideShadowLight`, so the map's
+edge shows no step. A light that casts no shadow stays unshadowed.
+
 ## Limits
 
 - Only the first casting directional light of a scene gets shadows. Casting point and spot lights

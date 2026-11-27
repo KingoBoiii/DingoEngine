@@ -179,6 +179,8 @@ More than one candidate at step 2 (or, with none there, at step 3) warns once.
 - **Rejected** with a warning (once) and `false` from `SetFog`: a non-finite value, a negative
   `Density`, or `Linear` with `End` not past `Start`. `MaxOpacity` is clamped to 0..1.
 - **Perspective cameras only.** An orthographic camera's scene draws without fog.
+- **Volumetric fog** (`FogComponent::Volumetric`, `SetVolumetricFog`) replaces the distance fog of a
+  scene that has it and also fogs particles and the sky: see [Volumetric fog](volumetrics.md).
 - **What it covers:** the lit shader's static and skinned draws, emissive and highlights included,
   before the post chain's tone curve. Particles, custom material shaders (unless they mirror the
   fog members, see [below](#custom-material-shaders)) and the 2D overlay aren't fogged, and the
@@ -489,8 +491,10 @@ appended after them, so a shader that declares only those three keeps compiling 
 | 1808 | `vec4 FogColor` | rgb = the fog's colour, a = its `MaxOpacity`. |
 | 1824 | `vec4 FogParams` | x = `Start`, y = `End`, z = `Density`, w = the `FogMode` (0 none, 1 linear, 2 exponential, 3 exponential squared). |
 | 1840 | `vec4 EnvironmentParams` | x = 1 when image-based lighting is on, y = `Intensity` × `LightingIntensity`, z and w = cos and sin of −`Rotation`. |
+| 1856 | `vec4 VolumeParams` | x = 1 when the scene samples the froxel volume, y = near, z = 1 / log2(far / near), w = far. |
+| 1872 | `vec4 VolumeGrid` | xyz = the volume's grid size, w = 1 / the first slice's far depth. |
 
-The whole block is 1856 bytes. Declare members in this order from the start; you may stop after
+The whole block is 1888 bytes. Declare members in this order from the start; you may stop after
 any of them. To use the lights, mirror the whole block, struct definitions included, from
 [`Renderer3D_Lit.glsl`](../src/DingoEngine/Graphics/Shaders/Renderer3D_Lit.glsl), the reference
 implementation. Either stage may declare binding 0 (the lit shader's vertex stage declares only
@@ -549,8 +553,8 @@ and a copy of it is embedded in the engine library at build time.
 - **Cost:** every pixel loops over every light in the scene (up to 4 + 32), with no tiling or
   per-object light lists, and there is no depth pre-pass, so heavy overdraw multiplies the cost.
 - **Budget-edge popping** unless the budget fade is on, described [above](#the-light-budget).
-- **Fog** is per pixel on lit meshes only, with no height fog or volumetric light, and none with an
-  orthographic camera ([Fog](#fog)).
+- **Distance fog** is per pixel on lit meshes only, with no height fog, and none with an
+  orthographic camera ([Fog](#fog)). Height fog and light shafts are [volumetric fog](volumetrics.md).
 - **Translucency is sorted per mesh**, not per triangle or pixel ([Translucent materials](#translucent-materials)).
 - **Particles draw over translucent meshes**, even from behind them, since they aren't in the
   translucent sort ([Translucent materials](#translucent-materials)).
