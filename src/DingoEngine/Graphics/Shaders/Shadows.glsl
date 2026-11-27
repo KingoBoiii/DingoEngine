@@ -126,6 +126,46 @@ float DirectionalShadow(vec3 worldPosition, vec3 normal)
 	return mix(1.0, shadow, ShadowParams.x);
 }
 
+// One hardware comparison of the cascade the point lies in: no normal offset, no filter kernel and no
+// blend into the next cascade, which suits a medium that has no surface to offset from. Same result as
+// DirectionalShadow otherwise: 1 without a shadow, mixed toward the shadow by its strength. A point
+// outside every cascade or outside the cascade's map gets outsideLight, which the last cascade's tail
+// reaches smoothly over the same fraction the surface shadows blend over (ShadowForward.w).
+float DE_DirectionalShadowVolume(vec3 worldPosition, float outsideLight)
+{
+	if (ShadowCounts.x <= 0)
+		return 1.0;
+	outsideLight = mix(1.0, outsideLight, ShadowParams.x);
+	float depth = ShadowDepth(worldPosition);
+	int cascade = ShadowCascadeIndex(depth);
+	if (cascade < 0)
+		return outsideLight;
+
+	vec4 clip = Tiles[cascade].ViewProjection * vec4(worldPosition, 1.0);
+	if (clip.w <= 0.0)
+		return outsideLight;
+	vec3 ndc = clip.xyz / clip.w;
+	vec2 uv = vec2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+	if (uv.x <= 0.0 || uv.x >= 1.0 || uv.y <= 0.0 || uv.y >= 1.0 || ndc.z >= 1.0)
+		return outsideLight;
+
+	vec4 rect = Tiles[cascade].AtlasRect;
+	float texel = ShadowParams.z;
+	vec2 tap = clamp(rect.xy + uv * rect.zw, rect.xy + vec2(texel), rect.xy + rect.zw - vec2(texel));
+	float lit = textureLod(sampler2DShadow(u_ShadowAtlas, u_ShadowSampler), vec3(tap, ndc.z), 0.0);
+	float shadow = mix(1.0, lit, ShadowParams.x);
+
+	if (cascade == ShadowCounts.x - 1)
+	{
+		float end = Tiles[cascade].Params.x;
+		float start = cascade > 0 ? Tiles[cascade - 1].Params.x : 0.0;
+		float band = (end - start) * ShadowForward.w;
+		if (band > 0.0)
+			shadow = mix(shadow, outsideLight, clamp((depth - (end - band)) / band, 0.0, 1.0));
+	}
+	return shadow;
+}
+
 float LocalLightShadow(int light, vec3 worldPosition, vec3 normal)
 {
 	if (ShadowCounts.w <= 0)

@@ -11,6 +11,7 @@
 #include "Tests/Renderer/TextureSubresourceTest.h"
 #include "Tests/Renderer/PbrMaterialTest.h"
 #include "Tests/Renderer/IblTest.h"
+#include "Tests/Renderer/FroxelFogTest.h"
 #include "Tests/Renderer/SkyboxTest.h"
 #include "Tests/Renderer/ParticleTest.h"
 
@@ -88,6 +89,7 @@ namespace Dingo
 		m_Tests.push_back({ "PBR Material Test", []() { return new PbrMaterialTest(); } });
 		m_Tests.push_back({ "Skybox Test", []() { return new SkyboxTest(); } });
 		m_Tests.push_back({ "IBL Test", []() { return new IblTest(); } });
+		m_Tests.push_back({ "Froxel Fog Test", []() { return new FroxelFogTest(); } });
 		m_Tests.push_back({ "Particle Test", []() { return new ParticleTest(); } });
 		m_Tests.push_back({ "Throughput Test", []() { return new ThroughputTest(); } });
 		m_Tests.push_back({ "Display Mode Test", [&]() { return new DisplayModeTest(m_Renderer2D); } });

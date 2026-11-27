@@ -29,6 +29,7 @@ layout(binding = 2) uniform texture2D u_Albedo;
 layout(binding = 3) uniform sampler u_AlbedoSampler;
 
 #include <DingoEngine/Shadows.glsl>
+#include <DingoEngine/Volumetrics.glsl>
 
 layout(location = 0) out vec4 o_Color;
 
@@ -116,6 +117,11 @@ void main()
 		// nothing, Multiply multiplies by white.
 		vec3 fogTarget = Surface.w < 0.5 ? FogColor.rgb : vec3(Surface.w < 1.5 ? 0.0 : 1.0);
 		finalColor = mix(finalColor, fogTarget, FogFactor(distance(CameraPosition.xyz, v_WorldPosition)) * FogColor.a);
+	}
+	if (VolumeParams.x > 0.5)
+	{
+		vec4 volume = DE_SampleVolumetricFog(ViewProjection, VolumeParams, VolumeGrid, v_WorldPosition);
+		finalColor = DE_ApplyVolumetricFog(finalColor, volume, Surface.w < 0.5 ? 0 : (Surface.w < 1.5 ? 1 : 2));
 	}
 	// Alpha is the mesh colour's alone, never an albedo map's. Only a translucent material's meshes
 	// are sorted and leave depth unwritten, so blend correctly.

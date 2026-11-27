@@ -4,7 +4,8 @@
 // display-space values. Resources
 // sit where the five material slots (bindings 2 to 11) leave room: ShadowData 12, its sampler 13, the
 // environment sampler 14, the irradiance coefficients 15, the atlas 16, DE_ObjectData 17, DE_InstanceData 18,
-// DE_SkinPalette 19, the environment's specular cube 20 and BRDF table 21; 22 up is reserved.
+// DE_SkinPalette 19, the environment's specular cube 20, BRDF table 21 and the froxel fog volume 22 (read with
+// the environment sampler); 23 up is reserved.
 //
 // PbrMaterialData mirrors Internal::PbrMaterialData (PbrShaders.h).
 
@@ -54,6 +55,10 @@ layout(std430, binding = 15) readonly buffer DE_EnvironmentSh
 };
 layout(binding = 20) uniform textureCube u_EnvironmentSpecular;
 layout(binding = 21) uniform texture2D u_EnvironmentBrdf;
+
+#define DE_VOLUMETRIC_FOG_BINDING 22
+#define DE_VOLUMETRIC_FOG_SAMPLER u_EnvironmentSampler
+#include <DingoEngine/Volumetrics.glsl>
 
 layout(location = 0) out vec4 o_Color;
 
@@ -130,13 +135,18 @@ vec3 PbrAmbient(vec3 diffuseColor, vec3 F0, float roughness, float NoV, float oc
 	return EnvironmentParams.x > 0.5 ? ibl : flatAmbient;
 }
 
-// Fog as the lit shader applies it; where Phase 5's froxel volume replaces it.
+// Fog as the lit shader applies it: the distance fog, or the froxel volume when the scene has one.
 vec3 ApplySceneFog(vec3 color)
 {
 	if (FogParams.w > 0.5 && CameraPosition.w > 0.5)
 	{
 		vec3 fogTarget = PbrFlags.x == 0 ? FogColor.rgb : vec3(PbrFlags.x == 1 ? 0.0 : 1.0);
 		color = mix(color, fogTarget, FogFactor(distance(CameraPosition.xyz, v_WorldPosition)) * FogColor.a);
+	}
+	if (VolumeParams.x > 0.5)
+	{
+		vec4 volume = DE_SampleVolumetricFog(ViewProjection, VolumeParams, VolumeGrid, v_WorldPosition);
+		color = DE_ApplyVolumetricFog(color, volume, PbrFlags.x);
 	}
 	return color;
 }

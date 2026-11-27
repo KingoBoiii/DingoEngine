@@ -181,6 +181,11 @@ namespace Dingo
 		/// Marks the camera the scene renders through; only one per scene should.
 		bool Primary = true;
 
+		/// One-shot: set it true on a camera cut or a teleport and the next 3D pass drops the
+		/// volumetric fog's temporal history (Renderer3D::ResetVolumetricHistory), then clears the
+		/// flag. Only the perspective camera the scene renders through reads it.
+		bool ResetVolumetricHistory = false;
+
 		/// An orthographic, primary camera showing 10 world units of height.
 		CameraComponent() = default;
 		/// Copies all fields.
@@ -340,6 +345,9 @@ namespace Dingo
 		bool UseClearColor = true;
 		/// False takes this fog out of the choice without removing the component.
 		bool Enabled = true;
+		/// When set, also submitted with Renderer3D::SetVolumetricFog; it acts only with
+		/// Renderer3DCapabilities::Volumetrics on, and then replaces the distance fog.
+		std::optional<VolumetricFog> Volumetric;
 
 		/// Linear fog from 10 to 50 world units, fading to the clear colour.
 		FogComponent() = default;

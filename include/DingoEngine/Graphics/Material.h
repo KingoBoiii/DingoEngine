@@ -246,6 +246,10 @@ namespace Dingo
 		static constexpr const char* k_EnvironmentBrdfName = "u_EnvironmentBrdf";
 		/// Name of the sampler for the two environment textures a shader declares (Renderer3D_Pbr.glsl).
 		static constexpr const char* k_EnvironmentSamplerName = "u_EnvironmentSampler";
+		/// Name of the froxel fog volume a shader declares (Volumetrics.glsl).
+		static constexpr const char* k_VolumetricFogName = "u_VolumetricFog";
+		/// Name of the volume's sampler, when the shader declares its own (Volumetrics.glsl).
+		static constexpr const char* k_VolumetricFogSamplerName = "u_VolumetricFogSampler";
 
 		// ---- Accessors -------------------------------------------------------
 
@@ -327,6 +331,11 @@ namespace Dingo
 		// shader gave it. Only the renderer's own copies are ever passed, so the cached passes stay valid.
 		void SetEnvironmentResources(GraphicsBuffer* irradiance, Texture* specular, Texture* brdfLut, Sampler* sampler);
 
+		// Binds Renderer3D's froxel fog volume to the shader's u_VolumetricFog texture and, when the
+		// shader declares one, u_VolumetricFogSampler. Only the renderer's own stable texture and sampler
+		// are ever passed, so the cached passes stay valid.
+		void SetVolumetricResources(Texture* volume, Sampler* sampler);
+
 		// Binds Renderer3D's per-mesh surface records to the shader's DE_ObjectData storage block.
 		// Another buffer only re-points the cached passes' binding sets, so the renderer can grow it
 		// without new pipelines.
@@ -377,6 +386,8 @@ namespace Dingo
 		Texture*             m_EnvironmentSpecular = nullptr;
 		Texture*             m_EnvironmentBrdf    = nullptr;
 		Sampler*             m_EnvironmentSampler = nullptr;
+		Texture*             m_VolumetricFog      = nullptr;
+		Sampler*             m_VolumetricSampler  = nullptr;
 		GraphicsBuffer*      m_ObjectBuffer       = nullptr;
 		uint64_t             m_ObjectBufferId     = 0;
 		GraphicsBuffer*      m_InstanceBuffer     = nullptr;

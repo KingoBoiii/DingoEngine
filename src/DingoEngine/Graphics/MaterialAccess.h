@@ -12,6 +12,7 @@ namespace Dingo::Internal
 		static void SetDrawConstants(Material* material, const glm::uvec4& constants) { material->SetDrawConstants(constants); }
 		static const uint8_t* GetPushConstantData(const Material* material) { return material->GetPushConstantData(); }
 		static void SetEnvironmentResources(Material* material, GraphicsBuffer* irradiance, Texture* specular, Texture* brdfLut, Sampler* sampler) { material->SetEnvironmentResources(irradiance, specular, brdfLut, sampler); }
+		static void SetVolumetricResources(Material* material, Texture* volume, Sampler* sampler) { material->SetVolumetricResources(volume, sampler); }
 		static void SetShadowResources(Material* material, GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler) { material->SetShadowResources(shadowData, atlas, sampler); }
 		static void SetObjectBuffer(Material* material, GraphicsBuffer* buffer) { material->SetObjectBuffer(buffer); }
 		static void SetInstanceBuffers(Material* material, GraphicsBuffer* records, GraphicsBuffer* draw) { material->SetInstanceBuffers(records, draw); }

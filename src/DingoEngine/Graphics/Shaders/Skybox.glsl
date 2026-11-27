@@ -25,11 +25,15 @@ layout(std140, binding = 0) uniform SkyboxData
 {
 	mat4 InverseViewProjection;
 	vec4 Params;   // x = cos and y = sin of the angle the lookup is turned by, z = linear intensity
-	vec4 Reserved;
+	vec4 Volume;   // x = 1: the froxel volume fogs the sky, y = the texture coordinate of its last slice
 };
 
 layout(binding = 1) uniform textureCube u_Cube;
 layout(binding = 2) uniform sampler u_Sampler;
+
+#define DE_VOLUMETRIC_FOG_BINDING 3
+#define DE_VOLUMETRIC_FOG_SAMPLER u_Sampler
+#include <DingoEngine/Volumetrics.glsl>
 
 layout(location = 0) out vec4 o_Color;
 
@@ -41,6 +45,12 @@ vec3 UnprojectPoint(float depth)
 
 vec3 ApplySkyFog(vec3 color, vec3 dir)
 {
+	if (Volume.x > 0.5)
+	{
+		vec2 uv = vec2(v_Ndc.x * 0.5 + 0.5, 0.5 - v_Ndc.y * 0.5);
+		vec4 volume = textureLod(sampler3D(u_VolumetricFog, DE_VOLUMETRIC_FOG_SAMPLER), vec3(uv, Volume.y), 0.0);
+		return DE_ApplyVolumetricFog(color, volume, 0);
+	}
 	return color;
 }
 

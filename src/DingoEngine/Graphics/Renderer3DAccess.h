@@ -17,6 +17,14 @@ namespace Dingo::Internal
 		{
 			renderer.SubmitMeshWithBounds(mesh, transform, color, material, shadows, shadowGroups, cullDistance, surface, &bounds, bounded);
 		}
+
+		// The froxel volume's textures for tests: the integrated volume, and the scatter volume the latest
+		// scene that dispatched wrote (null before any did).
+		static Texture* VolumetricIntegrated(const Renderer3D& renderer) { return renderer.m_VolumetricIntegrated; }
+		static Texture* VolumetricScatter(const Renderer3D& renderer) { return renderer.m_VolumetricScatter[renderer.m_VolumetricPass]; }
+		// The scatter texture the temporal history lives in, and the frame it was written (~0 for none).
+		static Texture* VolumetricHistory(const Renderer3D& renderer) { return renderer.m_VolumetricScatter[renderer.m_VolumetricHistory]; }
+		static uint64_t VolumetricHistoryFrame(const Renderer3D& renderer) { return renderer.m_VolumetricHistoryFrame; }
 	};
 
 }

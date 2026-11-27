@@ -143,6 +143,8 @@ namespace Dingo::Internal::LightSystem
 			if (chosen->UseClearColor)
 				fog.Color = clearColor;
 			renderer.SetFog(fog);
+			if (chosen->Volumetric)
+				renderer.SetVolumetricFog(*chosen->Volumetric);
 		}
 
 		// Chosen like the fog: the camera's own, else the first on an entity without a camera, else,

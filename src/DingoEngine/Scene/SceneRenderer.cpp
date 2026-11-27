@@ -71,6 +71,13 @@ namespace Dingo
 			if (postProcess)
 				stack.Begin(post->Settings, perspectiveCamera.GetComponent<CameraComponent>().GetProjection(aspect));
 
+			CameraComponent& perspective = perspectiveCamera.GetComponent<CameraComponent>();
+			if (perspective.ResetVolumetricHistory)
+			{
+				m_Renderer3D->ResetVolumetricHistory();
+				perspective.ResetVolumetricHistory = false;
+			}
+
 			m_Renderer3D->BeginScene(scene.GetCameraViewProjection(perspectiveCamera, aspect));
 			m_Renderer3D->Clear(clearColor);
 			scene.SubmitLights(*m_Renderer3D, perspectiveCamera, shadowProbes);

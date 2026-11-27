@@ -100,6 +100,46 @@ namespace Dingo
 		float MaxOpacity = 1.0f; ///< Cap on the fog factor, 0 (no fog) to 1 (can fully hide).
 	};
 
+	/// Froxel volumetric fog settings for Renderer3D::SetVolumetricFog: a participating medium that
+	/// scatters the scene's ambient and directional light toward the camera, with shafts where a
+	/// shadow-casting directional light is blocked. Colours are in display space, like Fog: a white
+	/// medium under an ambient of A scatters A. It acts only when Renderer3DCapabilities::Volumetrics
+	/// is on, and replaces the scene's distance fog.
+	struct VolumetricFog
+	{
+		/// Extinction per world unit at BaseHeight and below, the same unit as Fog::Density in
+		/// Exponential mode; must be 0 or more.
+		float Density = 0.02f;
+		float BaseHeight = 0.0f; ///< World height above which the density falls off.
+		/// Per world unit above BaseHeight: density is multiplied by e^(-HeightFalloff h). 0 is a
+		/// uniform medium; must be 0 or more.
+		float HeightFalloff = 0.0f;
+		glm::vec3 Albedo{ 1.0f }; ///< Fraction of the extinguished light that scatters, per channel, clamped to 0..1.
+		/// Henyey-Greenstein asymmetry, clamped to -0.95..0.95: above 0 scatters toward where the
+		/// light travels, 0 evenly.
+		float Anisotropy = 0.2f;
+		float AmbientIntensity = 1.0f; ///< Scales the scene's ambient light in the medium; 0 or more.
+		float LightIntensity = 1.0f; ///< Scales the directional lights in the medium; 0 or more.
+		/// Multiplies the in-scatter of the ambient and directional light per channel, apart from
+		/// Albedo and the light's own colour: a haze tinted blue under a violet sun. It never
+		/// changes extinction, so transmittance is the same. Finite and 0 or more, and not clamped,
+		/// so a value above 1 brightens.
+		glm::vec3 ScatterTint{ 1.0f };
+		/// How much of the sun reaches a sample that no shadow cascade covers, from 0 (dark, so only
+		/// air the shadow map proves lit scatters) to 1 (lit, the default). The shadow of the last
+		/// cascade fades to it over the cascade's tail, with the width the surface shadows use
+		/// (ShadowSettings::CascadeBlend), so there is no edge at the end of the map. A light that
+		/// casts no shadow is unshadowed whatever this is. The light's ShadowStrength scales it: the
+		/// outside value is mix(1, OutsideShadowLight, ShadowStrength), so outside air is never darker
+		/// than full shadow. Clamped to 0..1.
+		float OutsideShadowLight = 1.0f;
+		float NearDistance = 0.5f; ///< View depth where the volume starts; above 0.
+		float MaxDistance = 64.0f; ///< View depth where the volume ends; surfaces past it take the fog at MaxDistance. Above NearDistance.
+		/// Blend each frame with the previous one to smooth the sampling noise. Only the first
+		/// temporal scene of a frame uses the history.
+		bool Temporal = true;
+	};
+
 	/// The weight Renderer3D's lit shader gives the light at `point`, from 0 to 1, for gameplay
 	/// tests such as "is the player inside that cone": falloff^2 for a point light and
 	/// falloff^2 * cone^2 for a spot, where falloff = 1 - d^2 / Range^2 (0 from Range on) and the

@@ -303,6 +303,7 @@ namespace Dingo
 	Renderer3D::Renderer3D(const Renderer3DParams& params)
 		: m_Params(params)
 	{
+		m_Params.Capabilities.VolumetricGrid = glm::uvec3(std::clamp(params.Capabilities.VolumetricGrid.x, 8u, 256u), std::clamp(params.Capabilities.VolumetricGrid.y, 8u, 256u), std::clamp(params.Capabilities.VolumetricGrid.z, 8u, 128u));
 	}
 
 	Renderer3D::~Renderer3D()
@@ -394,6 +395,24 @@ namespace Dingo
 			.SetDimension(TextureDimension::TextureCube));
 		m_IblIrradiance = GraphicsBuffer::CreateStorageBuffer(Internal::k_IblIrradianceBytes, "Renderer3D_IblIrradiance");
 		Internal::GetBrdfLut();
+
+		const uint16_t noFogTexel[4] = { 0x0000, 0x0000, 0x0000, 0x3C00 };
+		m_VolumetricIntegrated = Texture::Create(TextureParams()
+			.SetDebugName("Renderer3D_VolumetricIntegrated")
+			.SetWidth(1)
+			.SetHeight(1)
+			.SetDepth(1)
+			.SetFormat(TextureFormat::RGBA16F)
+			.SetDimension(TextureDimension::Texture3D)
+			.SetIsStorage(true)
+			.SetInitialData(noFogTexel));
+		m_VolumetricDataBuffer = GraphicsBuffer::Create(GraphicsBufferParams()
+			.SetDebugName("Renderer3D_VolumetricData")
+			.SetByteSize(sizeof(VolumetricData))
+			.SetType(BufferType::UniformBuffer)
+			.SetIsVolatile(true)
+			.SetUpload(BufferUpload::Deferred)
+			.SetMaxWritesPerFrame(k_MaxScenesPerFrame));
 
 		m_Particles = std::make_unique<Internal::ParticleRenderer>(std::clamp(m_Params.Capabilities.MaxParticles, 64u, k_MaxParticlesLimit));
 		m_SkinnedVisibility = std::make_shared<Internal::SkinnedVisibility>();
@@ -502,6 +521,9 @@ namespace Dingo
 		m_IblSourceGeneration = 0;
 		DestroyAndDelete(m_ShadowDataBuffer);
 		DestroyAndDelete(m_ShadowViewsBuffer);
+		DestroyVolumetricResources();
+		DestroyAndDelete(m_VolumetricIntegrated);
+		DestroyAndDelete(m_VolumetricDataBuffer);
 
 		DestroyAndDelete(m_ProbeMaterial);
 		delete m_ProbeShader;
@@ -624,6 +646,7 @@ namespace Dingo
 			const float radians = glm::radians(-environment.Rotation);
 			m_CameraData.EnvironmentParams = glm::vec4(1.0f, environment.Intensity * environment.LightingIntensity, std::cos(radians), std::sin(radians));
 		}
+		PrepareVolumetrics(perspective);
 		m_Statistics.Fogged = m_CameraData.FogParams.w > 0.5f && perspective;
 		if (m_Statistics.Fogged)
 		{
@@ -675,6 +698,7 @@ namespace Dingo
 		}
 
 		Texture* shadowAtlas = m_ShadowAtlas ? m_ShadowAtlas->GetDepthAttachment() : m_PlaceholderShadowAtlas;
+		DispatchVolumetrics(shadowAtlas);
 		const Framebuffer* skyTarget = Renderer::GetRenderTarget();
 		const bool skyFirst = skyTarget && !skyTarget->GetParams().EnableDepth;
 		if (drawSky && skyFirst)
@@ -695,6 +719,7 @@ namespace Dingo
 				Internal::MaterialAccess::SetSkinPaletteBuffer(material, nullptr);
 				Internal::MaterialAccess::SetShadowResources(material, m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
 				Internal::MaterialAccess::SetEnvironmentResources(material, m_IblIrradiance, m_IblSpecular, Internal::GetBrdfLut(), Renderer::GetClampSampler());
+				Internal::MaterialAccess::SetVolumetricResources(material, m_VolumetricIntegrated, Renderer::GetClampSampler());
 				Internal::MaterialAccess::SetObjectBuffer(material, m_ObjectBuffer);
 				if (instanced)
 				{
@@ -742,7 +767,7 @@ namespace Dingo
 		m_SceneStaticBatches.clear();
 
 		if (m_Particles)
-			m_Particles->EndScene(m_CameraData.ViewProjection, m_Statistics);
+			m_Particles->EndScene(m_CameraData.ViewProjection, m_VolumetricIntegrated, m_SceneVolumeParams, m_SceneVolumeGrid, m_Statistics);
 		Renderer::EndGpuTimer();
 	}
 
@@ -1915,6 +1940,7 @@ namespace Dingo
 			Internal::MaterialAccess::SetSkinPaletteBuffer(material, nullptr);
 			Internal::MaterialAccess::SetShadowResources(material, m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
 			Internal::MaterialAccess::SetEnvironmentResources(material, m_IblIrradiance, m_IblSpecular, Internal::GetBrdfLut(), Renderer::GetClampSampler());
+			Internal::MaterialAccess::SetVolumetricResources(material, m_VolumetricIntegrated, Renderer::GetClampSampler());
 			Internal::MaterialAccess::SetObjectBuffer(material, m_ObjectBuffer);
 			const VertexLayout& layout = IsLitShader(material->GetShader()) ? m_LitLayout : m_Layout;
 			Renderer::DrawIndexed(material, layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
@@ -2443,6 +2469,7 @@ namespace Dingo
 		Internal::MaterialAccess::SetSceneUniformBuffer(material, m_SceneUniformBuffer);
 		Internal::MaterialAccess::SetShadowResources(material, m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
 		Internal::MaterialAccess::SetEnvironmentResources(material, m_IblIrradiance, m_IblSpecular, Internal::GetBrdfLut(), Renderer::GetClampSampler());
+		Internal::MaterialAccess::SetVolumetricResources(material, m_VolumetricIntegrated, Renderer::GetClampSampler());
 		Internal::MaterialAccess::SetObjectBuffer(material, m_ObjectBuffer);
 
 		// The skinned vertices exist only on the GPU, so a two-sided mesh's sides are split by culling:
@@ -2672,6 +2699,48 @@ namespace Dingo
 		m_CameraData.FogParams = glm::vec4(0.0f);
 	}
 
+	bool Renderer3D::SetVolumetricFog(const VolumetricFog& fog)
+	{
+		const bool finite = std::isfinite(fog.Density) && std::isfinite(fog.BaseHeight) && std::isfinite(fog.HeightFalloff) && IsFinite(fog.Albedo)
+			&& std::isfinite(fog.Anisotropy) && std::isfinite(fog.AmbientIntensity) && std::isfinite(fog.LightIntensity)
+			&& std::isfinite(fog.NearDistance) && std::isfinite(fog.MaxDistance) && IsFinite(fog.ScatterTint) && std::isfinite(fog.OutsideShadowLight);
+		const bool usable = finite && fog.Density >= 0.0f && fog.HeightFalloff >= 0.0f && fog.AmbientIntensity >= 0.0f && fog.LightIntensity >= 0.0f
+			&& fog.NearDistance > 0.0f && fog.MaxDistance > fog.NearDistance && glm::all(glm::greaterThanEqual(fog.ScatterTint, glm::vec3(0.0f)));
+		if (!usable)
+		{
+			if (!m_VolumetricFogWarned)
+			{
+				DE_CORE_WARN("Renderer3D: a volumetric fog was ignored: it needs finite values, no negative Density, HeightFalloff, intensity or ScatterTint, a NearDistance above 0 and a MaxDistance past it.");
+				m_VolumetricFogWarned = true;
+			}
+			return false;
+		}
+
+		m_VolumetricFog = fog;
+		m_VolumetricFog.Anisotropy = std::clamp(fog.Anisotropy, -0.95f, 0.95f);
+		m_VolumetricFog.Albedo = glm::clamp(fog.Albedo, glm::vec3(0.0f), glm::vec3(1.0f));
+		m_VolumetricFog.OutsideShadowLight = std::clamp(fog.OutsideShadowLight, 0.0f, 1.0f);
+		m_VolumetricFogSet = true;
+		return true;
+	}
+
+	void Renderer3D::ClearVolumetricFog()
+	{
+		m_VolumetricFog = {};
+		m_VolumetricFogSet = false;
+	}
+
+	void Renderer3D::SetVolumetricGrid(const glm::uvec3& grid)
+	{
+		const glm::uvec3 clamped(std::clamp(grid.x, 8u, 256u), std::clamp(grid.y, 8u, 256u), std::clamp(grid.z, 8u, 128u));
+		if (clamped == m_Params.Capabilities.VolumetricGrid)
+			return;
+		m_Params.Capabilities.VolumetricGrid = clamped;
+		InvalidateVolumetricHistory();
+		if (m_VolumetricScatter[0])
+			EnsureVolumetricResources();
+	}
+
 	bool Renderer3D::SetEnvironment(const SceneEnvironment& environment)
 	{
 		if (!environment.Environment)
@@ -2768,6 +2837,9 @@ namespace Dingo
 		SkyboxData data;
 		data.InverseViewProjection = glm::mat4(glm::inverse(glm::dmat4(m_CameraData.ViewProjection)));
 		data.Params = glm::vec4(std::cos(radians), std::sin(radians), environment.Intensity, 0.0f);
+		if (m_SceneVolumeParams.x > 0.5f)
+			data.Volume = glm::vec4(1.0f, 1.0f - 0.5f / m_SceneVolumeGrid.z, 0.0f, 0.0f);
+		Internal::MaterialAccess::SetVolumetricResources(entry.Sky, m_VolumetricIntegrated, nullptr);
 		entry.Sky->SetUniform(data);
 		Renderer::Draw(entry.Sky, 3);
 		return true;
@@ -2793,6 +2865,8 @@ namespace Dingo
 	{
 		m_CameraData.AmbientColor = glm::vec4(0.0f);
 		m_CameraData.EnvironmentParams = glm::vec4(0.0f);
+		m_CameraData.VolumeParams = glm::vec4(0.0f);
+		m_CameraData.VolumeGrid = glm::vec4(0.0f);
 		m_CameraData.LightCounts = glm::ivec4(0);
 		m_LocalLights.clear();
 		m_SceneLightSubmitted = false;
@@ -2802,6 +2876,7 @@ namespace Dingo
 		m_LastSubmittedLight = {};
 		m_ShadowProbes.clear();
 		ClearFog();
+		ClearVolumetricFog();
 		ClearEnvironment();
 	}
 

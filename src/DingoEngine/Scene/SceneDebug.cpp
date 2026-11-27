@@ -703,6 +703,19 @@ namespace Dingo
 					Add(section, "Density", Text(fog->Settings.Density));
 					Add(section, "Max opacity", Text(fog->Settings.MaxOpacity));
 					Add(section, "Color", fog->UseClearColor ? "the clear colour" : Text(fog->Settings.Color));
+					if (fog->Volumetric)
+					{
+						const VolumetricFog& volume = *fog->Volumetric;
+						Add(section, "Volumetric density", Text(volume.Density));
+						Add(section, "Volumetric height", std::format("{:.2f} / falloff {:.3f}", volume.BaseHeight, volume.HeightFalloff));
+						Add(section, "Volumetric albedo", Text(volume.Albedo));
+						Add(section, "Volumetric anisotropy", Text(volume.Anisotropy));
+						Add(section, "Volumetric intensity", std::format("ambient {:.2f}, light {:.2f}", volume.AmbientIntensity, volume.LightIntensity));
+						Add(section, "Volumetric range", std::format("{:.2f} to {:.2f}", volume.NearDistance, volume.MaxDistance));
+						Add(section, "Volumetric scatter tint", Text(volume.ScatterTint));
+						Add(section, "Volumetric outside shadow light", Text(volume.OutsideShadowLight));
+						Add(section, "Volumetric temporal", Text(volume.Temporal));
+					}
 				}
 
 				if (const SkyboxComponent* sky = registry.try_get<SkyboxComponent>(handle))
