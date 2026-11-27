@@ -106,16 +106,28 @@ namespace Dingo
 	void Material::SetTexture(uint32_t slot, Texture* texture)
 	{
 		DE_CORE_ASSERT(slot < k_MaxTextureSlots, "Texture slot out of range");
-		if (m_Textures[slot] == texture)
+		const uint64_t textureId = texture ? texture->GetId() : 0;
+		if (m_Textures[slot] == texture && m_TextureIds[slot] == textureId)
 			return;
 
-		Texture* previous = m_Textures[slot];
+		// The slot's previous texture may already be freed, so only the format and dimension noted at set time are read.
+		const bool hadTexture = m_TextureIds[slot] != 0;
+		const bool sameKind = hadTexture && texture
+			&& m_TextureFormats[slot] == texture->GetParams().Format
+			&& m_TextureDimensions[slot] == texture->GetParams().Dimension;
+
 		m_Textures[slot] = texture;
+		m_TextureIds[slot] = textureId;
+		if (texture)
+		{
+			m_TextureFormats[slot] = texture->GetParams().Format;
+			m_TextureDimensions[slot] = texture->GetParams().Dimension;
+		}
 		++m_BindingRevision;
 
 		// Another texture of the same format and dimension in a slot the passes already bind: their pipelines
 		// stay and only their binding sets are re-baked, so alternating two targets compiles nothing.
-		if (previous && texture && previous->GetParams().Format == texture->GetParams().Format && previous->GetParams().Dimension == texture->GetParams().Dimension)
+		if (sameKind)
 		{
 			const uint32_t binding = (m_SceneUniformBuffer ? 2u : 1u) + slot * 2;
 			for (auto& [key, entry] : m_PipelineCache)

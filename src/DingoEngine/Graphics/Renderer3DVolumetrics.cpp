@@ -456,9 +456,9 @@ namespace Dingo
 		Renderer::EndGpuTimer();
 		if (!integrated)
 		{
-			if (!m_VolumetricWarned)
+			if (!m_VolumetricDispatchWarned)
 				DE_CORE_ERROR("Renderer3D: recording the volumetric fog dispatches failed.");
-			m_VolumetricWarned = true;
+			m_VolumetricDispatchWarned = true;
 			InvalidateVolumetricHistory();
 			return;
 		}

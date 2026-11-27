@@ -2,6 +2,8 @@
 #include "DingoEngine/Graphics/Pipeline.h"
 #include "DingoEngine/Graphics/RenderPass.h"
 #include "DingoEngine/Graphics/Sampler.h"
+#include "DingoEngine/Graphics/Enums/TextureFormat.h"
+#include "DingoEngine/Graphics/Enums/TextureDimension.h"
 #include "DingoEngine/Graphics/GraphicsBuffer.h"
 #include "DingoEngine/Graphics/SurfaceOverride.h"
 
@@ -369,6 +371,9 @@ namespace Dingo
 		uint64_t m_Id = AllocateId();
 
 		Texture* m_Textures[k_MaxTextureSlots] = {};
+		uint64_t m_TextureIds[k_MaxTextureSlots] = {};
+		TextureFormat m_TextureFormats[k_MaxTextureSlots] = {};
+		TextureDimension m_TextureDimensions[k_MaxTextureSlots] = {};
 		Sampler* m_Samplers[k_MaxSamplerSlots] = {};
 		uint64_t m_SamplerIds[k_MaxSamplerSlots] = {};
 		uint64_t m_BindingRevision = 0;

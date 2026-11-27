@@ -1748,6 +1748,7 @@ namespace Dingo
 		Texture* m_VolumetricAtlas = nullptr;
 		uint64_t m_VolumetricAtlasId = 0;
 		bool m_VolumetricWarned = false;
+		bool m_VolumetricDispatchWarned = false;
 		bool m_VolumetricScene = false;           // this scene dispatches the volume
 		uint32_t m_VolumetricPass = 0;            // the pass pair this scene uses
 		uint32_t m_VolumetricHistory = 0;         // the scatter texture the last temporal scene wrote
