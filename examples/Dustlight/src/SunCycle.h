@@ -41,7 +41,8 @@ namespace Dingo
 
 			const float warmth = 1.0f - std::clamp((sun.ElevationDegrees - k_MinElevation) / 30.0f, 0.0f, 1.0f);
 			sun.Color = glm::mix(glm::vec3(1.0f, 0.94f, 0.84f), glm::vec3(1.0f, 0.56f, 0.26f), warmth);
-			sun.Intensity = glm::mix(5.0f, 3.2f, warmth);
+			const float fade = glm::smoothstep(0.0f, 0.3f, height);
+			sun.Intensity = glm::mix(5.0f, 3.2f, warmth) * fade;
 			return sun;
 		}
 	}

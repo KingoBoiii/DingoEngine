@@ -82,6 +82,7 @@ namespace Dingo
 		Check(Near(noon.ElevationDegrees, SunCycle::k_MaxElevation), "sun curve: noon at the maximum elevation");
 		Check(Near(dawn.AzimuthDegrees, -SunCycle::k_AzimuthSpan) && Near(dusk.AzimuthDegrees, SunCycle::k_AzimuthSpan), "sun curve: azimuth sweeps the span");
 		Check(dawn.Color.b < noon.Color.b && dawn.Intensity < noon.Intensity, "sun curve: a low sun is warmer and dimmer");
+		Check(SunCycle::Evaluate(0.0f).Intensity == 0.0f && SunCycle::Evaluate(24.0f).Intensity == 0.0f && dusk.Intensity == 0.0f, "sun curve: the sun is off at dusk and at night");
 	}
 
 	void Checks::Build(DustlightLayer& layer)
