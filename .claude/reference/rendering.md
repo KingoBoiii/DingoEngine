@@ -213,6 +213,14 @@ PBR materials were added in v1.3 Phase 2 (`docs/pbr.md`).
 - **Include preprocessor**: it pastes each include once and ignores `#if`, so put includes at the top of the file; an include inside a conditional is pasted regardless. `Ibl.glsl` does not pull in `Brdf.glsl` (which has no guard): include `Brdf.glsl` first.
 - IBL resources are internal only; there is no new exposure control (post exposure acts on the encoded sky and PBR alike). Stats: `EnvironmentLighting`, `EnvironmentLightingCopies`.
 
+**Procedural sky** (v1.3 Phase 8, `Shaders/Atmosphere.glsl`, `ProceduralSky.glsl`, `docs/environment.md`)
+- `Environment::CreateProcedural` makes the same class with `m_Procedural`; `Prepare` is split into a source stage (`.hdr`: equirect upload and `DE_ENV_EQUIRECT`; procedural: the sky stages) and the shared `RecordDerivedStages` (downsample, BRDF LUT, SH, prefilter).
+- The `.hdr` keeps transient passes and `RunAfterFrame`; a procedural environment keeps about 20 persistent `ComputePass` members and only re-pushes constants. Stages: transmittance LUT 256x64, multiple-scattering LUT 32x32 (both only when the atmosphere parameters change), sky-view LUT 192x108, then the cube. One bake per environment per frame (`m_LastBakeFrame`).
+- `EnvironmentAccess::NeedsBake` (`!m_Ready || m_SkyDirty`) and `SetSunDirection` (the `RebakeAngle` threshold) are what `Renderer3D::EndScene` uses after it applies `FollowSun`; `TintSun` rewrites the main light colour in `m_CameraData` before the upload, in the encoded domain.
+- `Atmosphere.glsl` is written in the GLSL subset that also compiles as C++ over GLM; `Environment.cpp` includes it for `GetSunTransmittance` (the first engine `.cpp` to include a `.glsl`).
+- `SkyboxData` is 128 B (the sun disc fields); the disc is added in `Skybox.glsl` after the cube lookup, with the CPU's transmittance at the live light direction.
+- Scene side: `SkyboxComponent::FollowSun`/`TintSun` go through `LightSystem::SubmitSkybox`; no save-format change.
+
 ## Volumetric fog
 
 Froxel fog, v1.3 Phase 5 (`docs/volumetrics.md`; local volumes, raymarch and the debug view are the subsection below; code in `Graphics/Renderer3DVolumetrics.cpp`, `VolumetricShaders.{h,cpp}`).
