@@ -149,6 +149,9 @@ untouched, and `SceneEnvironment::Lighting` / `SkyboxComponent::Lighting` (defau
 - **Limits.** One environment per scene. No multiple scattering, so a rough metal reads a little darker
   than it should, most visibly in a furnace test. The diffuse term is band-limited (SH9): a sun in the
   panorama lights softly, not as a shadow-casting light, so use a directional light for the sun.
+- **Custom shaders.** The renderer binds the environment only to a shader that declares all four of
+  `DE_EnvironmentSh` (the SH buffer), `u_EnvironmentSpecular`, `u_EnvironmentBrdf` and `u_EnvironmentSampler`
+  (as `Renderer3D_Pbr.glsl` does); one or two of them bind nothing. Declare all four or none.
 
 `Renderer3D::Statistics::EnvironmentLighting` says whether the last scene lit PBR materials from the
 environment, and `EnvironmentLightingCopies` how many times it copied the lighting in (1 whenever the

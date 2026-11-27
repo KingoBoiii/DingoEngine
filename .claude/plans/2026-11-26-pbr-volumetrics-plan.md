@@ -1,4 +1,4 @@
-**Status**: open — Phases 1–4 committed (`3d33d8fc`, `97235b5e`, `13c54ffb`, `a94c3af8`, `04693ec3`, `e15b509f`); Phase 5 built and reviewed (uncommitted); left: L1 failed-dispatch case logs once but still samples a stale volume that scene (explain in PR); D3D12 #1008 shadow-atlas duplicate-barrier warning rises to ~2.5k lines in the froxel run (atlas used as compute SRV), same known warning
+**Status**: open — Phases 1–6 committed (`3d33d8fc`, `97235b5e`, `13c54ffb`, `a94c3af8`, `04693ec3`, `e15b509f`, `1a5fbb2a`, `88e1a5ca`, `20a29660`, `930e4214`, `7af93366`); Phase 7 (Dustlight, milestone review and fixes) built, uncommitted; D3D12 #1008 shadow-atlas duplicate-barrier warning rises to ~2.5k lines in the froxel run (atlas used as compute SRV), same known warning
 
 # v1.3: PBR materials, image-based lighting and volumetric fog
 
@@ -775,6 +775,20 @@ Read: plan 1-22, 359-595, 720-737; `Renderer3DVolumetrics.cpp`, `VolumetricInjec
     - global height fog and sun shafts;
     - Phase 6 local volumes (box/sphere, noise), the O5 raymarch mode, and point/spot scattering.
   - `--check` mode as before.
+- **Owner choices (2026-11-27):** assets from Poly Haven (CC0), downloaded to `examples/Dustlight/assets/` (loose files, no `.dpak`):
+  - HDRIs 2k: `hdri/kloofendal_48d_partly_cloudy_puresky.hdr` (sunny), `hdri/venice_sunset.hdr`, `hdri/moonless_golf.hdr` (night).
+  - glTF 1k: `models/{Lantern_01,brass_vase_01,wooden_crate_01,WoodenTable_01}/<name>.gltf` with `.bin` and `textures/*_{diff,nor_gl,arm}_1k.jpg` (ARM = AO/rough/metal). No emissive maps: emissive is shown with a material override (lantern glass).
+  - Q1 A: ImGui panel. Q2 A: fly camera (WASD + RMB) with presets 1–3 (room, sphere grid, raymarch alcove). Q3 A: preload all three environments at a 512 face, instant switch. Q4 A: `--check` asserts renderer statistics and API state per stage, no pixel readback.
+- **Design (Plan agent, 2026-11-27):**
+  - Files: `examples/Dustlight/{premake5.lua, dpak.key, icon.*, README.md}`, `src/{main.cpp, LaunchOptions.*, DustlightLayer.*, RoomBuilder.*, SunCycle.h, Lantern.*, DustMotes.*, Props.*, Environments.*, FlyCamera.*, ControlPanel.*, Checks.*}`, `assets/LICENSES.md`; root `premake5.lua` `group "Examples"` includes it; `THIRD-PARTY-NOTICES.md` lists the assets. Options: `--check`, `--env=<n>`, `--time=<hours>`, `--no-raymarch`, `--freeze`.
+  - Room 12 × 5 × 16 m, floor y = 0, centred on the origin, shadow-casting box walls. South wall (z = −8): three windows 1.4 × 2.6 m at x = −3.5, 0, 3.5, sill y = 1, two mullions each, real openings so the cascades see them. A terrace strip outside.
+  - Sun: shadowed `DirectionalLightComponent`, `SunCycle` maps time of day to azimuth −20…20°, elevation 8…60°, warmer when low; a per-environment preset (direction, colour, intensity, `SkyboxComponent::Rotation`) lines the sky's sun up with the light.
+  - Fog: camera `FogComponent::Volumetric` (density ~0.012, falloff 0.15, anisotropy 0.6); a froxel box room volume (half extents 6, 2.5, 8, noise, warm tint); a froxel sphere (r ~1.2) by the lantern table; one raymarch box in a west-wall alcove. Dust motes (150–300 additive particles under the windows) and the lantern stay in froxel volumes: raymarch volumes ignore local lights, particles and translucents.
+  - Lantern: `Lantern_01` hanging at about (2.5, 1.6, 2) with a shadowed spot (30°, range 8, `VolumetricIntensity` 2) and a point glow (1.5), flicker.
+  - Props: the four glTF models through `ModelLoadParams().SetPbrMaterials(true)`, one entity per sub-mesh. Sphere grid 6 roughness × 4 metallic on a plinth by the north wall (z = +7).
+  - Post: `PostProcessComponent` with tone map and bloom (raymarch needs the post chain).
+  - Panel: volumetrics on/off, grid size, temporal, debug view, raymarch on/off and resolution, environment, time of day, `Volumetrics`/`VolumeRaymarch`/`Environment` GPU timers (missing timer = shown as n/a).
+  - `--check`: staged state machine (sun curve; default statistics; time sweep; each environment; volumetrics off/on; raymarch off/on; three grid sizes; debug view and history reset; timers logged, never failed on time). Logs `DUSTLIGHT CHECK: N passed, M failed` and closes; no process exit code exists, so the runner reads the log. Runner job `Dustlight|--check|60`.
 - Test cases (D6).
 - Docs: new `docs/pbr.md` and `docs/volumetrics.md`, updates to `lighting.md`, `post-processing.md`, `asset-pipeline.md`; `.claude/reference/rendering.md` sections.
 - Milestone review `.claude/reviews/YYYY-MM-DD-v1.3-review.md`; open findings become issues.
@@ -887,7 +901,7 @@ Built as designed (owner chose A for P1–P10) in 5 code groups plus docs and re
 - **Needs testing on a real GPU:** a real sun `.hdr` on a roughness grid (L6); one RenderDoc/PIX capture of the environment copy's barriers; lit versus PBR-with-IBL brightness in a real level.
 - **Docs:** `docs/environment.md` ("Image-based lighting"), `pbr.md`, `scenes-and-ecs.md`, `lighting.md` (`CameraData` row, now 1856 B), `.claude/reference/rendering.md` (PBR bindings 14/15/20/21, copy-restore rule, include rule).
 
-### Phase 5 (2026-11-27, uncommitted)
+### Phase 5 (2026-11-27, `88e1a5ca`)
 
 Built as designed (owner chose A for P1–P14; H1, H4, P15 and P16 approved) in 6 groups, with these changes:
 - **Public API:** `Renderer3DCapabilities::Volumetrics` and `VolumetricGrid`, `SetVolumetricsEnabled`/`SetVolumetricGrid`, `VolumetricFog`, `SetVolumetricFog`/`ClearVolumetricFog`, `ResetVolumetricHistory`, `FogComponent::Volumetric`, `CameraComponent::ResetVolumetricHistory` (one-shot, consumed in `SceneRenderer`), `Statistics::Volumetrics/VolumetricTemporal/VolumetricDispatches`.
@@ -905,7 +919,7 @@ Built as designed (owner chose A for P1–P14; H1, H4, P15 and P16 approved) in 
 - **Docs:** new `docs/volumetrics.md` (incl. the Headstone H1–H16 answers), `README.md`, `lighting.md`, `scenes-and-ecs.md`, `pbr.md` (binding 22), `particles.md`, `environment.md`, `shadows.md`, and `.claude/reference/rendering.md` (section, PBR row 22).
 - **Needs testing on a real GPU:** the list under "Phase 5 design" still stands (D3D11 debug-layer hazards on the integrated volume between scenes, ghosting at blend 0.1 under fast rotation, slice banding near Near, truss shadow sharpness in the Headstone hall, the sky seam at Far); the D3D debug layer was clean in this run.
 
-### Phase 6 (2026-11-27, uncommitted)
+### Phase 6 (2026-11-27, `930e4214`)
 
 Built as designed (owner chose A for P17–P39; H11 debug view approved, binding) in 5 groups, with these changes:
 - **Group 1, API, math, culling, ECS:** `FogVolume`, `FogVolumeShape`, `FogVolumeMode`, `VolumetricDebugView`, `VolumetricFog::LocalLightIntensity`/`MaxInScatter`, `VolumetricIntensity` on `DirectionalLight`/`PointLight`/`SpotLight` and their components, `Renderer3D::SubmitFogVolume`/`SetFogVolumeTime`/`SetVolumeRaymarchResolution`/`SetVolumetricDebugView`, `Capabilities.MaxFogVolumes`/`VolumeRaymarchResolution`, `FogVolumeComponent` (registered, duplicated, shown in `SceneDebug`), `CullFogVolumes`, new `Statistics`, `Internal::GenerateVolumeNoise`.
@@ -940,3 +954,18 @@ Built as designed (owner chose A for P17–P39; H11 debug view approved, binding
 - **L7 documented:** thin bright haze where T rounds to 1 in RGBA16F is dropped by the composite (Limits in `docs/volumetrics.md`); no code change.
 - **L8 fixed:** `m_RaymarchCompositeShader` is kept until `Destroy`.
 - **Tests after the fixes:** `--test=volume` 81, `--test=raymarch` 38, `--test=froxel` 88, `--test=Post Test` 23 PASS on Vulkan, DX11 and DX12; 0 `VUID-`, 0 sync, 0 error lines; only the known shadow-atlas barrier warning on D3D12. Unit tests 257 cases PASS.
+
+### Phase 7 (2026-11-27, uncommitted)
+
+Built as designed (owner chose A for Q1–Q4) in three implementer groups plus two review-fix groups:
+- **Dustlight** (`examples/Dustlight`): the room with three south windows and a west raymarch alcove, `SunCycle` time of day, dust motes, the `Lantern_01` lantern (shadowed spot + point glow, both scattering), three glTF PBR props, the 6 × 4 metal/roughness grid on a back panel with an emissive sphere, three Poly Haven HDRIs at a 512 face baked one per frame, an ImGui panel (F1; hidden with `--freeze`) with the `Volumetrics`/`VolumeRaymarch`/`Environment` timers, and `--check` (51 checks). Flags: `--check`, `--env=<n>`, `--time=<hours>`, `--view=<1..3>`, `--no-raymarch`, `--freeze`.
+  - Each environment has a preset: the HDRI's measured sun azimuth (sky `Rotation` follows `SunCycle`), sky lighting intensity, sun tint and scale, shaft scale (sunset 0.45), ambient, fog density, lantern scale.
+  - Environments are created with `Environment::Create` (512 face), because `AssetManager::Load` of a `.hdr` always uses the auto face size. They're freed before `SceneManager::Clear` in `OnDetach`.
+  - Natural light intensities blow out under the current exposure: the lantern glow had to drop from 10 to 0.8.
+  - The runner accepts the self-closing check (`EXITED-EARLY`) only with `DUSTLIGHT CHECK: N passed, 0 failed`, N > 0 (`gpu-test.ps1:136-140`).
+- **Assets:** Poly Haven CC0, credited in `examples/Dustlight/assets/LICENSES.md` and `THIRD-PARTY-NOTICES.md` (generated from `scripts/notices/components.txt`).
+- **Docs:** `docs/post-processing.md` "With the sky and volumetrics"; Showcase sections in `docs/volumetrics.md` and `docs/pbr.md`; `docs/environment.md` custom-shader rule; `examples/Dustlight/README.md`; project history.
+- **Milestone review:** `.claude/reviews/2026-11-27-v1.3-review.md`. H1 (`Material::SetTexture` use-after-free, a Phase 6 regression) fixed with a Mesh 3D regression check; L1 open as #342; the rest fixed or documented.
+- **Dustlight GPU cost** (RX 7900 XTX, `--check` means): Volumetrics 0.07 / 0.19 / 0.25 ms, VolumeRaymarch 0.15 / 0.47 / 0.33 ms, Environment bake ~1 ms per bake frame (Vulkan / DX11 / DX12).
+- **Full regression** (`-Tag v13-final`): Vulkan, DX11, DX12 all PASS, 0 `VUID-` (counts in the review file); unit tests 257/257.
+- **Open for the owner:** whether `build-release.yml` packages Dustlight like Candlewick/Marionette/Hearthvale (changes the release asset count).

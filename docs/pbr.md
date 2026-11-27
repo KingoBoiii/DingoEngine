@@ -65,6 +65,10 @@ A PBR material takes distance fog like a lit one and, when the scene has [volume
 samples the froxel volume at texture binding 22 (a custom shader that mirrors the PBR bindings
 leaves 22 to it).
 
+## Showcase
+
+[examples/Dustlight](../examples/Dustlight/README.md) shows PBR materials (a roughness and metallic grid, glTF props and an emissive sphere) lit by HDR environments.
+
 ## Importing a glTF model
 
 `ModelLoadParams().SetPbrMaterials(true)` makes `Model::LoadFromFile` build a PBR material for every

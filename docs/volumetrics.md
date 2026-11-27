@@ -270,6 +270,8 @@ vec3 fogged(vec3 color, vec3 worldPosition, int target)   // target: 0 opaque/al
   of one also takes its transmittance (see Raymarch volumes).
 - A Raymarch volume needs the post chain; a failed raymarch shader compile drops the volumes with a
   logged error instead of falling back to froxel.
+- When one post `Begin` draws several Renderer3D scenes, ambient occlusion is applied at the end of the
+  first Raymarch scene, so later scenes in that `Begin` (a viewmodel pass, say) get no AO.
 - The depth-aware upsample can leave a faint pattern on smooth haze at quarter resolution.
 - A very thin bright haze, where the transmittance rounds to 1 in the RGBA16F result, is dropped by
   the composite: the pixel keeps no in-scatter.
@@ -290,6 +292,10 @@ overlap mixtures, local lights, the debug view and its slice texture), and `--te
 Raymarch Fog Test (uniform box against the closed form at half and quarter resolution, depth edges,
 shafts, cap, fades, steps, the froxel mix, translucents, a custom shader, resize, two scenes in
 one `Begin`, and the debug view). Both read results back from the GPU.
+
+## Showcase
+
+[examples/Dustlight](../examples/Dustlight/README.md) puts the froxel fog, local volumes, the raymarch mode and the lantern scattering in one room, with a panel and `--check`.
 
 ## Headstone questions
 

@@ -170,7 +170,7 @@ PBR materials were added in v1.3 Phase 2 (`docs/pbr.md`).
 | 21 | `u_EnvironmentBrdf` (128² LUT) |
 | 22 | `u_VolumetricFog` (3D, the froxel volume; `DE_VOLUMETRIC_FOG_BINDING 22`, sampler aliased to `u_EnvironmentSampler`) |
 
-- D3D11 limits: constant buffers b0, b1, b2 (push constants) and b12; samplers ≤ s13.
+- D3D11 limits: constant buffers b0, b1, b2 (push constants) and b12; samplers ≤ s15.
 
 **Shader files**
 - `Renderer3D_Lit.glsl` takes its vertex stage from `Renderer3D_MeshVertex.glsl` and its scene declarations from `Renderer3DScene.glsl`. `Renderer3D_Pbr.glsl` includes the same two.
