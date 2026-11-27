@@ -131,6 +131,68 @@ namespace Dingo
 		}
 	}
 
+	void NvrhiCommandList::CopyTexture(Texture* dst, Texture* src)
+	{
+		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before copying a texture.");
+		DE_CORE_ASSERT(dst && src, "Texture is null.");
+
+		nvrhi::ITexture* dstHandle = static_cast<NvrhiTexture*>(dst)->m_Handle;
+		nvrhi::ITexture* srcHandle = static_cast<NvrhiTexture*>(src)->m_Handle;
+		const nvrhi::TextureDesc& dstDesc = dstHandle->getDesc();
+		const nvrhi::TextureDesc& srcDesc = srcHandle->getDesc();
+		DE_CORE_ASSERT(dstDesc.width == srcDesc.width && dstDesc.height == srcDesc.height && dstDesc.depth == srcDesc.depth &&
+			dstDesc.arraySize == srcDesc.arraySize && dstDesc.mipLevels == srcDesc.mipLevels && dstDesc.format == srcDesc.format,
+			"CopyTexture needs textures of the same size, layers, mips and format.");
+
+		m_CommandListHandle->setTextureState(srcHandle, nvrhi::AllSubresources, nvrhi::ResourceStates::CopySource);
+		m_CommandListHandle->setTextureState(dstHandle, nvrhi::AllSubresources, nvrhi::ResourceStates::CopyDest);
+		m_CommandListHandle->commitBarriers();
+
+		for (uint32_t layer = 0; layer < dstDesc.arraySize; ++layer)
+		{
+			for (uint32_t mip = 0; mip < dstDesc.mipLevels; ++mip)
+			{
+				nvrhi::TextureSlice slice;
+				slice.mipLevel = mip;
+				slice.arraySlice = layer;
+				m_CommandListHandle->copyTexture(dstHandle, slice, srcHandle, slice);
+			}
+		}
+		m_UploadedSinceDraw = m_LastDrawFramebuffer != nullptr;
+
+		// As UploadTexture: a stable binding set samples dst, and NVRHI only re-requires a set's states
+		// when the bound sets change. src goes back too, so a later dispatch into it starts from its own state.
+		if (dstDesc.initialState != nvrhi::ResourceStates::Unknown)
+			m_CommandListHandle->setTextureState(dstHandle, nvrhi::AllSubresources, dstDesc.initialState);
+		if (srcDesc.initialState != nvrhi::ResourceStates::Unknown)
+			m_CommandListHandle->setTextureState(srcHandle, nvrhi::AllSubresources, srcDesc.initialState);
+		m_CommandListHandle->commitBarriers();
+	}
+
+	void NvrhiCommandList::CopyBuffer(GraphicsBuffer* dst, GraphicsBuffer* src, uint64_t size)
+	{
+		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before copying a buffer.");
+		DE_CORE_ASSERT(dst && src, "Buffer is null.");
+
+		nvrhi::IBuffer* dstHandle = static_cast<NvrhiGraphicsBuffer*>(dst)->m_BufferHandle;
+		nvrhi::IBuffer* srcHandle = static_cast<NvrhiGraphicsBuffer*>(src)->m_BufferHandle;
+		if (size > dstHandle->getDesc().byteSize || size > srcHandle->getDesc().byteSize)
+		{
+			DE_CORE_ERROR("CopyBuffer: {} bytes do not fit both buffers ({} and {}).", size, dstHandle->getDesc().byteSize, srcHandle->getDesc().byteSize);
+			return;
+		}
+		m_CommandListHandle->copyBuffer(dstHandle, 0, srcHandle, 0, size);
+		m_UploadedSinceDraw = m_LastDrawFramebuffer != nullptr;
+
+		const nvrhi::BufferDesc& dstDesc = dstHandle->getDesc();
+		const nvrhi::BufferDesc& srcDesc = srcHandle->getDesc();
+		if (!dstDesc.isVolatile && dstDesc.initialState != nvrhi::ResourceStates::Unknown)
+			m_CommandListHandle->setBufferState(dstHandle, dstDesc.initialState);
+		if (!srcDesc.isVolatile && srcDesc.initialState != nvrhi::ResourceStates::Unknown)
+			m_CommandListHandle->setBufferState(srcHandle, srcDesc.initialState);
+		m_CommandListHandle->commitBarriers();
+	}
+
 	void NvrhiCommandList::SetFramebuffer(Framebuffer* framebuffer)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before setting pipeline.");

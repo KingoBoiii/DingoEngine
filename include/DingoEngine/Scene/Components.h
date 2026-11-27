@@ -373,6 +373,11 @@ namespace Dingo
 		float Rotation = 0.0f;
 		/// False keeps the environment for lighting without drawing the sky.
 		bool Visible = true;
+		/// True lights PBR materials from the environment instead of the flat ambient colour, as
+		/// SceneEnvironment::Lighting.
+		bool Lighting = true;
+		/// Linear multiplier on the environment's lighting only, 0 or more, as SceneEnvironment::LightingIntensity.
+		float LightingIntensity = 1.0f;
 		/// False takes this component out of the choice without removing it.
 		bool Enabled = true;
 

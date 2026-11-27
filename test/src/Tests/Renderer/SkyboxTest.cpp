@@ -578,7 +578,9 @@ namespace Dingo
 
 		std::vector<Framebuffer*> meshes = { NewTarget("SkyboxTest spheres sky"), NewTarget("SkyboxTest spheres none") };
 		auto sphereScene = [this](Renderer3D& renderer) { SubmitSpheres(renderer); };
-		const Renderer3D::Statistics sphereStats = RenderShot(meshes[0], ShotMatrix(axes[0]), &sky, sphereScene);
+		SceneEnvironment unlitSky = sky;
+		unlitSky.Lighting = false;
+		const Renderer3D::Statistics sphereStats = RenderShot(meshes[0], ShotMatrix(axes[0]), &unlitSky, sphereScene);
 		RenderShot(meshes[1], ShotMatrix(axes[0]), nullptr, sphereScene);
 		ReadTargets(meshes, [this, sphereStats](const std::vector<TexturePixels>& images)
 		{
@@ -598,7 +600,7 @@ namespace Dingo
 					}
 				}
 			}
-			Check(sphereStats.Skybox && covered > 200 && changed == 0, std::format("Skybox 7: a lit and a PBR sphere draw the same with the sky ({} mesh pixels, {} changed, sky drawn {})", covered, changed, sphereStats.Skybox));
+			Check(sphereStats.Skybox && covered > 200 && changed == 0, std::format("Skybox 7: a lit and a PBR sphere draw the same with the sky when its Lighting is off ({} mesh pixels, {} changed, sky drawn {})", covered, changed, sphereStats.Skybox));
 		});
 
 		{

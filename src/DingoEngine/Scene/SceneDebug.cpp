@@ -713,6 +713,8 @@ namespace Dingo
 					Add(section, "Environment", sky->Environment ? std::format("#{} {} px faces, {}", sky->Environment->GetId(), sky->Environment->GetFaceSize(), sky->Environment->IsReady() ? "baked" : "not baked") : std::string("none"));
 					Add(section, "Intensity", Text(sky->Intensity));
 					Add(section, "Rotation", std::format("{:.1f} deg", sky->Rotation));
+					Add(section, "Lighting", Text(sky->Lighting));
+					Add(section, "Lighting intensity", Text(sky->LightingIntensity));
 				}
 
 				if (const RigidBody2DComponent* body = registry.try_get<RigidBody2DComponent>(handle))

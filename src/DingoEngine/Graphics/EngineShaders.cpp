@@ -23,6 +23,7 @@ namespace
 #include "Renderer3D_MeshVertex.glsl.inl"
 #include "Renderer3DScene.glsl.inl"
 #include "Brdf.glsl.inl"
+#include "Ibl.glsl.inl"
 #include "Renderer3D_Pbr.glsl.inl"
 #include "Environment.glsl.inl"
 #include "EnvironmentBake.glsl.inl"
@@ -63,6 +64,7 @@ namespace
 		{ "Renderer3D_MeshVertex.glsl", View(k_Renderer3D_MeshVertex_glsl) },
 		{ "Renderer3DScene.glsl", View(k_Renderer3DScene_glsl) },
 		{ "Brdf.glsl", View(k_Brdf_glsl) },
+		{ "Ibl.glsl", View(k_Ibl_glsl) },
 		{ "Renderer3D_Pbr.glsl", View(k_Renderer3D_Pbr_glsl) },
 		{ "Environment.glsl", View(k_Environment_glsl) },
 		{ "EnvironmentBake.glsl", View(k_EnvironmentBake_glsl) },

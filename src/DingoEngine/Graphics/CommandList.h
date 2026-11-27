@@ -51,6 +51,12 @@ namespace Dingo::Internal
 		virtual void UploadKeptData(GraphicsBuffer* buffer) = 0;
 		virtual void UploadTexture(Texture* texture, const void* data, uint32_t mip, uint32_t layer, uint64_t rowPitch, uint64_t depthPitch) = 0;
 
+		// Copies every layer and mip of src into dst; the two must match in size, layers, mips and format.
+		// Both go back to their usual state afterwards, so a binding set that samples dst stays valid.
+		virtual void CopyTexture(Texture* dst, Texture* src) = 0;
+		// Copies the first `size` bytes of src into the start of dst, then restores both buffers' usual state.
+		virtual void CopyBuffer(GraphicsBuffer* dst, GraphicsBuffer* src, uint64_t size) = 0;
+
 		// Binds the framebuffer with a viewport covering all of it.
 		virtual void SetFramebuffer(Framebuffer* framebuffer) = 0;
 		// Narrows the viewport and scissor of the framebuffer SetFramebuffer bound, until the next

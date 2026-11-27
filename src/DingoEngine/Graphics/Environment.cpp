@@ -46,6 +46,8 @@ namespace Dingo
 				.SetIsStorage(true);
 		}
 
+		constexpr uint32_t k_ShSourceSize = 32;
+
 		Texture* CreateEquirect(uint32_t width, uint32_t height, const std::string& debugName)
 		{
 			return Texture::Create(TextureParams()
@@ -85,6 +87,8 @@ namespace Dingo
 	Environment::~Environment()
 	{
 		DestroyAndDelete(m_Cube);
+		DestroyAndDelete(m_Specular);
+		DestroyAndDelete(m_Irradiance);
 		ReleaseEquirect();
 	}
 
@@ -100,7 +104,16 @@ namespace Dingo
 
 		m_Cube = Texture::Create(CubeParams(faceSize, debugName));
 		m_Equirect = CreateEquirect(width, height, debugName);
-		if (!m_Cube || !m_Equirect)
+		m_Specular = Texture::Create(TextureParams()
+			.SetDebugName(debugName + " (specular)")
+			.SetWidth(Internal::k_IblFaceSize)
+			.SetHeight(Internal::k_IblFaceSize)
+			.SetMipLevels(Internal::k_IblMipLevels)
+			.SetFormat(TextureFormat::RGBA16F)
+			.SetDimension(TextureDimension::TextureCube)
+			.SetIsStorage(true));
+		m_Irradiance = GraphicsBuffer::CreateStorageBuffer(Internal::k_IblIrradianceBytes, debugName + " (irradiance)");
+		if (!m_Cube || !m_Equirect || !m_Specular || !m_Irradiance)
 			return false;
 
 		m_Halves = std::move(halves);
@@ -127,8 +140,10 @@ namespace Dingo
 
 		Shader* bake = Internal::GetEnvironmentShader(Internal::EnvironmentShaderVariant::EquirectBake);
 		Shader* downsample = Internal::GetEnvironmentShader(Internal::EnvironmentShaderVariant::Downsample);
+		Shader* shProject = Internal::GetEnvironmentShader(Internal::EnvironmentShaderVariant::ShProject);
+		Shader* prefilter = Internal::GetEnvironmentShader(Internal::EnvironmentShaderVariant::SpecularPrefilter);
 		Sampler* equirectSampler = Internal::GetEquirectSampler();
-		if (!bake || !downsample || !equirectSampler)
+		if (!bake || !downsample || !shProject || !prefilter || !equirectSampler)
 		{
 			if (!m_ReportedFailure)
 			{
@@ -152,8 +167,10 @@ namespace Dingo
 		equirectPass->SetStorageTexture(3, m_Cube, 0);
 		uint32_t push[4] = { m_FaceSize, 0, 0, 0 };
 		equirectPass->SetPushConstants(push, sizeof(push));
+		const char* stage = "cube";
 		bool recorded = Renderer::Dispatch(equirectPass, groups(m_FaceSize), groups(m_FaceSize), 6);
 
+		stage = "downsample";
 		for (uint32_t mip = 1; recorded && mip < m_MipLevels; ++mip)
 		{
 			const uint32_t size = (std::max)(m_FaceSize >> mip, 1u);
@@ -167,6 +184,42 @@ namespace Dingo
 			recorded = Renderer::Dispatch(pass, groups(size), groups(size), 6);
 		}
 
+		stage = "BRDF LUT";
+		recorded = recorded && Internal::EnsureBrdfLutBaked(passes);
+
+		if (recorded)
+		{
+			stage = "SH projection";
+			uint32_t shSize = (std::min)(m_FaceSize, k_ShSourceSize);
+			uint32_t shMip = 0;
+			while ((m_FaceSize >> shMip) > shSize)
+				++shMip;
+			ComputePass* shPass = ComputePass::Create(ComputePassParams().SetDebugName("Environment irradiance SH").SetShader(shProject));
+			passes.push_back(shPass);
+			shPass->SetTexture(1, m_Cube, shMip, 1);
+			shPass->SetSampler(2, Renderer::GetClampSampler());
+			shPass->SetStorageBuffer(4, m_Irradiance);
+			push[0] = shSize;
+			shPass->SetPushConstants(push, sizeof(push));
+			recorded = Renderer::Dispatch(shPass, 1, 1, 1);
+		}
+
+		stage = "specular prefilter";
+		for (uint32_t mip = 0; recorded && mip < Internal::k_IblMipLevels; ++mip)
+		{
+			const uint32_t size = (std::max)(Internal::k_IblFaceSize >> mip, 1u);
+			ComputePass* pass = ComputePass::Create(ComputePassParams().SetDebugName("Environment specular prefilter").SetShader(prefilter));
+			passes.push_back(pass);
+			pass->SetTexture(1, m_Cube);
+			pass->SetSampler(2, Renderer::GetClampSampler());
+			pass->SetStorageTexture(3, m_Specular, mip);
+			push[0] = size;
+			push[1] = mip;
+			push[2] = m_FaceSize;
+			pass->SetPushConstants(push, sizeof(push));
+			recorded = Renderer::Dispatch(pass, groups(size), groups(size), 6);
+		}
+
 		Renderer::EndGpuTimer();
 
 		Texture* equirect = nullptr;
@@ -175,12 +228,13 @@ namespace Dingo
 			equirect = m_Equirect;
 			m_Equirect = nullptr;
 			m_Ready = true;
+			++m_BakeGeneration;
 			m_Halves = {};
 		}
 		else
 		{
 			m_BakeFailed = true;
-			DE_CORE_ERROR("Environment::Prepare: recording the bake failed; the environment stays unbaked.");
+			DE_CORE_ERROR("Environment::Prepare: recording the bake failed at the {} stage; the environment stays unbaked.", stage);
 		}
 
 		Renderer::RunAfterFrame([equirect, passes = std::move(passes)]() mutable

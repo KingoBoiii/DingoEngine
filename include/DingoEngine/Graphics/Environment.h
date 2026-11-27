@@ -14,6 +14,8 @@ namespace Dingo::Internal
 namespace Dingo
 {
 
+	class GraphicsBuffer;
+
 	/// Describes an Environment for Environment::Create.
 	struct EnvironmentParams
 	{
@@ -71,7 +73,8 @@ namespace Dingo
 		/// or when the bake shader failed to compile. Call it from a loading screen to pay the cost
 		/// before the first scene that uses the environment.
 		bool Prepare();
-		/// Whether Prepare has recorded the bake, so the cube map holds the panorama.
+		/// Whether Prepare has recorded the whole bake, so the cube map holds the panorama and the
+		/// irradiance and specular lighting derived from it are filled in.
 		bool IsReady() const { return m_Ready; }
 
 		/// The cube map: RGBA16F, GetMipLevelCount() mips, linear radiance. Owned by the Environment;
@@ -94,6 +97,9 @@ namespace Dingo
 	private:
 		Texture* m_Cube = nullptr;
 		Texture* m_Equirect = nullptr;
+		Texture* m_Specular = nullptr;
+		GraphicsBuffer* m_Irradiance = nullptr;
+		uint64_t m_BakeGeneration = 0;
 		std::vector<uint16_t> m_Halves;
 		uint32_t m_Width = 0;
 		uint32_t m_Height = 0;
@@ -116,6 +122,12 @@ namespace Dingo
 		float Rotation = 0.0f;
 		/// False keeps the environment for lighting without drawing the sky.
 		bool DrawSkybox = true;
+		/// True lights PBR materials from the environment (diffuse from its irradiance, specular from
+		/// its reflections) instead of SceneLights::AmbientColor; false keeps the flat ambient.
+		bool Lighting = true;
+		/// Linear multiplier on the environment's lighting only, 0 or more; the sky keeps Intensity.
+		/// The lighting uses Intensity x LightingIntensity.
+		float LightingIntensity = 1.0f;
 	};
 
 }

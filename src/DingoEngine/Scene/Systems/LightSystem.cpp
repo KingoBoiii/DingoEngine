@@ -196,6 +196,8 @@ namespace Dingo::Internal::LightSystem
 			environment.Intensity = chosen->Intensity;
 			environment.Rotation = chosen->Rotation;
 			environment.DrawSkybox = chosen->Visible;
+			environment.Lighting = chosen->Lighting;
+			environment.LightingIntensity = chosen->LightingIntensity;
 			renderer.SetEnvironment(environment);
 		}
 	}

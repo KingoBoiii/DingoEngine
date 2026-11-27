@@ -38,6 +38,7 @@ layout(std140, binding = 0) uniform CameraData
 	LocalLight LocalLights[MAX_LOCAL_LIGHTS];
 	vec4 FogColor;  // rgb = colour, a = max opacity
 	vec4 FogParams; // x = start, y = end, z = density, w = mode: 0 none, 1 linear, 2 exp, 3 exp squared
+	vec4 EnvironmentParams; // x = 1: lit by the environment, y = intensity, z/w = cos/sin of the lookup's turn (DE_RotateY)
 };
 
 // Mirrors Renderer3D::ObjectRecord.

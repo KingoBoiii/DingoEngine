@@ -3,7 +3,8 @@
 // decoded from sRGB, lit linearly and encoded again before fog, so the tone map and bloom still see
 // display-space values. Resources
 // sit where the five material slots (bindings 2 to 11) leave room: ShadowData 12, its sampler 13, the
-// atlas 16, DE_ObjectData 17, DE_InstanceData 18, DE_SkinPalette 19; 14, 15 and 20 up are reserved.
+// environment sampler 14, the irradiance coefficients 15, the atlas 16, DE_ObjectData 17, DE_InstanceData 18,
+// DE_SkinPalette 19, the environment's specular cube 20 and BRDF table 21; 22 up is reserved.
 //
 // PbrMaterialData mirrors Internal::PbrMaterialData (PbrShaders.h).
 
@@ -24,6 +25,8 @@
 #include <DingoEngine/Renderer3DScene.glsl>
 #include <DingoEngine/Shadows.glsl>
 #include <DingoEngine/Brdf.glsl>
+#include <DingoEngine/Environment.glsl>
+#include <DingoEngine/Ibl.glsl>
 
 layout(std140, binding = 1) uniform MaterialData
 {
@@ -43,6 +46,14 @@ layout(binding = 8) uniform texture2D u_Occlusion;
 layout(binding = 9) uniform sampler u_OcclusionSampler;
 layout(binding = 10) uniform texture2D u_Emissive;
 layout(binding = 11) uniform sampler u_EmissiveSampler;
+
+layout(binding = 14) uniform sampler u_EnvironmentSampler;
+layout(std430, binding = 15) readonly buffer DE_EnvironmentSh
+{
+	vec4 Sh[9];
+};
+layout(binding = 20) uniform textureCube u_EnvironmentSpecular;
+layout(binding = 21) uniform texture2D u_EnvironmentBrdf;
 
 layout(location = 0) out vec4 o_Color;
 
@@ -91,10 +102,32 @@ vec3 PerturbNormal(vec3 geometricNormal, vec3 position, vec2 uv, vec3 mapped, fl
 	return normalize(T * (inversesqrt(tt) * n.x) + B * (inversesqrt(bb) * n.y) + geometricNormal * n.z);
 }
 
-// The scene's flat ambient colour lit by the surface; where Phase 4's image-based lighting replaces it.
-vec3 PbrAmbient(vec3 diffuseColor, vec3 F0, float roughness, float NoV, float occlusion)
+// The ambient light on the surface: the environment's irradiance and reflections when the scene has one
+// (EnvironmentParams.x), else the flat ambient colour. Every fetch is taken before the final select, which
+// keeps the flat path exactly as it was. Radiance is linear and enters undecoded; EnvironmentParams.y scales
+// it before the shared encode. The horizon term fades reflections that point below the geometric surface.
+vec3 PbrAmbient(vec3 diffuseColor, vec3 F0, float roughness, float NoV, float occlusion, vec3 normal, vec3 geometricNormal, vec3 toCamera)
 {
-	return SrgbToLinear(AmbientColor.rgb) * (diffuseColor + EnvBRDFApprox(F0, roughness, NoV)) * occlusion;
+	vec3 flatAmbient = SrgbToLinear(AmbientColor.rgb) * (diffuseColor + EnvBRDFApprox(F0, roughness, NoV)) * occlusion;
+
+	vec3 reflected = reflect(-toCamera, normal);
+	vec3 lookupNormal = DE_RotateY(normal, EnvironmentParams.z, EnvironmentParams.w);
+	vec3 lookupReflected = DE_RotateY(reflected, EnvironmentParams.z, EnvironmentParams.w);
+
+	vec3 irradiance = vec3(0.0);
+	for (int i = 0; i < 9; ++i)
+		irradiance += Sh[i].rgb * DE_ShBasis(i, lookupNormal);
+	irradiance = max(irradiance, vec3(0.0));
+
+	vec3 prefiltered = textureLod(samplerCube(u_EnvironmentSpecular, u_EnvironmentSampler), lookupReflected, DE_PrefilterLod(roughness)).rgb;
+	vec2 dfg = textureLod(sampler2D(u_EnvironmentBrdf, u_EnvironmentSampler), DE_BrdfLutUv(NoV, roughness), 0.0).rg;
+
+	float specularOcclusion = DE_SpecularOcclusion(NoV, occlusion, roughness * roughness);
+	float horizon = min(1.0 + dot(reflected, geometricNormal), 1.0);
+	horizon *= horizon;
+	vec3 ibl = EnvironmentParams.y * (diffuseColor * irradiance * occlusion + prefiltered * (F0 * dfg.x + vec3(dfg.y)) * (specularOcclusion * horizon));
+
+	return EnvironmentParams.x > 0.5 ? ibl : flatAmbient;
 }
 
 // Fog as the lit shader applies it; where Phase 5's froxel volume replaces it.
@@ -144,7 +177,7 @@ void main()
 	vec3 toCamera = CameraPosition.w > 0.5 ? normalize(CameraPosition.xyz - v_WorldPosition) : CameraPosition.xyz;
 	float NoV = clamp(dot(normal, toCamera), 1e-4, 1.0);
 
-	vec3 lighting = PbrAmbient(diffuseColor, F0, roughness, NoV, occlusion);
+	vec3 lighting = PbrAmbient(diffuseColor, F0, roughness, NoV, occlusion, normal, geometricNormal, toCamera);
 
 	int directionalCount = min(LightCounts.x, MAX_DIRECTIONAL_LIGHTS);
 	for (int i = 0; i < directionalCount; ++i)

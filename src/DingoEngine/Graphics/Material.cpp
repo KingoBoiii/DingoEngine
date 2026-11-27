@@ -21,9 +21,17 @@ namespace Dingo
 
 		// Produce a cache key from a vertex layout, a framebuffer, a cull mode and the shared buffers.
 		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, CullMode cullMode, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer, const GraphicsBuffer* shadowBuffer, const Texture* shadowAtlas, const Sampler* shadowSampler, bool objectBuffer,
-			bool instanceBuffer, const GraphicsBuffer* instanceDrawBuffer, bool skinPalette)
+			bool instanceBuffer, const GraphicsBuffer* instanceDrawBuffer, bool skinPalette, const GraphicsBuffer* environmentSh, const Texture* environmentSpecular,
+			const Texture* environmentBrdf, const Sampler* environmentSampler)
 		{
 			size_t seed = 0;
+			if (environmentSh)
+			{
+				HashCombine(seed, static_cast<size_t>(environmentSh->GetId()));
+				HashCombine(seed, static_cast<size_t>(environmentSpecular ? environmentSpecular->GetId() : 0));
+				HashCombine(seed, static_cast<size_t>(environmentBrdf ? environmentBrdf->GetId() : 0));
+				HashCombine(seed, static_cast<size_t>(environmentSampler ? environmentSampler->GetId() : 0));
+			}
 			if (skinPalette)
 				HashCombine(seed, 3);
 			if (objectBuffer)
@@ -259,6 +267,14 @@ namespace Dingo
 		currentId = id;
 	}
 
+	void Material::SetEnvironmentResources(GraphicsBuffer* irradiance, Texture* specular, Texture* brdfLut, Sampler* sampler)
+	{
+		m_EnvironmentSh = irradiance;
+		m_EnvironmentSpecular = specular;
+		m_EnvironmentBrdf = brdfLut;
+		m_EnvironmentSampler = sampler;
+	}
+
 	void Material::SetShadowResources(GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler)
 	{
 		m_ShadowDataBuffer = shadowData;
@@ -319,11 +335,17 @@ namespace Dingo
 		const int32_t instanceBinding = (m_InstanceBuffer && shader) ? shader->FindStorageBufferBinding(k_InstanceDataBlockName) : -1;
 		const int32_t instanceDrawBinding = (m_InstanceDrawBuffer && shader) ? shader->FindUniformBufferBinding(k_InstanceDrawBlockName) : -1;
 		const int32_t skinPaletteBinding = (m_SkinPaletteBuffer && shader) ? shader->FindStorageBufferBinding(k_SkinPaletteBlockName) : -1;
+		const int32_t environmentShBinding = (m_EnvironmentSh && shader) ? shader->FindStorageBufferBinding(k_EnvironmentShBlockName) : -1;
+		const int32_t environmentSpecularBinding = (m_EnvironmentSpecular && shader) ? shader->FindTextureBinding(k_EnvironmentSpecularName) : -1;
+		const int32_t environmentBrdfBinding = (m_EnvironmentBrdf && shader) ? shader->FindTextureBinding(k_EnvironmentBrdfName) : -1;
+		const int32_t environmentSamplerBinding = (m_EnvironmentSampler && shader) ? shader->FindSamplerBinding(k_EnvironmentSamplerName) : -1;
+		const bool environmentBound = environmentShBinding >= 0 && environmentSpecularBinding >= 0 && environmentBrdfBinding >= 0 && environmentSamplerBinding >= 0;
 
 		const size_t key = MakeCacheKey(layout, framebuffer, cullMode, m_SceneUniformBuffer, m_SkinUniformBuffer,
 			shadowDataBinding >= 0 ? m_ShadowDataBuffer : nullptr, shadowAtlasBinding >= 0 ? m_ShadowAtlas : nullptr, shadowSamplerBinding >= 0 ? m_ShadowSampler : nullptr,
 			objectBinding >= 0, instanceBinding >= 0, instanceDrawBinding >= 0 ? m_InstanceDrawBuffer : nullptr,
-			skinPaletteBinding >= 0);
+			skinPaletteBinding >= 0, environmentBound ? m_EnvironmentSh : nullptr, environmentBound ? m_EnvironmentSpecular : nullptr,
+			environmentBound ? m_EnvironmentBrdf : nullptr, environmentBound ? m_EnvironmentSampler : nullptr);
 
 		auto it = m_PipelineCache.find(key);
 		if (it != m_PipelineCache.end())
@@ -378,6 +400,13 @@ namespace Dingo
 			renderPass->SetUniformBuffer(static_cast<uint32_t>(instanceDrawBinding), m_InstanceDrawBuffer);
 		if (skinPaletteBinding >= 0)
 			renderPass->SetStorageBuffer(static_cast<uint32_t>(skinPaletteBinding), m_SkinPaletteBuffer);
+		if (environmentBound)
+		{
+			renderPass->SetStorageBuffer(static_cast<uint32_t>(environmentShBinding), m_EnvironmentSh);
+			renderPass->SetTexture(static_cast<uint32_t>(environmentSpecularBinding), m_EnvironmentSpecular);
+			renderPass->SetTexture(static_cast<uint32_t>(environmentBrdfBinding), m_EnvironmentBrdf);
+			renderPass->SetSampler(static_cast<uint32_t>(environmentSamplerBinding), m_EnvironmentSampler);
+		}
 		for (const StorageBinding& storage : m_StorageBuffers)
 			renderPass->SetStorageBuffer(storage.Binding, storage.Buffer);
 

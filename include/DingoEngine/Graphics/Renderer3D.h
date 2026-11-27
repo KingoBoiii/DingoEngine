@@ -336,8 +336,10 @@ namespace Dingo
 		/// Draws environment.Environment as the sky behind this scene's opaque meshes, at the far plane
 		/// and under translucents and particles, scene-scoped like SetFog: the last call before EndScene
 		/// wins and EndScene clears it. The first scene that uses an Environment bakes it (Environment::Prepare).
-		/// Returns false for an Intensity that is negative or not finite, or a Rotation that is not
-		/// finite, leaving the scene as it was. The sky is skipped for an orthographic camera and while
+		/// By default (Lighting = true) it also replaces AmbientColor for PBR materials with
+		/// image-based lighting from the same environment. Returns false, rejecting the whole
+		/// environment and its sky, for an Intensity or LightingIntensity that is negative or not
+		/// finite, or a Rotation that is not finite, leaving the scene as it was. The sky is skipped for an orthographic camera and while
 		/// the Environment is not ready; a null Environment clears it.
 		bool SetEnvironment(const SceneEnvironment& environment);
 		/// Removes the scene's environment.
@@ -639,6 +641,8 @@ namespace Dingo
 			bool Fogged = false; ///< the scene was drawn with fog: SetFog, and a perspective camera
 			bool Skybox = false; ///< the scene drew a sky: SetEnvironment with DrawSkybox, a ready Environment and a perspective camera
 			uint32_t EnvironmentBakes = 0; ///< Environments this scene baked (1 the first time one is used)
+			bool EnvironmentLighting = false; ///< PBR materials were lit by the environment instead of the flat ambient: a ready Environment with Lighting on
+			uint32_t EnvironmentLightingCopies = 0; ///< Times this scene copied an environment's lighting into the renderer (1 whenever the environment or its bake changed)
 		};
 
 		/// The statistics of the latest scene; the reference stays valid and is rewritten by
@@ -682,6 +686,7 @@ namespace Dingo
 		std::unordered_map<uint64_t, SkyboxEntry> m_SkyboxMaterials;
 		void ReleaseIdleSkyboxes();
 		bool DrawSkybox(const SceneEnvironment& environment);
+		bool PrepareEnvironmentLighting(const SceneEnvironment& environment);
 		bool PrepareShadows();
 		void EnsureShadowResources();
 		void DrawShadowPass();
@@ -747,6 +752,7 @@ namespace Dingo
 			LocalLightData LocalLights[k_MaxLocalLights];
 			glm::vec4 FogColor{ 0.0f };  // rgb = colour, a = max opacity
 			glm::vec4 FogParams{ 0.0f }; // x = start, y = end, z = density, w = FogMode (0 = none)
+			glm::vec4 EnvironmentParams{ 0.0f }; // x = 1: lit by the environment, y = intensity x lighting intensity, z/w = cos/sin of the lookup's turn
 		};
 		static_assert(offsetof(CameraData, LightDirection) == 64 && offsetof(CameraData, Ambient) == 80,
 			"the frozen prefix custom materials declare must not move");
@@ -754,7 +760,8 @@ namespace Dingo
 			offsetof(CameraData, LightCounts) == 128 && offsetof(CameraData, DirectionalLights) == 144 &&
 			sizeof(DirectionalLightData) == 32 && offsetof(CameraData, LocalLights) == 144 + k_MaxDirectionalLights * 32 &&
 			sizeof(LocalLightData) == 48 && offsetof(CameraData, FogColor) == 144 + k_MaxDirectionalLights * 32 + k_MaxLocalLights * 48 &&
-			offsetof(CameraData, FogParams) == offsetof(CameraData, FogColor) + 16 && sizeof(CameraData) == offsetof(CameraData, FogParams) + 16,
+			offsetof(CameraData, FogParams) == offsetof(CameraData, FogColor) + 16 && offsetof(CameraData, EnvironmentParams) == offsetof(CameraData, FogParams) + 16 &&
+			sizeof(CameraData) == offsetof(CameraData, EnvironmentParams) + 16,
 			"CameraData must match the std140 block in Renderer3D_Lit.glsl");
 		CameraData m_CameraData = {};
 
@@ -1479,6 +1486,12 @@ namespace Dingo
 		Framebuffer* m_ShadowAtlas = nullptr;
 		Texture* m_PlaceholderShadowAtlas = nullptr; // bound until the first scene casts
 		Sampler* m_ShadowSampler = nullptr;          // comparison, linear: hardware 2 x 2 PCF
+		// The active environment's lighting, copied in when its id or bake changes: materials bind these and never
+		// the Environment's own textures, which come and go.
+		Texture* m_IblSpecular = nullptr;
+		GraphicsBuffer* m_IblIrradiance = nullptr;
+		uint64_t m_IblSourceId = 0;
+		uint64_t m_IblSourceGeneration = 0;
 		Shader* m_ShadowShader = nullptr;
 		Shader* m_SkinnedShadowShader = nullptr;
 		// One per caster-group mask drawn, each with the mask in its ShadowCaster block.

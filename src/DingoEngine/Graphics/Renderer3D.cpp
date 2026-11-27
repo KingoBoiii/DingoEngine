@@ -4,6 +4,7 @@
 #include "DingoEngine/Graphics/Renderer3DAccess.h"
 #include "DingoEngine/Asset/UnmanagedShaderWatch.h"
 #include "DingoEngine/Graphics/EngineShaders.h"
+#include "DingoEngine/Graphics/EnvironmentAccess.h"
 #include "DingoEngine/Graphics/EnvironmentShaders.h"
 #include "DingoEngine/Graphics/FullscreenPass.h"
 #include "DingoEngine/Graphics/GraphicsContext.h"
@@ -11,6 +12,7 @@
 #include "DingoEngine/Graphics/ShadowAtlasAllocator.h"
 #include "DingoEngine/Graphics/ParticleRenderer.h"
 #include "DingoEngine/Graphics/PbrShaders.h"
+#include "DingoEngine/Graphics/RendererBackend.h"
 #include "DingoEngine/Graphics/PostProcess.h"
 #include "DingoEngine/Graphics/SkinnedVisibility.h"
 #include "DingoEngine/Graphics/StaticBatchData.h"
@@ -383,6 +385,16 @@ namespace Dingo
 			.SetIsRenderTarget(true));
 		SetShadowSettings(m_Params.Shadows);
 
+		m_IblSpecular = Texture::Create(TextureParams()
+			.SetDebugName("Renderer3D_IblSpecular")
+			.SetWidth(Internal::k_IblFaceSize)
+			.SetHeight(Internal::k_IblFaceSize)
+			.SetMipLevels(Internal::k_IblMipLevels)
+			.SetFormat(TextureFormat::RGBA16F)
+			.SetDimension(TextureDimension::TextureCube));
+		m_IblIrradiance = GraphicsBuffer::CreateStorageBuffer(Internal::k_IblIrradianceBytes, "Renderer3D_IblIrradiance");
+		Internal::GetBrdfLut();
+
 		m_Particles = std::make_unique<Internal::ParticleRenderer>(std::clamp(m_Params.Capabilities.MaxParticles, 64u, k_MaxParticlesLimit));
 		m_SkinnedVisibility = std::make_shared<Internal::SkinnedVisibility>();
 
@@ -484,6 +496,10 @@ namespace Dingo
 		DestroyAndDelete(m_ShadowAtlas);
 		DestroyAndDelete(m_PlaceholderShadowAtlas);
 		DestroyAndDelete(m_ShadowSampler);
+		DestroyAndDelete(m_IblSpecular);
+		DestroyAndDelete(m_IblIrradiance);
+		m_IblSourceId = 0;
+		m_IblSourceGeneration = 0;
 		DestroyAndDelete(m_ShadowDataBuffer);
 		DestroyAndDelete(m_ShadowViewsBuffer);
 
@@ -600,6 +616,14 @@ namespace Dingo
 			m_Statistics.EnvironmentBakes += environment.Environment->Prepare() ? 1 : 0;
 		}
 		const bool drawSky = environment.Environment && environment.DrawSkybox && environment.Environment->IsReady() && perspective;
+		const bool environmentLit = PrepareEnvironmentLighting(environment);
+		m_Statistics.EnvironmentLighting = environmentLit;
+		m_CameraData.EnvironmentParams = glm::vec4(0.0f);
+		if (environmentLit)
+		{
+			const float radians = glm::radians(-environment.Rotation);
+			m_CameraData.EnvironmentParams = glm::vec4(1.0f, environment.Intensity * environment.LightingIntensity, std::cos(radians), std::sin(radians));
+		}
 		m_Statistics.Fogged = m_CameraData.FogParams.w > 0.5f && perspective;
 		if (m_Statistics.Fogged)
 		{
@@ -670,6 +694,7 @@ namespace Dingo
 				Internal::MaterialAccess::SetSkinUniformBuffer(material, nullptr);
 				Internal::MaterialAccess::SetSkinPaletteBuffer(material, nullptr);
 				Internal::MaterialAccess::SetShadowResources(material, m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+				Internal::MaterialAccess::SetEnvironmentResources(material, m_IblIrradiance, m_IblSpecular, Internal::GetBrdfLut(), Renderer::GetClampSampler());
 				Internal::MaterialAccess::SetObjectBuffer(material, m_ObjectBuffer);
 				if (instanced)
 				{
@@ -1889,6 +1914,7 @@ namespace Dingo
 			Internal::MaterialAccess::SetSkinUniformBuffer(material, nullptr);
 			Internal::MaterialAccess::SetSkinPaletteBuffer(material, nullptr);
 			Internal::MaterialAccess::SetShadowResources(material, m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+			Internal::MaterialAccess::SetEnvironmentResources(material, m_IblIrradiance, m_IblSpecular, Internal::GetBrdfLut(), Renderer::GetClampSampler());
 			Internal::MaterialAccess::SetObjectBuffer(material, m_ObjectBuffer);
 			const VertexLayout& layout = IsLitShader(material->GetShader()) ? m_LitLayout : m_Layout;
 			Renderer::DrawIndexed(material, layout, m_ArenaVertexBuffer, m_ArenaIndexBuffer, draw.IndexCount, 1, draw.FirstIndex);
@@ -2416,6 +2442,7 @@ namespace Dingo
 
 		Internal::MaterialAccess::SetSceneUniformBuffer(material, m_SceneUniformBuffer);
 		Internal::MaterialAccess::SetShadowResources(material, m_ShadowDataBuffer, shadowAtlas, m_ShadowSampler);
+		Internal::MaterialAccess::SetEnvironmentResources(material, m_IblIrradiance, m_IblSpecular, Internal::GetBrdfLut(), Renderer::GetClampSampler());
 		Internal::MaterialAccess::SetObjectBuffer(material, m_ObjectBuffer);
 
 		// The skinned vertices exist only on the GPU, so a two-sided mesh's sides are split by culling:
@@ -2652,11 +2679,12 @@ namespace Dingo
 			ClearEnvironment();
 			return true;
 		}
-		if (!std::isfinite(environment.Intensity) || environment.Intensity < 0.0f || !std::isfinite(environment.Rotation))
+		if (!std::isfinite(environment.Intensity) || environment.Intensity < 0.0f || !std::isfinite(environment.Rotation)
+			|| !std::isfinite(environment.LightingIntensity) || environment.LightingIntensity < 0.0f)
 		{
 			if (!m_EnvironmentWarned)
 			{
-				DE_CORE_WARN("Renderer3D: an environment was ignored: its Intensity must be finite and at least 0, and its Rotation finite.");
+				DE_CORE_WARN("Renderer3D: an environment was ignored: its Intensity and LightingIntensity must be finite and at least 0, and its Rotation finite.");
 				m_EnvironmentWarned = true;
 			}
 			return false;
@@ -2685,6 +2713,30 @@ namespace Dingo
 			}
 			++it;
 		}
+	}
+
+	bool Renderer3D::PrepareEnvironmentLighting(const SceneEnvironment& environment)
+	{
+		if (!environment.Environment || !environment.Lighting || !environment.Environment->IsReady() || !m_IblSpecular || !m_IblIrradiance || !Internal::GetBrdfLut())
+			return false;
+
+		const Environment* source = environment.Environment;
+		const uint64_t generation = Internal::EnvironmentAccess::GetBakeGeneration(source);
+		if (m_IblSourceId == source->GetId() && m_IblSourceGeneration == generation)
+			return true;
+
+		Texture* specular = Internal::EnvironmentAccess::GetSpecular(source);
+		GraphicsBuffer* irradiance = Internal::EnvironmentAccess::GetIrradiance(source);
+		Internal::CommandList* list = Internal::RendererBackend::TryGetRecordingCommandList();
+		if (!specular || !irradiance || !list || Renderer::IsFrameSkipped())
+			return false;
+
+		list->CopyTexture(m_IblSpecular, specular);
+		list->CopyBuffer(m_IblIrradiance, irradiance, Internal::k_IblIrradianceBytes);
+		m_IblSourceId = source->GetId();
+		m_IblSourceGeneration = generation;
+		++m_Statistics.EnvironmentLightingCopies;
+		return true;
 	}
 
 	bool Renderer3D::DrawSkybox(const SceneEnvironment& environment)
@@ -2740,6 +2792,7 @@ namespace Dingo
 	void Renderer3D::ClearSceneLights()
 	{
 		m_CameraData.AmbientColor = glm::vec4(0.0f);
+		m_CameraData.EnvironmentParams = glm::vec4(0.0f);
 		m_CameraData.LightCounts = glm::ivec4(0);
 		m_LocalLights.clear();
 		m_SceneLightSubmitted = false;

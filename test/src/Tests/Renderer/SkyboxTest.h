@@ -25,7 +25,7 @@ namespace Dingo
 	//  5. Intensity 2 doubles the linear radiance and Intensity 0 draws black;
 	//  6. an opaque box and a quad near the far plane draw identically with and without the sky, and the
 	//     sky fills every pixel they leave;
-	//  7. a lit and a PBR sphere draw identically with and without the sky;
+	//  7. a lit and a PBR sphere draw identically with and without the sky when its Lighting is off;
 	//  8. through the post chain (tone map None, exposure -2 EV) the sun, over 1 in the HDR scene target,
 	//     reaches the swap target as a quarter of its encoded value;
 	// 10. two environments and two rotations in the scenes of one frame each draw their own sky;

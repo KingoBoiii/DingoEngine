@@ -238,6 +238,14 @@ namespace Dingo
 		static constexpr const char* k_ShadowAtlasName = "u_ShadowAtlas";
 		/// Name of the shadow atlas sampler a shader declares (Shadows.glsl).
 		static constexpr const char* k_ShadowSamplerName = "u_ShadowSampler";
+		/// Name of the storage block holding the environment's irradiance coefficients (Renderer3D_Pbr.glsl).
+		static constexpr const char* k_EnvironmentShBlockName = "DE_EnvironmentSh";
+		/// Name of the environment's prefiltered specular cube map a shader declares (Renderer3D_Pbr.glsl).
+		static constexpr const char* k_EnvironmentSpecularName = "u_EnvironmentSpecular";
+		/// Name of the BRDF lookup texture a shader declares (Renderer3D_Pbr.glsl).
+		static constexpr const char* k_EnvironmentBrdfName = "u_EnvironmentBrdf";
+		/// Name of the sampler for the two environment textures a shader declares (Renderer3D_Pbr.glsl).
+		static constexpr const char* k_EnvironmentSamplerName = "u_EnvironmentSampler";
 
 		// ---- Accessors -------------------------------------------------------
 
@@ -314,6 +322,11 @@ namespace Dingo
 		// u_ShadowSampler sampler (Shadows.glsl), each at whatever binding the shader gave it.
 		void SetShadowResources(GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler);
 
+		// Binds Renderer3D's image-based lighting to the shader's DE_EnvironmentSh storage block,
+		// u_EnvironmentSpecular, u_EnvironmentBrdf and u_EnvironmentSampler, each at whatever binding the
+		// shader gave it. Only the renderer's own copies are ever passed, so the cached passes stay valid.
+		void SetEnvironmentResources(GraphicsBuffer* irradiance, Texture* specular, Texture* brdfLut, Sampler* sampler);
+
 		// Binds Renderer3D's per-mesh surface records to the shader's DE_ObjectData storage block.
 		// Another buffer only re-points the cached passes' binding sets, so the renderer can grow it
 		// without new pipelines.
@@ -360,6 +373,10 @@ namespace Dingo
 		GraphicsBuffer*      m_ShadowDataBuffer   = nullptr;
 		Texture*             m_ShadowAtlas        = nullptr;
 		Sampler*             m_ShadowSampler      = nullptr;
+		GraphicsBuffer*      m_EnvironmentSh      = nullptr;
+		Texture*             m_EnvironmentSpecular = nullptr;
+		Texture*             m_EnvironmentBrdf    = nullptr;
+		Sampler*             m_EnvironmentSampler = nullptr;
 		GraphicsBuffer*      m_ObjectBuffer       = nullptr;
 		uint64_t             m_ObjectBufferId     = 0;
 		GraphicsBuffer*      m_InstanceBuffer     = nullptr;
