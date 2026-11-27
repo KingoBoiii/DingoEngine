@@ -98,6 +98,7 @@ namespace Dingo
 		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 		void RunChecks();
 		void CheckUniform();
+		void CheckFailedDispatchClear();
 		void CheckHeightFalloff();
 		void CheckPhase();
 		void CheckShafts();

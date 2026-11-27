@@ -96,6 +96,26 @@ namespace Dingo
 		m_LastDrawFramebuffer = nullptr;
 	}
 
+	void NvrhiCommandList::ClearTexture(Texture* texture, const glm::vec4& value)
+	{
+		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before clearing a texture.");
+		DE_CORE_ASSERT(texture, "Texture is null.");
+		DE_CORE_ASSERT(texture->GetParams().IsStorage || texture->GetParams().IsRenderTarget, "ClearTexture takes a storage or render-target texture.");
+
+		nvrhi::ITexture* handle = static_cast<NvrhiTexture*>(texture)->m_Handle;
+		m_CommandListHandle->clearTextureFloat(handle, nvrhi::AllSubresources, nvrhi::Color(value.r, value.g, value.b, value.a));
+
+		// As in UploadTexture: a binding set kept bound across the clear would otherwise sample a copy
+		// destination.
+		const nvrhi::TextureDesc& desc = handle->getDesc();
+		if (desc.initialState != nvrhi::ResourceStates::Unknown)
+		{
+			m_CommandListHandle->setTextureState(handle, nvrhi::AllSubresources, desc.initialState);
+			m_CommandListHandle->commitBarriers();
+		}
+		m_LastDrawFramebuffer = nullptr;
+	}
+
 	void NvrhiCommandList::UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before uploading buffer.");

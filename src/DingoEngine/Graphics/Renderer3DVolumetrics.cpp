@@ -4,6 +4,7 @@
 #include "DingoEngine/Graphics/PostProcessAccess.h"
 #include "DingoEngine/Graphics/FullscreenPass.h"
 #include "DingoEngine/Graphics/MaterialAccess.h"
+#include "DingoEngine/Graphics/RendererBackend.h"
 #include "DingoEngine/Graphics/VolumetricShaders.h"
 
 #include <glm/gtc/matrix_access.hpp>
@@ -460,6 +461,10 @@ namespace Dingo
 				DE_CORE_ERROR("Renderer3D: recording the volumetric fog dispatches failed.");
 			m_VolumetricDispatchWarned = true;
 			InvalidateVolumetricHistory();
+			// The scene samples the volume anyway (the camera data is already uploaded), and after a
+			// create or a grid change it holds undefined memory: no in-scatter, full transmittance.
+			if (Internal::CommandList* list = Internal::RendererBackend::TryGetRecordingCommandList())
+				list->ClearTexture(m_VolumetricIntegrated, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
 			return;
 		}
 		m_Statistics.VolumetricDispatches += 2;
