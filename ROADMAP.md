@@ -696,6 +696,37 @@ Linux passed on the tagged commit. No MSVC build, no GPU run and no real pad run
 PRs, and the DualShock/DualSense report layouts were checked against SDL and the kernel drivers, not
 against a pad. Linux has not run on real hardware.
 
+## v1.3.0 — PBR, Environments and Volumetric Fog
+**Status**: merged, tag pending.
+
+A minor release: additions and fixes. Existing lit materials and shipped games look the same as in
+1.2.x, because PBR is a separate material type and volumetrics are off until a game turns them on.
+
+- **PBR, environments and fog** ([#343](https://github.com/KingoBoiii/DingoEngine/pull/343)): opt-in PBR materials (`Renderer3D::CreatePbrMaterial`,
+  glTF maps through `ModelLoadParams::SetPbrMaterials`); cube maps, mip chains, 3D textures and
+  `.hdr` loading; `Environment` and `SkyboxComponent` with image-based lighting; a procedural sky that
+  follows the sun (`Environment::CreateProcedural`, `SkyboxComponent::FollowSun`/`TintSun`); froxel
+  volumetric fog with sun shafts (`FogComponent::Volumetric`); local `FogVolume`s with a raymarch mode.
+  New `examples/Dustlight` showcases all of it, with `--check`. Docs: [textures](docs/textures.md),
+  [PBR](docs/pbr.md), [environment](docs/environment.md), [volumetrics](docs/volumetrics.md).
+- **Typed-character event and a DingoUI text field** ([#332](https://github.com/KingoBoiii/DingoEngine/pull/332), [#331](https://github.com/KingoBoiii/DingoEngine/issues/331)): `KeyTypedEvent` and
+  `DingoUI::TextField`. [Game UI](docs/game-ui.md).
+- **Failed fog dispatch clears the volume** ([#345](https://github.com/KingoBoiii/DingoEngine/pull/345), [#342](https://github.com/KingoBoiii/DingoEngine/issues/342)): the frame draws with no fog
+  instead of sampling undefined memory.
+- **ImGui binding sets** ([#340](https://github.com/KingoBoiii/DingoEngine/pull/340), [#339](https://github.com/KingoBoiii/DingoEngine/issues/339)): sets the last render didn't draw are dropped, so
+  textures no longer live until shutdown.
+- **Vulkan swap chain kept on restore** ([#335](https://github.com/KingoBoiii/DingoEngine/pull/335), [#333](https://github.com/KingoBoiii/DingoEngine/issues/333)): a restore that keeps the window size no
+  longer re-creates the chain (a crash in AMD's driver under the Steam overlay in Headstone).
+- **Background Test start-up** ([#336](https://github.com/KingoBoiii/DingoEngine/pull/336), [#334](https://github.com/KingoBoiii/DingoEngine/issues/334)): timing checks are skipped for a stretch that
+  began before the first update.
+
+Left for 1.3.1: [#337](https://github.com/KingoBoiii/DingoEngine/issues/337) (deferred texture uploads) and [#344](https://github.com/KingoBoiii/DingoEngine/issues/344) (fog ambient following the sky).
+
+**Test**: the owner ran the v1.3 phases on an RX 7900 XTX (Vulkan, DX11, DX12, validation layers on,
+0 VUIDs); the results are in the comments on [#343](https://github.com/KingoBoiii/DingoEngine/pull/343), [#345](https://github.com/KingoBoiii/DingoEngine/pull/345), [#340](https://github.com/KingoBoiii/DingoEngine/pull/340), [#336](https://github.com/KingoBoiii/DingoEngine/pull/336) and
+[#335](https://github.com/KingoBoiii/DingoEngine/pull/335). Build Windows and Build Linux on the merge commit are recorded below once they pass.
+Release assets: 32 (Dustlight included).
+
 ---
 
 ## Modules — shipped out of band
