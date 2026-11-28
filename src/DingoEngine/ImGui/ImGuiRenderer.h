@@ -33,6 +33,7 @@ namespace Dingo
 
 		nvrhi::GraphicsPipelineHandle GetOrCreatePipeline(Internal::SwapChain* swapchain);
 		nvrhi::IBindingSet* GetBindingSet(nvrhi::ITexture* texture);
+		void EvictUnusedBindingSets();
 
 	private:
 		Shader* m_Shader = nullptr;
@@ -62,6 +63,15 @@ namespace Dingo
 
 		std::map<Internal::SwapChain*, SwapchainPipelineCache> m_PipelineCache;
 
-		std::unordered_map<nvrhi::ITexture*, nvrhi::BindingSetHandle> m_BindingsCache;
+		// Each set holds its texture, so an entry the last Render didn't draw is dropped there;
+		// a command list still recording or executing it keeps its own reference.
+		struct CachedBindingSet
+		{
+			nvrhi::BindingSetHandle BindingSet;
+			uint64_t LastUsedRender = 0;
+		};
+
+		std::unordered_map<nvrhi::ITexture*, CachedBindingSet> m_BindingsCache;
+		uint64_t m_RenderSerial = 0;
 	};
 }
