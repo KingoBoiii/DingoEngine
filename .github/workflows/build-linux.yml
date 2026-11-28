@@ -1,23 +1,11 @@
 name: Build Linux
 
 on:
-  push:
-    branches: [ "master" ]
-    paths-ignore:
-      - 'docs/**'
-      - '**/*.md'
-      - '.claude/**'
-      - 'VERSION'
-      - '.github/ISSUE_TEMPLATE/**'
+  workflow_call:
   workflow_dispatch:
 
 permissions:
   contents: read
-
-# Master runs are never cancelled or replaced while pending: a tag gate may need any merge commit's run.
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref == 'refs/heads/master' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 jobs:
   build-linux:
