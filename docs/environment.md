@@ -131,8 +131,9 @@ untouched, and `SceneEnvironment::Lighting` / `SkyboxComponent::Lighting` (defau
   call) pays for it, together with the sky bake. The BRDF lookup bakes on the first environment bake of a
   frame. `IsReady()` is true once all of it is recorded.
 - **Replaces ambient.** With an environment set and `Lighting` on, PBR materials take their ambient from
-  the environment and `AmbientColor` no longer reaches them; analytic lights are unchanged. With
-  `Lighting` off, or no environment, the flat ambient colour applies as before.
+  the environment and `AmbientColor` no longer reaches them; analytic lights are unchanged. The
+  [volumetric fog](volumetrics.md)'s ambient in-scatter follows the sky too. With `Lighting` off, or no
+  environment, the flat ambient colour applies as before.
 - **Units.** Uniform radiance 1 at intensity 1 lights a surface exactly as a white `AmbientColor` of 1
   does (diffuse). The lighting scale is `Intensity x LightingIntensity`: `Intensity` is the sky's
   brightness and is shared, `LightingIntensity` (0 or more, default 1) is the extra multiplier for the
@@ -227,7 +228,6 @@ Vulkan 0.38-0.48 ms, DX11 0.52-0.54 ms, DX12 0.32-0.39 ms). Mid-range GPUs are u
   not in the cube.
 - `Rotation` has no effect.
 - One bake per environment per frame.
-- The volumetric fog's ambient term stays the flat `AmbientColor` and does not follow the sky (#344).
 
 ## Limits
 

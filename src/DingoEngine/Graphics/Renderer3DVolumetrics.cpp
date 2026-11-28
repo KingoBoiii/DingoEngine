@@ -266,7 +266,7 @@ namespace Dingo
 
 		Shader* inject = Internal::GetVolumetricShader(Internal::VolumetricShaderKind::Inject);
 		Shader* integrate = Internal::GetVolumetricShader(Internal::VolumetricShaderKind::Integrate);
-		if (!inject || !integrate)
+		if (!inject || !integrate || !m_IblIrradiance)
 		{
 			if (!m_VolumetricWarned)
 				DE_CORE_ERROR("Renderer3D: the volumetric fog shaders are not valid; scenes draw without volumetric fog until they are.");
@@ -301,6 +301,7 @@ namespace Dingo
 				injectPass->SetUniformBuffer(8, m_FogVolumeBuffer);
 				injectPass->SetTexture(9, m_VolumeNoise);
 				injectPass->SetSampler(10, m_VolumeNoiseSampler);
+				injectPass->SetStorageBuffer(13, m_IblIrradiance);
 				m_VolumetricInject[i] = injectPass;
 
 				ComputePass* integratePass = ComputePass::Create(ComputePassParams().SetDebugName("Renderer3D volumetric integrate").SetShader(integrate));
@@ -573,7 +574,7 @@ namespace Dingo
 		if (!m_RaymarchCompositeShader)
 			m_RaymarchCompositeShader = new Internal::FullscreenShader("VolumeRaymarchComposite", "VolumeRaymarchComposite.glsl");
 		Shader* composite = m_RaymarchCompositeShader->GetShader();
-		if (!kernel || !composite || !composite->IsValid())
+		if (!kernel || !composite || !composite->IsValid() || !m_IblIrradiance)
 		{
 			if (!m_RaymarchWarned)
 				DE_CORE_ERROR("Renderer3D: the Raymarch fog volume shaders are not valid; Raymarch volumes are not drawn until they are.");
@@ -609,6 +610,7 @@ namespace Dingo
 			m_RaymarchPass->SetSampler(10, m_VolumeNoiseSampler);
 			m_RaymarchPass->SetTexture(11, m_VolumetricIntegrated);
 			m_RaymarchPass->SetSampler(12, Renderer::GetClampSampler());
+			m_RaymarchPass->SetStorageBuffer(13, m_IblIrradiance);
 
 			m_RaymarchComposite = Material::Create(MaterialParams()
 				.SetDebugName("Renderer3D volume raymarch composite")

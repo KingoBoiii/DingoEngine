@@ -45,7 +45,7 @@ vec3 DE_RaymarchSource(int volume, vec3 world, vec3 rayDirection, float sigmaT, 
 	if (MediaGlobal.z > 0.5)
 		return DE_ShadowSampleColor(world) * dot(coef * Volumes[volume].VolumeLight.x, vec3(1.0 / 3.0));
 
-	vec3 light = AmbientColor.rgb * Volumes[volume].VolumeAlbedo.a;
+	vec3 light = DE_VolumeAmbient() * Volumes[volume].VolumeAlbedo.a;
 
 	vec2 parts = ShadowCounts.y >= 0 ? DE_DirectionalShadowVolumeParts(world) : vec2(1.0, 0.0);
 	float strength = ShadowParams.x;

@@ -47,7 +47,7 @@ float DE_FroxelDensity(vec3 world)
 
 vec3 DE_FroxelInScatter(vec3 world, vec3 rayDirection)
 {
-	vec3 light = AmbientColor.rgb * Intensities.x;
+	vec3 light = DE_VolumeAmbient() * Intensities.x;
 	for (int i = 0; i < LightCounts.x; ++i)
 	{
 		float visibility = i == ShadowCounts.y ? DE_DirectionalShadowVolume(world, ScatterTint.a) : 1.0;
@@ -101,7 +101,7 @@ vec4 DE_FroxelMediaSample(vec3 world, vec3 rayDirection, float cameraDistance, o
 	float strength = ShadowParams.x;
 	vec3 sunLit = coefSun * (parts.x * (1.0 - parts.y) + parts.y * (1.0 - strength)) + coefSunOutside * (parts.y * strength);
 
-	vec3 light = AmbientColor.rgb * coefAmbient;
+	vec3 light = DE_VolumeAmbient() * coefAmbient;
 	for (int i = 0; i < LightCounts.x; ++i)
 	{
 		float phase = DE_PI * DE_HenyeyGreenstein(dot(DirectionalLights[i].Direction.xyz, -rayDirection), g);
