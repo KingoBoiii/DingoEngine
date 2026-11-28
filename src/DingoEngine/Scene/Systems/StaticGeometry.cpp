@@ -22,7 +22,8 @@ namespace Dingo::Internal
 			if (a.has_value() != b.has_value())
 				return false;
 			return !a || (Same(a->EmissiveColor, b->EmissiveColor) && Same(a->EmissiveStrength, b->EmissiveStrength) &&
-				Same(a->Roughness, b->Roughness) && Same(a->Specular, b->Specular));
+				Same(a->Roughness, b->Roughness) && Same(a->Specular, b->Specular) &&
+					Same(a->Metallic, b->Metallic));
 		}
 	}
 

@@ -15,6 +15,9 @@
 #include "DingoEngine/Graphics/Shader.h"
 #include "DingoEngine/Graphics/Model.h"
 #include "DingoEngine/Graphics/Font.h"
+#include "DingoEngine/Graphics/Environment.h"
+#include "DingoEngine/Graphics/EnvironmentAccess.h"
+#include "DingoEngine/Graphics/EnvironmentLayout.h"
 #include "DingoEngine/Audio/AudioEngine.h"
 
 #include <algorithm>
@@ -428,6 +431,61 @@ namespace Dingo
 				{
 					data.AudioClips[result.Handle] = std::move(result.Clip);
 				}
+			},
+			{
+				.Type = AssetType::Environment,
+				.Load = [](AssetManagerData& data, const Internal::AssetRecord& metadata) -> bool
+				{
+					Environment* environment = Environment::Create(EnvironmentParams().SetPath(metadata.AbsolutePath).SetDebugName(Internal::PathToGenericUtf8(metadata.FilePath)));
+					if (!environment)
+						return false;
+
+					data.Environments[metadata.Handle] = environment;
+					return true;
+				},
+				.ReloadInPlace = [](AssetManagerData& data, const Internal::AssetRecord& metadata) -> RefreshResult
+				{
+					auto it = data.Environments.find(metadata.Handle);
+					if (it == data.Environments.end())
+						return RefreshResult::NotLoaded;
+
+					std::vector<uint16_t> halves;
+					uint32_t width = 0, height = 0;
+					if (!Internal::EnvironmentAccess::DecodeHdr(metadata.AbsolutePath, halves, width, height)
+						|| !Internal::EnvironmentAccess::Reload(it->second, std::move(halves), width, height, Internal::ChooseEnvironmentFaceSize(width, 0)))
+					{
+						DE_CORE_ERROR("AssetManager: reload failed for Environment '{}' - keeping the loaded version.", Internal::PathToGenericUtf8(metadata.FilePath));
+						return RefreshResult::KeptPrevious;
+					}
+					return RefreshResult::Refreshed;
+				},
+				.Unload = [](AssetManagerData& data, AssetHandle handle)
+				{
+					auto it = data.Environments.find(handle);
+					if (it == data.Environments.end())
+						return;
+					delete it->second;
+					data.Environments.erase(it);
+				},
+				.IsLoaded = [](const AssetManagerData& data, AssetHandle handle) -> bool { return data.Environments.contains(handle); },
+				.Decode = [](AssetManagerData&, const AsyncJob& job, AsyncResult& result)
+				{
+					result.Success = Internal::EnvironmentAccess::DecodeHdr(job.AbsolutePath, result.HalfPixels, result.Width, result.Height);
+				},
+				.Publish = [](AssetManagerData& data, AsyncResult& result)
+				{
+					const uint32_t faceSize = Internal::ChooseEnvironmentFaceSize(result.Width, 0);
+					auto existing = data.Environments.find(result.Handle);
+					if (existing != data.Environments.end())
+					{
+						if (!Internal::EnvironmentAccess::Reload(existing->second, std::move(result.HalfPixels), result.Width, result.Height, faceSize))
+							DE_CORE_ERROR("AssetManager: reload failed for Environment '{}' - keeping the loaded version.", result.DebugName);
+					}
+					else if (Environment* environment = Internal::EnvironmentAccess::Create(std::move(result.HalfPixels), result.Width, result.Height, faceSize, result.DebugName))
+						data.Environments[result.Handle] = environment;
+				},
+				.HotReloadWatched = true,
+				.NeedsGraphicsDevice = true
 			}
 		};
 
@@ -975,6 +1033,9 @@ namespace Dingo
 		Utils::DestroyAll(data.Shaders);
 		Utils::DestroyAll(data.Models);
 		Utils::DestroyAll(data.Fonts);
+		for (auto& [handle, environment] : data.Environments)
+			delete environment;
+		data.Environments.clear();
 		data.AudioClips.clear();
 
 		data.Registry.clear();
@@ -1163,6 +1224,12 @@ namespace Dingo
 		return it != m_Data->Fonts.end() ? it->second : nullptr;
 	}
 
+	Environment* AssetManager::GetEnvironment(AssetHandle handle) const
+	{
+		auto it = m_Data->Environments.find(handle);
+		return it != m_Data->Environments.end() ? it->second : nullptr;
+	}
+
 	std::shared_ptr<AudioClip> AssetManager::GetAudioClip(AssetHandle handle) const
 	{
 		auto it = m_Data->AudioClips.find(handle);
@@ -1249,7 +1316,7 @@ namespace Dingo
 	uint32_t AssetManager::GetLoadedCount() const
 	{
 		const AssetManagerData& data = *m_Data;
-		return static_cast<uint32_t>(data.Textures.size() + data.Shaders.size() + data.Models.size() + data.Fonts.size() + data.AudioClips.size());
+		return static_cast<uint32_t>(data.Textures.size() + data.Shaders.size() + data.Models.size() + data.Fonts.size() + data.AudioClips.size() + data.Environments.size());
 	}
 
 	uint32_t AssetManager::GetPendingCount() const

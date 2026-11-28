@@ -18,6 +18,7 @@ namespace Dingo
 			case AssetType::Model:     return "Model";
 			case AssetType::Font:      return "Font";
 			case AssetType::AudioClip: return "AudioClip";
+			case AssetType::Environment: return "Environment";
 		}
 		return "Unknown";
 	}
@@ -51,6 +52,8 @@ namespace Dingo
 			return AssetType::Font;
 		if (ext == ".wav" || ext == ".ogg" || ext == ".mp3")
 			return AssetType::AudioClip;
+		if (ext == ".hdr")
+			return AssetType::Environment;
 
 		return AssetType::None;
 	}

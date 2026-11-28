@@ -15,6 +15,7 @@ namespace Dingo
 		float     EmissiveStrength = 0.0f; ///< Multiplies EmissiveColor; 0 means no emission.
 		float     Roughness        = 0.5f; ///< Highlight spread; 0 is small and sharp.
 		float     Specular         = 0.0f; ///< Specular highlight strength; 0 means none.
+		float     Metallic         = 0.0f; ///< 0 dielectric to 1 metal; the PBR shader reads it, the lit shader ignores it.
 
 		/// Each setter sets the field of the same name and returns *this, for chaining.
 		///@{
@@ -22,6 +23,7 @@ namespace Dingo
 		SurfaceOverride& SetEmissiveStrength(float strength)      { EmissiveStrength = strength; return *this; }
 		SurfaceOverride& SetRoughness(float roughness)            { Roughness = roughness; return *this; }
 		SurfaceOverride& SetSpecular(float specular)              { Specular = specular; return *this; }
+		SurfaceOverride& SetMetallic(float metallic)              { Metallic = metallic; return *this; }
 		///@}
 	};
 

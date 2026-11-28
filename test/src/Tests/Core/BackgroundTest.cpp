@@ -117,6 +117,7 @@ namespace Dingo
 		{
 			m_StretchStart = m_LastUpdate;
 			m_StretchUpdatingMode = Application::Get().IsUpdatingInBackground();
+			m_StretchBeforeFirstUpdate = m_Updates == 0;
 			m_StretchMinimized = false;
 			m_StretchUpdates = 0;
 			m_StretchDeltaTime = 0.0f;
@@ -233,6 +234,8 @@ namespace Dingo
 
 		const char* state = m_StretchMinimized ? "minimized" : "unfocused";
 		const float wall = std::chrono::duration<float>(now - m_StretchStart).count();
+		// A stretch begun before the first update spans the case's start-up, which no delta time measures.
+		const bool timed = !m_StretchBeforeFirstUpdate;
 
 		if (m_StretchUpdatingMode)
 		{
@@ -244,15 +247,18 @@ namespace Dingo
 				m_StretchUpdates, wall, state, rate, m_StretchMaxDeltaTime * 1000.0f);
 			DE_INFO("Background Test: {}", m_LastStretch);
 
-			if (wall >= k_MinRatedSpan)
+			if (timed && wall >= k_MinRatedSpan)
 			{
 				Check(rate >= k_MinUpdateRate,
 					std::format("layers kept updating while {} ({:.0f} updates/s, at least {:.0f})", state, rate, k_MinUpdateRate));
 			}
-			Check(m_StretchMaxDeltaTime <= k_MaxDeltaTime,
-				std::format("no update waited more than {:.0f} ms ({:.0f} ms)", k_MaxDeltaTime * 1000.0f, m_StretchMaxDeltaTime * 1000.0f));
-			Check(std::abs(summed - wall) <= k_DeltaTimeTolerance,
-				std::format("the delta times add up to the wall clock ({:.3f} s of {:.3f} s)", summed, wall));
+			if (timed)
+			{
+				Check(m_StretchMaxDeltaTime <= k_MaxDeltaTime,
+					std::format("no update waited more than {:.0f} ms ({:.0f} ms)", k_MaxDeltaTime * 1000.0f, m_StretchMaxDeltaTime * 1000.0f));
+				Check(std::abs(summed - wall) <= k_DeltaTimeTolerance,
+					std::format("the delta times add up to the wall clock ({:.3f} s of {:.3f} s)", summed, wall));
+			}
 			Check(!m_StretchRenderMismatch && !Renderer::IsFrameSkipped(),
 				"updates rendered exactly while the window was not minimized, and the return renders");
 			if (m_StretchMinimized && m_StretchUpdates > 0)
@@ -269,7 +275,7 @@ namespace Dingo
 
 			Check(m_StretchUpdates == 0,
 				std::format("the app paused while {} ({} updates ran)", state, m_StretchUpdates));
-			if (wall >= k_MinRatedSpan)
+			if (timed && wall >= k_MinRatedSpan)
 			{
 				Check(returnDeltaTime <= k_MaxDeltaTime,
 					std::format("the first delta after the pause leaves the paused time out ({:.0f} ms)", returnDeltaTime * 1000.0f));

@@ -195,8 +195,9 @@ r.DrawQuad({ 0.0f, 0.0f }, { 6.4f, -3.6f }, target->GetAttachment(0));
 
 ### Reading a texture back (v0.8.3)
 
-`Texture::ReadPixels(done)` copies an RGBA8 texture back to the CPU and hands `done` a
-`TexturePixels { Width, Height, Data }` (8-bit RGBA, rows in the texture's own order).
+`Texture::ReadPixels(done)` copies mip 0 of a texture back to the CPU and hands `done` a
+`TexturePixels { Width, Height, Format, Data }` in the texture's own format and row order
+(`GetPixel` decodes one pixel; other mips and layers: `ReadSubresource`, [textures.md](textures.md)).
 `Texture::SaveToFile(path, done)` writes one as a PNG (or BMP, TGA, JPEG by extension), and
 `FileSystem::WriteImage(path, width, height, channels, pixels, flipVertically)` writes pixels you
 already have.
@@ -273,7 +274,7 @@ what it drew, draw into a `Framebuffer` of your own.
   draws as `?`.
 - Culling is per scene entity (sprites and circles): quads you submit yourself and text are never
   culled.
-- 2D is never tone mapped, and `Texture::ReadPixels` reads RGBA8 2D textures only, not the window's
+- 2D is never tone mapped, and `Texture::ReadPixels` reads textures, not the window's
   swap chain.
 
 ---

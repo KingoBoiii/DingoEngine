@@ -59,6 +59,7 @@ namespace Dingo
 		bool m_CheckSecondDelta = false;
 		Clock::time_point m_StretchStart;
 		bool m_StretchUpdatingMode = true;
+		bool m_StretchBeforeFirstUpdate = false;
 		bool m_StretchMinimized = false;
 		uint32_t m_StretchUpdates = 0;
 		float m_StretchDeltaTime = 0.0f;

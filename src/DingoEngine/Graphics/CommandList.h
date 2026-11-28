@@ -46,10 +46,20 @@ namespace Dingo::Internal
 
 		virtual void Clear(Framebuffer* framebuffer, uint32_t attachmentIndex, const glm::vec4& clearColor = glm::vec4(0.3f, 0.3f, 0.3f, 1.0f)) = 0;
 
+		// Fills every mip and slice of a storage texture, then puts it back in its usual state. Not for
+		// render targets: NVRHI's D3D12 RTV clear covers only mip 0 and one slice of a 3D texture.
+		virtual void ClearTexture(Texture* texture, const glm::vec4& value) = 0;
+
 		virtual void UploadBuffer(GraphicsBuffer* buffer, const void* data, uint64_t size, uint64_t offset = 0) = 0;
 		// Re-sends the range the buffer's last Upload named, from the pointer it kept.
 		virtual void UploadKeptData(GraphicsBuffer* buffer) = 0;
-		virtual void UploadTexture(Texture* texture, const void* data, uint64_t rowPitch) = 0;
+		virtual void UploadTexture(Texture* texture, const void* data, uint32_t mip, uint32_t layer, uint64_t rowPitch, uint64_t depthPitch) = 0;
+
+		// Copies every layer and mip of src into dst; the two must match in size, layers, mips and format.
+		// Both go back to their usual state afterwards, so a binding set that samples dst stays valid.
+		virtual void CopyTexture(Texture* dst, Texture* src) = 0;
+		// Copies the first `size` bytes of src into the start of dst, then restores both buffers' usual state.
+		virtual void CopyBuffer(GraphicsBuffer* dst, GraphicsBuffer* src, uint64_t size) = 0;
 
 		// Binds the framebuffer with a viewport covering all of it.
 		virtual void SetFramebuffer(Framebuffer* framebuffer) = 0;

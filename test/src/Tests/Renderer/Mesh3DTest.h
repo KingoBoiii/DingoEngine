@@ -47,6 +47,8 @@ namespace Dingo
 
 		Material*       m_CheckOpaque      = nullptr;
 		Material*       m_CheckTranslucent = nullptr;
+		Material*       m_CheckSwap        = nullptr;
+		Texture*        m_SwapSecond       = nullptr;
 		GraphicsBuffer* m_CheckVB          = nullptr;
 		GraphicsBuffer* m_CheckIB          = nullptr;
 		std::vector<Framebuffer*> m_CheckTargets;

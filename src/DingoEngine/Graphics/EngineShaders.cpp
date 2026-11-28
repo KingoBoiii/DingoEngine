@@ -19,6 +19,26 @@ namespace
 #include "ParticleSimulate.glsl.inl"
 #include "ParticleDraw.glsl.inl"
 #include "DingoUI.glsl.inl"
+#include "CubeMap.glsl.inl"
+#include "Renderer3D_MeshVertex.glsl.inl"
+#include "Renderer3DCamera.glsl.inl"
+#include "Renderer3DScene.glsl.inl"
+#include "Brdf.glsl.inl"
+#include "Ibl.glsl.inl"
+#include "Renderer3D_Pbr.glsl.inl"
+#include "Environment.glsl.inl"
+#include "EnvironmentBake.glsl.inl"
+#include "Skybox.glsl.inl"
+#include "Atmosphere.glsl.inl"
+#include "ProceduralSky.glsl.inl"
+#include "VolumetricMath.glsl.inl"
+#include "Volumetrics.glsl.inl"
+#include "VolumetricMedia.glsl.inl"
+#include "VolumetricInject.glsl.inl"
+#include "VolumetricIntegrate.glsl.inl"
+#include "VolumeRaymarch.glsl.inl"
+#include "VolumeRaymarchComposite.glsl.inl"
+#include "VolumetricSlice.glsl.inl"
 
 	struct EmbeddedShader
 	{
@@ -51,6 +71,26 @@ namespace
 		{ "ParticleSimulate.glsl", View(k_ParticleSimulate_glsl) },
 		{ "ParticleDraw.glsl", View(k_ParticleDraw_glsl) },
 		{ "DingoUI.glsl", View(k_DingoUI_glsl) },
+		{ "CubeMap.glsl", View(k_CubeMap_glsl) },
+		{ "Renderer3D_MeshVertex.glsl", View(k_Renderer3D_MeshVertex_glsl) },
+		{ "Renderer3DCamera.glsl", View(k_Renderer3DCamera_glsl) },
+		{ "Renderer3DScene.glsl", View(k_Renderer3DScene_glsl) },
+		{ "Brdf.glsl", View(k_Brdf_glsl) },
+		{ "Ibl.glsl", View(k_Ibl_glsl) },
+		{ "Renderer3D_Pbr.glsl", View(k_Renderer3D_Pbr_glsl) },
+		{ "Environment.glsl", View(k_Environment_glsl) },
+		{ "EnvironmentBake.glsl", View(k_EnvironmentBake_glsl) },
+		{ "Skybox.glsl", View(k_Skybox_glsl) },
+		{ "Atmosphere.glsl", View(k_Atmosphere_glsl) },
+		{ "ProceduralSky.glsl", View(k_ProceduralSky_glsl) },
+		{ "VolumetricMath.glsl", View(k_VolumetricMath_glsl) },
+		{ "Volumetrics.glsl", View(k_Volumetrics_glsl) },
+		{ "VolumetricMedia.glsl", View(k_VolumetricMedia_glsl) },
+		{ "VolumetricInject.glsl", View(k_VolumetricInject_glsl) },
+		{ "VolumetricIntegrate.glsl", View(k_VolumetricIntegrate_glsl) },
+		{ "VolumeRaymarch.glsl", View(k_VolumeRaymarch_glsl) },
+		{ "VolumeRaymarchComposite.glsl", View(k_VolumeRaymarchComposite_glsl) },
+		{ "VolumetricSlice.glsl", View(k_VolumetricSlice_glsl) },
 	};
 }
 

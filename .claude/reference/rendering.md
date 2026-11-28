@@ -4,9 +4,9 @@ Read on demand from CLAUDE.md. Shaders, Renderer2D/3D, lighting, skinning and an
 
 - DingoUI renderer · Shaders and cache · Renderer2D · Renderer3D and batching · Culling.
 - Upload arena and instancing · Static batches · Translucency · Lighting and fog · Lit materials.
-- Pipeline state and winding · Skinning · Animator · Animation events · Root motion · Model reload.
-- Render targets and readback · Post chain · Bloom and ambient occlusion · Shadows and probes.
-- Compute · Particles · Vulkan and NVRHI rules.
+- Environment and skybox · Volumetric fog (and local volumes, raymarch, debug view) · Pipeline state and winding · Skinning · Animator · Animation events · Root motion · Model reload.
+- Render targets and readback (incl. texture mips, arrays, cubes, volumes, HDR) · Post chain · Bloom and ambient occlusion · Shadows and probes.
+- Compute (incl. mip, cube and 3D bindings) · Particles · Vulkan and NVRHI rules.
 
 ## DingoUI renderer
 
@@ -131,6 +131,144 @@ Read on demand from CLAUDE.md. Shaders, Renderer2D/3D, lighting, skinning and an
 - A custom shader brings its own emissive/specular.
 - `Material::SetTexture/SetSampler` rebuild the cached passes when a slot's pointer changes, or for a sampler its `GetId()` (#229).
 - A texture created at a freed one's address is still caught at bind time, because every texture draws `GetGeneration()` from one shared counter (v0.8.3, #77, formerly K18).
+
+## PBR materials
+
+PBR materials were added in v1.3 Phase 2 (`docs/pbr.md`).
+
+**Shaders**
+- The engine owns the PBR shaders (`Graphics/PbrShaders.{h,cpp}`):
+  - `Internal::GetPbrShader(Static|Skinned|Instanced)` creates each variant lazily, with hot reload through `WatchUnmanagedShader`;
+  - `DestroyPbrShaders` runs first in `Renderer::Destroy`;
+  - `Internal::CreatePbrMaterial` needs no renderer, so `Model` can call it.
+
+**Treated as lit**
+- `IsLitShader` is true for PBR shaders too. Layout, object records, instancing, translucency and static batches therefore take the lit path.
+- `PrepareLitMaterial` branches to `Internal::PreparePbrMaterial`:
+  - empty slots 0..4 get the white texture and `GetPbrSampler()` (repeat, trilinear, 8× anisotropic);
+  - the 64 B `PbrMaterialData` at binding 1 is written only when it changed.
+- `BindsPastItsSlots` checks 5 slots for PBR and 1 for lit.
+- `GetTwin` re-copies all 5 slots and the PBR fields on each resolve. A cached twin with the wrong shader is rebuilt.
+- PBR honours `MaterialParams::CullMode`. Lit forces None.
+
+**Bindings**
+
+| Binding | Resource |
+|---|---|
+| 0 | Camera |
+| 1 | PbrMaterialData |
+| 2–11 | slot texture/sampler pairs |
+| 12 | ShadowData |
+| 13 | shadow sampler |
+| 16 | atlas |
+| 17 | ObjectData (`DE_OBJECT_DATA_BINDING`) |
+| 18 | instance data |
+| 19 | skin palette |
+| 14 | `u_EnvironmentSampler` (clamp, for 20 and 21) |
+| 15 | `DE_EnvironmentSh` (`readonly` std430 buffer: 9 SH irradiance coefficients) |
+| 20 | `u_EnvironmentSpecular` (cube, 6 mips) |
+| 21 | `u_EnvironmentBrdf` (128² LUT) |
+| 22 | `u_VolumetricFog` (3D, the froxel volume; `DE_VOLUMETRIC_FOG_BINDING 22`, sampler aliased to `u_EnvironmentSampler`) |
+
+- D3D11 limits: constant buffers b0, b1, b2 (push constants) and b12; samplers ≤ s15.
+
+**Shader files**
+- `Renderer3D_Lit.glsl` takes its vertex stage from `Renderer3D_MeshVertex.glsl` and its scene declarations from `Renderer3DScene.glsl`. `Renderer3D_Pbr.glsl` includes the same two.
+- `Brdf.glsl` is a GLSL subset that also compiles as C++. `BrdfTests.cpp` and `PbrMaterialTest.cpp` include it for their CPU references.
+
+**Colour space**
+- Albedo, emissive, the mesh colour, the ambient colour and every light colour are authored in sRGB like lit and decoded in the shader (`SrgbToLinear`). Lighting is linear, with light colours × π, so a white surface under a full-strength white light or ambient matches lit; mid-tone light colours and falloff come out brighter than lit (gamma-correct).
+- Mips of albedo and emissive maps are filtered in linear space (`MipFilter::Srgb`, cache suffix `|mips-srgb`); normal maps average as vectors.
+- `LinearToSrgb` is applied before the cascade tint and fog, so post effects see display-space values, like lit.
+- Hook points: `PbrAmbient` (IBL, Phase 4) and `ApplySceneFog` (distance fog, and the froxel volume when `VolumeParams.x > 0.5`).
+
+**Normal maps**
+- The frame comes from screen derivatives, with `sign(det)` so mirrored UVs and the D3D y flip both work. Without UVs it falls back to the geometric normal.
+- All texture samples and derivatives are taken before any branch (FXC X3570/X4014).
+- Shadow bias uses the geometric normal.
+
+**Import**
+- `ModelLoadParams::SetPbrMaterials(true)` turns on the glTF import (`Model.cpp` `LoadMaterialTexture`, `CreateImportedPbrMaterial`, `CopyPbrMaterial` on reload).
+- assimp 6.0.4 stores the occlusion strength as `"$tex.file.strength"`, not `AI_MATKEY_GLTF_TEXTURE_STRENGTH`.
+- CPU mip chains come from `Graphics/MipChain.h`; normal maps are renormalised.
+
+## Environment and skybox
+
+- `Environment` (`Graphics/Environment.cpp`, `EnvironmentAccess.h` for the asset manager, `EnvironmentLayout.h` for the face-size rule): the `.hdr` is decoded to RGBA16F halves at `Create`, a cube (RGBA16F, storage, full mips) and a 2D equirect texture are made, nothing is uploaded yet. `AssetManager` uses it through `AssetType::Environment` (load, async decode, `ReloadInPlace` via `EnvironmentAccess::Reload`, which `Reinitialize`s the cube so its `GetId()` stays).
+- **Bake** (`Environment::Prepare`, needs a recording command list and not `IsFrameSkipped`): `UploadSubresource` of the halves into the equirect in the frame's list, then `Shaders/EnvironmentBake.glsl` compute: `DE_ENV_EQUIRECT` writes mip 0 (2 x 2 taps, repeat-U/clamp-V sampler), then `DE_ENV_DOWNSAMPLE` per mip reads mip N-1 as a `textureCube` at the shared texel corner and writes mip N (one pass each; push constant x = mip size; z = face). The temporary equirect and `ComputePass`es go to `Renderer::RunAfterFrame`. The conventions (`DE_EquirectUv`, `DE_RotateY`) live in `Shaders/Environment.glsl`, written so `EnvironmentTests.cpp` compiles it as C++ over GLM.
+- **`Renderer3D::EndScene` order**: `ResolveSceneLights`, then `m_PendingEnvironment` is copied (before `ClearSceneLights`/the end-of-scene `ClearEnvironment`) and `Prepare()` runs if not ready (counts `EnvironmentBakes`), then fog and shadow preparation, shadow pass, opaque batches, skinned, then `DrawSkybox`, then translucents. A render target without depth (`EnableDepth` false) draws the sky first, before the opaque batches. A scene skipped for the frame draws none. Only a perspective camera (`CameraPosition.w`) draws it.
+- **Draw** (`Renderer3D::DrawSkybox`, `Shaders/Skybox.glsl`): one `Renderer::Draw(material, 3)` fullscreen triangle at z = w = 1, `DepthCompare::LessEqual`, no depth write, no culling, opaque. The ray is `normalize(unproject(ndc, 1) - unproject(ndc, 0))` with the inverse view-projection computed in double; the engine has no reverse-Z. Output is `LinearToSrgb(radiance * intensity)`.
+- **Bindings**: UBO `SkyboxData` at 0 (std140, 96 bytes: inverse view-projection, `Params` = cos/sin of the turn `-Rotation` and intensity, reserved), the cube at 1, `Renderer::GetClampSampler()` at 2.
+- **Material cache**: `m_SkyboxMaterials`, keyed by the cube's `Texture::GetId()` (an in-place reload keeps it), each with `SetUniformWritesPerFrame(k_MaxScenesPerFrame)`; one not used for more than `k_MaxIdleBatchScenes` scenes is destroyed by `ReleaseIdleSkyboxes` (called from `BeginSceneInternal`, next to `ReleaseIdleTwins`), so a deleted `Environment` leaves nothing but a short-lived material. All are freed in the destructor.
+- **Scene side**: `LightSystem::SubmitSkybox` (called at the end of `SubmitLights`) picks the `SkyboxComponent` like the fog and calls `SetEnvironment`; `Visible` becomes `DrawSkybox`.
+- **Hooks**: `ApplySkyFog(color, dir)` in `Skybox.glsl` samples the volume's last slice (see Volumetric fog); `Visible = false` keeps the environment for IBL.
+
+**Image-based lighting** (v1.3 Phase 4, `Shaders/Ibl.glsl`, `docs/environment.md`)
+- `SceneEnvironment` and `SkyboxComponent` carry `Lighting` (default true) and `LightingIntensity` (default 1). `LightSystem::SubmitSkybox` copies both; `Visible = false` still lights.
+- **Bake** (inside `Environment::Prepare`, after the cube mips): SH9 radiance coefficients into `m_Irradiance` (a `GraphicsBuffer`) and a GGX prefiltered 128 cube (6 mips, roughness m/5) into `m_Specular`. `m_BakeGeneration` changes on each bake. The shared 128² BRDF LUT (`Internal::GetBrdfLut`) bakes lazily on the first Environment bake inside a frame. No multiscatter. `IsReady()` covers all of it.
+- **Renderer copy** (`PrepareEnvironmentLighting`): `Renderer3D` owns `m_IblSpecular` and `m_IblIrradiance` and copies the environment's in via `CommandList::CopyTexture` / `CopyBuffer` when `m_IblSourceId` or `m_IblSourceGeneration` changes (`EnvironmentLightingCopies`). Materials bind only these (`MaterialAccess::SetEnvironmentResources`, names `k_Environment*Name`), never the Environment's own textures, so cached binding sets stay valid.
+- **Copy-restore rule**: a copy into a texture or buffer that stable binding sets sample must put it back in its usual state afterwards (`NvrhiCommandList::CopyTexture`/`CopyBuffer` do), or the sets go stale.
+- `CameraData::EnvironmentParams` (last member, after `FogParams`): x = 1 when lit by the environment, y = `Intensity` x `LightingIntensity`, z/w = cos/sin of the lookup's turn (`DE_RotateY`). The static_assert in `Renderer3D.h` pins it; custom materials only see the frozen prefix. `VolumeParams` (@1856) and `VolumeGrid` (@1872) follow it (x = 1 when the froxel volume is sampled; Phase 5), making the block 1888 bytes.
+- **Shader** (`PbrAmbient`): every fetch happens before the final select between the IBL result and the flat path (`EnvBRDFApprox`, unchanged), so derivatives stay uniform. Diffuse = irradiance x AO; specular = prefiltered x (F0 x A + B) x Lagarde specular occlusion (`DE_SpecularOcclusion(NoV, ao, a)`) x a horizon fade. Radiance enters undecoded and is encoded with the rest.
+- **Include preprocessor**: it pastes each include once and ignores `#if`, so put includes at the top of the file; an include inside a conditional is pasted regardless. `Ibl.glsl` does not pull in `Brdf.glsl` (which has no guard): include `Brdf.glsl` first.
+- IBL resources are internal only; there is no new exposure control (post exposure acts on the encoded sky and PBR alike). Stats: `EnvironmentLighting`, `EnvironmentLightingCopies`.
+
+**Procedural sky** (v1.3 Phase 8, `Shaders/Atmosphere.glsl`, `ProceduralSky.glsl`, `docs/environment.md`)
+- `Environment::CreateProcedural` makes the same class with `m_Procedural`; `Prepare` is split into a source stage (`.hdr`: equirect upload and `DE_ENV_EQUIRECT`; procedural: the sky stages) and the shared `RecordDerivedStages` (downsample, BRDF LUT, SH, prefilter).
+- The `.hdr` keeps transient passes and `RunAfterFrame`; a procedural environment keeps about 20 persistent `ComputePass` members and only re-pushes constants. Stages: transmittance LUT 256x64, multiple-scattering LUT 32x32 (both only when the atmosphere parameters change), sky-view LUT 192x108, then the cube. One bake per environment per frame (`m_LastBakeFrame`).
+- `EnvironmentAccess::NeedsBake` (`!m_Ready || m_SkyDirty`) and `SetSunDirection` (the `RebakeAngle` threshold) are what `Renderer3D::EndScene` uses after it applies `FollowSun`; `TintSun` rewrites the main light colour in `m_CameraData` before the upload, in the encoded domain.
+- `Atmosphere.glsl` is written in the GLSL subset that also compiles as C++ over GLM; `Environment.cpp` includes it for `GetSunTransmittance` (the first engine `.cpp` to include a `.glsl`).
+- `SkyboxData` is 128 B (the sun disc fields); the disc is added in `Skybox.glsl` after the cube lookup, with the CPU's transmittance at the live light direction.
+- Scene side: `SkyboxComponent::FollowSun`/`TintSun` go through `LightSystem::SubmitSkybox`; no save-format change.
+
+## Volumetric fog
+
+Froxel fog, v1.3 Phase 5 (`docs/volumetrics.md`; local volumes, raymarch and the debug view are the subsection below; code in `Graphics/Renderer3DVolumetrics.cpp`, `VolumetricShaders.{h,cpp}`).
+
+**Passes** (`Renderer3D::EndScene`)
+- `PrepareVolumetrics(perspective)` runs before the fog block: active = `Capabilities.Volumetrics` + `SetVolumetricFog` + perspective + not `IsFrameSkipped`. It zeroes `FogColor`/`FogParams` (no distance fog, no AO fog), writes `VolumeParams`/`VolumeGrid`, picks the history parity and uploads the 240 B `VolumetricData` (volatile UBO, one write per dispatching scene).
+- `DispatchVolumetrics(shadowAtlas)` runs after the shadow pass and before the sky and opaque draws, in GPU timer `Volumetrics`: **inject** (`VolumetricInject.glsl`, 4x4x4 groups; writes `Scatter[w]` = (sigmaS L, sigmaT), blends with the reprojected `Scatter[1-w]` at 0.1) then **integrate** (`VolumetricIntegrate.glsl`, 8x8x1, loops the slices; writes `m_VolumetricIntegrated`: rgb in-scatter, a transmittance). If either dispatch fails, the camera data is already uploaded, so it clears `m_VolumetricIntegrated` to (0,0,0,1) with `CommandList::ClearTexture` instead of leaving undefined memory for the scene to sample (#342). The integrate step is two functions in `VolumetricMath.glsl` (`DE_SliceTransmittance`, `DE_SliceInScatterFactor`).
+- Resources: `m_VolumetricIntegrated` is 1x1x1 until a scene is active, then `Reinitialize`d in place (same id, new generation, so cached sets re-point); `m_VolumetricScatter[2]` is the history pair. Only the first temporal scene of a frame touches the history; later scenes write the free half without swapping.
+- `VolumetricData` (`Renderer3D.h`, static_assert) mirrors into both kernels: `ScatterTint` at 224 (rgb tint, a = `OutsideShadowLight`). SetVolumetricFog rejects negative Density, HeightFalloff, intensities and ScatterTint.
+- The sun shadow tap is `DE_DirectionalShadowVolume(world, outside)` in `Shadows.glsl`: one `textureLod` compare, no normal bias, fades the last cascade over `(end - start) * CascadeBlend` to `outside`; a light with `ShadowCounts.x == 0` returns 1. Only the inject kernel calls it.
+
+**Bindings**
+- Lit: texture 12, sampler 13 (`GetClampSampler`). PBR: 22 with `u_EnvironmentSampler`. Particles: 7 with `u_SpriteSampler`. Sky: 3 with `u_Sampler`. Custom: `Volumetrics.glsl` with `DE_VOLUMETRIC_FOG_BINDING`, `DE_VOLUMETRIC_FOG_SAMPLER_BINDING` or `DE_VOLUMETRIC_FOG_SAMPLER`.
+- Bound by name `u_VolumetricFog` (`Material::SetVolumetricResources`, both ids in `MakeCacheKey`); the sampler only if the shader declares it.
+- `CameraData` ends with `VolumeParams` (1856) and `VolumeGrid` (1872), 1888 B, in `Renderer3DCamera.glsl` (append-only). Custom shaders mirror the 96 B prefix.
+
+**Gotchas**
+- Includes are pasted once and ignore `#if`: `Volumetrics.glsl` and the camera block sit at the top of every shader that uses them, and a new include needs an `.inl` and an `s_EmbeddedShaders` row.
+- No `imageLoad` on `rgba16f` (not a readable format on every backend): the history is a sampled texture, the kernel only `imageStore`s. The integrate kernel uses `texelFetch` (`GL_EXT_samplerless_texture_functions`).
+- `textureLod` only inside the uniform `VolumeParams.x` branch; X3570/X4014 do not apply.
+- A custom shader's world-space vertex stage: `Renderer3D_MeshVertex.glsl` needs `a_ObjectIndex`, so test shaders (Froxel Fog Test check 12) write their own.
+- History: `m_VolumetricHistoryFrame == frame - 1` and unchanged grid/Near/Far; `ResetVolumetricHistory()` (and `CameraComponent::ResetVolumetricHistory`, consumed in `SceneRenderer`) sets it to none.
+- The on-screen view's grid is 64x36x32 until the checks finish, then the default (it exercises `SetVolumetricGrid`).
+
+### Local volumes, raymarch and debug view (v1.3 Phase 6)
+
+Code in `Graphics/Renderer3DVolumetrics.cpp`, `VolumetricMedia.glsl`, `VolumeRaymarch.glsl`, `VolumeRaymarchComposite.glsl`, `VolumetricSlice.glsl`; `docs/volumetrics.md` has the user view.
+
+**Pass order** (`Renderer3D::EndScene`)
+- `PrepareVolumetrics` -> `CullFogVolumes` (frustum, gap ranking, `MaxFogVolumes` <= 16 and <= 4 Raymarch, fallbacks to froxel without the post scene target) -> records into `m_FogVolumeData` (froxel first, then Raymarch) and `Global.z` = debug view -> `PrepareFroxelFog` (global fog or a froxel volume, H15) + `PrepareRaymarch`.
+- `DispatchVolumetrics` uploads `FogVolumeData` once per scene, runs inject + integrate, then `DispatchVolumetricSlice` (one-shot `RequestVolumetricSlice`; not counted in `VolumetricDispatches`). `ResetLightScatter()` runs after it, not before, because the inject reads `DirectionalScatter`/`LocalScatter`.
+- `DrawVolumeRaymarch` after the sky, before the translucent pass, in GPU timer `VolumeRaymarch`: AO first, `PostProcessAccess::RefreshSceneDepth` (re-copies the depth even if an earlier scene of the `Begin` did, unless AO's copy was just made; the timer starts after AO). The low-res scatter/depth pair is cached per scene target's depth-copy id (`AcquireRaymarchTarget`, idle pairs freed after 120 frames); binding sets rebind only when that id changes, compute march, fullscreen composite (`BlendMode::Alpha`, `(L/(1-T), 1-T)`).
+
+**Bindings**
+- Inject: b0 camera, b1 `VolumetricData`, b2 shadow data, t3/s4 atlas, b8 `FogVolumeData`, t9/s10 noise (`VolumetricMedia.glsl`, 32^3 R8 from `Internal::GenerateVolumeNoise`, Wrap sampler), t5/s6 history, u7 scatter.
+- `FogVolumeData` (b8, 3744 B, std140, volatile: `SetMaxWritesPerFrame(k_MaxScenesPerFrame)` and written every frame it is bound): `Global` (x local-light intensity, y `MaxInScatter`, z debug view, w any noise), `DirectionalScatter`, `LocalScatter[8]`, 16 x 224 B records.
+- Raymarch (compute): b0 camera, b1 `RaymarchData`, b2 shadow data, t3/s4 atlas, t5 depth copy (`texelFetch`), u6 `r32f` view distance, u7 `rgba16f` L/T, b8/t9/s10 media, t11/s12 froxel volume (`DE_VOLUMETRIC_FOG_BINDING 11`). Samplers <= 15, UAVs < 8.
+- Composite (fullscreen material): b0 data, t1/s2 scatter, t3/s4 ray depth, t5/s6 scene depth.
+- Slice (compute): b1 `SliceData`, t5 source volume (`texelFetch`), u7 `rgba16f` 2D out.
+
+**Debug view**: `MediaGlobal.z > 0.5` makes `DE_FroxelMediaSample` and `DE_RaymarchSource` return `DE_ShadowSampleColor(world) * mean(coefficient)` instead of the lit sum; the inject takes the media path when it is set, so with `None` the Phase 5 fast path and its 88 checks are bit-identical.
+
+**Gotchas**
+- GLSL record members are `VolumeAlbedo`, `VolumeTint`, `VolumeLight` and `MediaGlobal` (the C++ names clash with locals in the shaders). `Intensities.w` gates the local-light loop (0 unless a medium and a light both scatter locally).
+- Raymarch textures are declared `.SetDimension(Texture2D)`; without it NVRHI makes them 3D.
+- Textures `Reinitialize` in place on a resize or a knob change, so ids stay stable; descriptor sets re-bind only when `GetId()` changes.
+- `Renderer3D::k_MaxPendingFogVolumes` = 256 caps the submissions held per scene.
+- Known limits: reprojection under strong anisotropy is less exact (0.012 vs 0.0078 at g other than 0); the march ignores local lights and does no near-fade clipping of the ray start; a failed raymarch shader drops the volumes with one logged error; translucents and particles do not see raymarch volumes; froxel haze in front of a raymarch box also takes the box's T.
 
 ## Pipeline state and winding
 
@@ -260,13 +398,20 @@ Read on demand from CLAUDE.md. Shaders, Renderer2D/3D, lighting, skinning and an
 - `Renderer::Draw(Material*, n)` / `Draw(RenderPass*, n)` draw without vertex buffers (no input layout: D3D11 has none with zero elements); `DrawIndexed` takes an `instanceCount` and (Headstone #91) a `firstIndex` (`NvrhiCommandList` → `startIndexLocation`; `indexCount = 0` is then the rest of the buffer, `Renderer::GetIndexCount(buffer, firstIndex)`, which the Mesh 3D Test checks as a number since D3D reads past the end as index 0, #156).
 - `Texture::ReadPixels` reads every colour format (`TexturePixels::Format`, `GetPixel` decodes halves and R11G11B10F); `SaveToFile` stays RGBA8.
 - Tests share `Tests/TestChecks.h`; the Render Target Test (`--test=target`) checks the groundwork by readback.
-- **Readback** (v0.8.3, #90): `Texture::ReadPixels(done)` (RGBA8 2D only) records a copy into a staging texture.
+- **Readback** (v0.8.3, #90): `Texture::ReadPixels(done)` records a copy into a staging texture.
 - Inside a frame it joins the frame list (never a list of its own mid-frame: D3D11's `ClearState`), puts back the texture's previous resource state (D3D12 caches the state a framebuffer or binding set left it in) and `done` runs through the private `Renderer::RunAfterFrame` at the next `BeginFrame`/`SkipFrame` (before `Begin`, render thread parked) or at `Shutdown`.
 - Outside a frame it executes its own list and resolves at once, but only while `Renderer::IsRenderThreadParked()` (from `BeginFrame`/`SkipFrame` to `EndFrame`, and before the first frame); between frames (event handlers, post-execution callbacks, `OnDestroy`) the render thread may be submitting, so the whole copy waits in `RunAfterFrame`.
 - NVRHI's `mapStagingTexture` waits for the copy on every backend.
 - Row 0 is the texture's first row: the top of a render target, the bottom of a file image (`ReadImage` flips on load).
 - `SaveToFile` flips non-render-targets back, and `FileSystem::WriteImage` (stb_image_write v1.16, `vendor/stb/include`, encoded to memory and written through `std::ofstream` for Unicode paths) takes its own `flipVertically`.
 - A render target drawn on a Renderer2D quad needs a negative height to stand upright.
+- **Texture foundations** (v1.3 P1, docs/textures.md): `TextureDimension::TextureCube` (faces +X -X +Y -Y +Z -Z = layers 0..5), `TextureParams::Depth/MipLevels/ArrayLayers` (+ setters; `MipLevels` 0 = full chain, `GetMipLevelCount(w, h, d)` in `Texture.h`; `ArrayLayers` > 1 on `Texture2D` = `Texture2DArray`).
+- `Graphics/TextureLayout.h` (`GetMipExtent`, `GetSubresourceBytes`, `GetTextureArrayLayers`, `NormalizeTextureParams`): `Texture::Create` and `NvrhiTexture::Reinitialize` validate first (cube square + 6 layers; Depth > 1 only 3D; layers > 1 only 2D/cube; render target and D32 single-layer 2D, D32 one mip); a bad set logs and `Create` returns nullptr.
+- `Texture::Upload`/`InitialData` = mip 0 of every layer in order; `UploadSubresource(data, mip, layer)` (3D: all slices of the mip, layer 0). Both go through `NvrhiTexture::UploadLayers` and `CommandList::UploadTexture(tex, data, mip, layer, rowPitch, depthPitch)`, which restores only that subresource's state (#154 rule).
+- `ReadSubresource(mip, layer, done)` (layer = array layer, cube face or 3D z slice); `ReadPixels` = `ReadSubresource(0, 0)` on every dimension but 1D. Shared `DescribeSubresource`/`RecordSubresourceCopy` (2D staging of the mip extent, 3D `w*h*1` staging + `setOrigin(0,0,z)`) put back only that subresource's prior state; `NvrhiTextureReadback` uses them for mip 0 layer 0.
+- `Texture::CreateFromHdrFile(path, RGBA16F|RGBA32F)`: `Internal::ReadImageHdr[FromMemory]` (`stbi_loadf` under `s_StbMutex`, flipped like `ReadImage`) through the VFS (packs work); `Internal::FloatToHalf` in `Graphics/HalfFloat.h` (RNE, NaN/negative -> 0, clamp 65504). `CreateFromFile` and the AssetManager still load `.hdr` as RGBA8 until Phase 3.
+- Cube and 3D textures can't go to Renderer2D, ImGui or DingoUI (their views are 2D).
+- Texture Subresource Test (`--test=subresource`), doctests in `test/UnitTests/src/TextureLayoutTests.cpp`.
 
 ## Post chain
 
@@ -334,6 +479,10 @@ Read on demand from CLAUDE.md. Shaders, Renderer2D/3D, lighting, skinning and an
 - Writes belong in compute (D3D11: no vertex-stage UAVs, 8 compute UAV slots).
 - NVRHI places a binding set's barriers only when the bound sets change, so `NvrhiCommandList::Dispatch`, and a draw whose `RenderPass` has storage items, require every storage item's state (`RequireStorageStates`) before setting the state, and `GraphicsBuffer::ReadBack` puts the buffer's state back after its copy (#114).
 - Instancing needed nothing new (P2's `instanceCount`).
+- **Mips, cubes, volumes** (v1.3 P1): `SetTexture(binding, tex, baseMip = 0, mipCount = 0)` gives the SRV `TextureSubresourceSet(baseMip, mipCount or AllMipLevels, 0, AllArraySlices)`; `SetStorageTexture(binding, tex, mip = 0)` the UAV `(mip, 1, 0, All)`, with `Texture2DArray` dimension for a cube (else Vulkan makes an `eCube` storage view). `NvrhiComputePass::Binding` keeps `BaseMip/MipCount`; an out-of-range request logs and binds nothing, and `Prepare` drops a binding a `Reinitialize` made too big.
+- A compute pass also collects `Texture_SRV` items into `m_StorageItems`, and `RequireStorageStates` moves them to `ShaderResource`, so a mip written by one dispatch is a readable SRV in the next, and tracking per mip lets one pass read mip N-1 and write N.
+- Shader rules: cube mip = `writeonly image2DArray` (z = face), 3D = `writeonly image3D`; no `imageLoad` on `rgba16f/rgba32f/rgba8` (FXC X3676 on SM5.0/5.1; `r32f` is fine); `GL_EXT_samplerless_texture_functions` for `texelFetch/textureSize` on a bare `texture2D/3D`.
+- Engine include `<DingoEngine/CubeMap.glsl>` (`DE_CubeFaceDirection(face, uv)`, D3D/Vulkan convention) is in `EngineShaders.cpp`'s embedded list.
 - Compute Test (`--test=compute`).
 
 ## Particles
@@ -366,7 +515,8 @@ Read on demand from CLAUDE.md. Shaders, Renderer2D/3D, lighting, skinning and an
 - `NvrhiGraphicsBuffer` allocates its Vulkan buffers rounded up to 4 bytes, and `NvrhiGraphicsBuffer::Write`, which every `GraphicsBuffer` upload goes through, pads a source whose size isn't a multiple of 4 (v0.8.3).
 - Raw NVRHI buffers pad their own (the ImGui index buffer, #86); volatile buffers are copied byte for byte.
 - After the write, `Write` puts a non-volatile buffer back into its initial state and commits the barrier at once (#145): NVRHI moves vertex and index buffers out of `CopyDest` only when the bound buffer changes, so a scene that rewrites the batch buffers the last scene left bound drew without a barrier; a pending barrier would be ORed with the next state, which D3D12 rejects for a read state plus a write state.
-- `NvrhiCommandList::UploadTexture` does the same for a texture (#154: a mid-frame `Texture::Upload` between two draws of one binding set left it in `CopyDest`; the Render Target Test draws one material twice around an upload).
+- `NvrhiCommandList::UploadTexture` does the same for a texture (#154: a mid-frame `Texture::Upload` between two draws of one binding set left it in `CopyDest`; the Render Target Test draws one material twice around an upload). `NvrhiCommandList::ClearTexture` (colour storage textures only; D3D12's RTV clear would miss mips and 3D slices) does the same after `clearTextureFloat`, which on Vulkan is also what keeps the texture referenced.
+- **Clears keep their target alive**: NVRHI's Vulkan `clearTexture`/`clearDepthStencilTexture` don't add the texture to the command buffer's references (D3D12's do), so `NvrhiCommandList::Clear` calls `setTextureState` on each attachment it clears (the colour one after the clear, with the state the clear left it in, so no backend records a barrier; requiring `CopyDest` first doubled every clear's barrier on D3D12, whose clear needs `RenderTarget`). Without it a framebuffer only cleared in a frame, then resized or destroyed by a post-execution callback, was freed while the GPU cleared it (`VUID-vkDestroyImage-image-01000`, the Skybox Test's first frame). A new raw NVRHI clear does the same.
 - Custom material shader binding convention: **0** = scene UBO, **1** = the material's own `SetUniform` params, **2+** = textures/samplers, interleaved.
 - The binding set must match shader reflection exactly.
 - The scene UBO (`Renderer3D::CameraData`, std140, volatile, uploaded at the top of `EndScene`) starts with a frozen 96-byte prefix (`ViewProjection`, `LightDirection`, `Ambient`) that custom shaders may declare alone; the lights follow, then the fog, mirrored by `CameraData` in `Renderer3D_Lit.glsl`.

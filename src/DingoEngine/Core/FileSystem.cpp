@@ -91,6 +91,43 @@ namespace Dingo
 		stbi_image_free(const_cast<uint8_t*>(data));
 	}
 
+	bool Internal::IsHdrImage(const void* bytes, size_t size)
+	{
+		if (!bytes || size == 0 || size > static_cast<size_t>((std::numeric_limits<int>::max)()))
+			return false;
+		return stbi_is_hdr_from_memory(static_cast<const stbi_uc*>(bytes), static_cast<int>(size)) != 0;
+	}
+
+	const float* Internal::ReadImageHdrFromMemory(const void* bytes, size_t size, uint32_t* width, uint32_t* height, bool flipVertically)
+	{
+		if (!bytes || size == 0 || size > static_cast<size_t>((std::numeric_limits<int>::max)()))
+		{
+			DE_CORE_ERROR("Failed to load HDR image from memory: {} bytes", size);
+			return nullptr;
+		}
+
+		std::scoped_lock lock(s_StbMutex);
+
+		stbi_set_flip_vertically_on_load(flipVertically);
+
+		int32_t widthTemp, heightTemp, channelsTemp;
+		float* data = stbi_loadf_from_memory(static_cast<const stbi_uc*>(bytes), static_cast<int>(size), &widthTemp, &heightTemp, &channelsTemp, STBI_rgb_alpha);
+		if (!data)
+		{
+			DE_CORE_ERROR("Failed to load HDR image from memory: {}", stbi_failure_reason());
+			return nullptr;
+		}
+
+		*width = static_cast<uint32_t>(widthTemp);
+		*height = static_cast<uint32_t>(heightTemp);
+		return data;
+	}
+
+	void Internal::FreeImageHdr(const float* data)
+	{
+		stbi_image_free(const_cast<float*>(data));
+	}
+
 	std::optional<ImageData> FileSystem::ReadImage(const std::filesystem::path& filepath, bool flipVertically, bool forceRGBA)
 	{
 		ImageData image;

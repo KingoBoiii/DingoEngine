@@ -21,9 +21,23 @@ namespace Dingo
 
 		// Produce a cache key from a vertex layout, a framebuffer, a cull mode and the shared buffers.
 		size_t MakeCacheKey(const VertexLayout& layout, Framebuffer* framebuffer, CullMode cullMode, const GraphicsBuffer* sceneBuffer, const GraphicsBuffer* skinBuffer, const GraphicsBuffer* shadowBuffer, const Texture* shadowAtlas, const Sampler* shadowSampler, bool objectBuffer,
-			bool instanceBuffer, const GraphicsBuffer* instanceDrawBuffer, bool skinPalette)
+			bool instanceBuffer, const GraphicsBuffer* instanceDrawBuffer, bool skinPalette, const GraphicsBuffer* environmentSh, const Texture* environmentSpecular,
+			const Texture* environmentBrdf, const Sampler* environmentSampler,
+			const Texture* volumetricFog, const Sampler* volumetricSampler)
 		{
 			size_t seed = 0;
+			if (volumetricFog)
+			{
+				HashCombine(seed, static_cast<size_t>(volumetricFog->GetId()));
+				HashCombine(seed, static_cast<size_t>(volumetricSampler ? volumetricSampler->GetId() : 0));
+			}
+			if (environmentSh)
+			{
+				HashCombine(seed, static_cast<size_t>(environmentSh->GetId()));
+				HashCombine(seed, static_cast<size_t>(environmentSpecular ? environmentSpecular->GetId() : 0));
+				HashCombine(seed, static_cast<size_t>(environmentBrdf ? environmentBrdf->GetId() : 0));
+				HashCombine(seed, static_cast<size_t>(environmentSampler ? environmentSampler->GetId() : 0));
+			}
 			if (skinPalette)
 				HashCombine(seed, 3);
 			if (objectBuffer)
@@ -92,11 +106,37 @@ namespace Dingo
 	void Material::SetTexture(uint32_t slot, Texture* texture)
 	{
 		DE_CORE_ASSERT(slot < k_MaxTextureSlots, "Texture slot out of range");
-		if (m_Textures[slot] == texture)
+		const uint64_t textureId = texture ? texture->GetId() : 0;
+		if (m_Textures[slot] == texture && m_TextureIds[slot] == textureId)
 			return;
 
+		// The slot's previous texture may already be freed, so only the format and dimension noted at set time are read.
+		const bool hadTexture = m_TextureIds[slot] != 0;
+		const bool sameKind = hadTexture && texture
+			&& m_TextureFormats[slot] == texture->GetParams().Format
+			&& m_TextureDimensions[slot] == texture->GetParams().Dimension;
+
 		m_Textures[slot] = texture;
+		m_TextureIds[slot] = textureId;
+		if (texture)
+		{
+			m_TextureFormats[slot] = texture->GetParams().Format;
+			m_TextureDimensions[slot] = texture->GetParams().Dimension;
+		}
 		++m_BindingRevision;
+
+		// Another texture of the same format and dimension in a slot the passes already bind: their pipelines
+		// stay and only their binding sets are re-baked, so alternating two targets compiles nothing.
+		if (sameKind)
+		{
+			const uint32_t binding = (m_SceneUniformBuffer ? 2u : 1u) + slot * 2;
+			for (auto& [key, entry] : m_PipelineCache)
+			{
+				entry.RenderPass->SetTexture(binding, texture);
+				entry.RenderPass->Bake();
+			}
+			return;
+		}
 		InvalidatePipelineCache();
 	}
 
@@ -259,6 +299,20 @@ namespace Dingo
 		currentId = id;
 	}
 
+	void Material::SetEnvironmentResources(GraphicsBuffer* irradiance, Texture* specular, Texture* brdfLut, Sampler* sampler)
+	{
+		m_EnvironmentSh = irradiance;
+		m_EnvironmentSpecular = specular;
+		m_EnvironmentBrdf = brdfLut;
+		m_EnvironmentSampler = sampler;
+	}
+
+	void Material::SetVolumetricResources(Texture* volume, Sampler* sampler)
+	{
+		m_VolumetricFog = volume;
+		m_VolumetricSampler = sampler;
+	}
+
 	void Material::SetShadowResources(GraphicsBuffer* shadowData, Texture* atlas, Sampler* sampler)
 	{
 		m_ShadowDataBuffer = shadowData;
@@ -319,11 +373,20 @@ namespace Dingo
 		const int32_t instanceBinding = (m_InstanceBuffer && shader) ? shader->FindStorageBufferBinding(k_InstanceDataBlockName) : -1;
 		const int32_t instanceDrawBinding = (m_InstanceDrawBuffer && shader) ? shader->FindUniformBufferBinding(k_InstanceDrawBlockName) : -1;
 		const int32_t skinPaletteBinding = (m_SkinPaletteBuffer && shader) ? shader->FindStorageBufferBinding(k_SkinPaletteBlockName) : -1;
+		const int32_t environmentShBinding = (m_EnvironmentSh && shader) ? shader->FindStorageBufferBinding(k_EnvironmentShBlockName) : -1;
+		const int32_t environmentSpecularBinding = (m_EnvironmentSpecular && shader) ? shader->FindTextureBinding(k_EnvironmentSpecularName) : -1;
+		const int32_t environmentBrdfBinding = (m_EnvironmentBrdf && shader) ? shader->FindTextureBinding(k_EnvironmentBrdfName) : -1;
+		const int32_t environmentSamplerBinding = (m_EnvironmentSampler && shader) ? shader->FindSamplerBinding(k_EnvironmentSamplerName) : -1;
+		const int32_t volumetricBinding = (m_VolumetricFog && shader) ? shader->FindTextureBinding(k_VolumetricFogName) : -1;
+		const int32_t volumetricSamplerBinding = (volumetricBinding >= 0 && m_VolumetricSampler) ? shader->FindSamplerBinding(k_VolumetricFogSamplerName) : -1;
+		const bool environmentBound = environmentShBinding >= 0 && environmentSpecularBinding >= 0 && environmentBrdfBinding >= 0 && environmentSamplerBinding >= 0;
 
 		const size_t key = MakeCacheKey(layout, framebuffer, cullMode, m_SceneUniformBuffer, m_SkinUniformBuffer,
 			shadowDataBinding >= 0 ? m_ShadowDataBuffer : nullptr, shadowAtlasBinding >= 0 ? m_ShadowAtlas : nullptr, shadowSamplerBinding >= 0 ? m_ShadowSampler : nullptr,
 			objectBinding >= 0, instanceBinding >= 0, instanceDrawBinding >= 0 ? m_InstanceDrawBuffer : nullptr,
-			skinPaletteBinding >= 0);
+			skinPaletteBinding >= 0, environmentBound ? m_EnvironmentSh : nullptr, environmentBound ? m_EnvironmentSpecular : nullptr,
+			environmentBound ? m_EnvironmentBrdf : nullptr, environmentBound ? m_EnvironmentSampler : nullptr,
+			volumetricBinding >= 0 ? m_VolumetricFog : nullptr, volumetricSamplerBinding >= 0 ? m_VolumetricSampler : nullptr);
 
 		auto it = m_PipelineCache.find(key);
 		if (it != m_PipelineCache.end())
@@ -378,6 +441,17 @@ namespace Dingo
 			renderPass->SetUniformBuffer(static_cast<uint32_t>(instanceDrawBinding), m_InstanceDrawBuffer);
 		if (skinPaletteBinding >= 0)
 			renderPass->SetStorageBuffer(static_cast<uint32_t>(skinPaletteBinding), m_SkinPaletteBuffer);
+		if (environmentBound)
+		{
+			renderPass->SetStorageBuffer(static_cast<uint32_t>(environmentShBinding), m_EnvironmentSh);
+			renderPass->SetTexture(static_cast<uint32_t>(environmentSpecularBinding), m_EnvironmentSpecular);
+			renderPass->SetTexture(static_cast<uint32_t>(environmentBrdfBinding), m_EnvironmentBrdf);
+			renderPass->SetSampler(static_cast<uint32_t>(environmentSamplerBinding), m_EnvironmentSampler);
+		}
+		if (volumetricBinding >= 0)
+			renderPass->SetTexture(static_cast<uint32_t>(volumetricBinding), m_VolumetricFog);
+		if (volumetricSamplerBinding >= 0)
+			renderPass->SetSampler(static_cast<uint32_t>(volumetricSamplerBinding), m_VolumetricSampler);
 		for (const StorageBinding& storage : m_StorageBuffers)
 			renderPass->SetStorageBuffer(storage.Binding, storage.Buffer);
 

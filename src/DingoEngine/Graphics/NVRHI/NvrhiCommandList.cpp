@@ -76,12 +76,43 @@ namespace Dingo
 			m_CommandListHandle->setTextureState(nvrhiFB->m_DepthTextureHandle, nvrhi::AllSubresources, nvrhi::ResourceStates::CopyDest);
 
 		// A depth-only framebuffer (a shadow map) has no colour to clear.
-		if (attachmentIndex < nvrhiFB->m_FramebufferHandle->getDesc().colorAttachments.size())
+		const auto& colorAttachments = nvrhiFB->m_FramebufferHandle->getDesc().colorAttachments;
+		if (attachmentIndex < colorAttachments.size() && colorAttachments[attachmentIndex].texture)
+		{
 			nvrhi::utils::ClearColorAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, attachmentIndex, { clearColor.r, clearColor.g, clearColor.b, clearColor.a });
+
+			// NVRHI's Vulkan clear doesn't make the command buffer hold the texture, so a target only
+			// cleared in a frame could be freed while the GPU clears it. setTextureState does, and
+			// re-requiring the state the clear left it in records no barrier on any backend.
+			const nvrhi::FramebufferAttachment& color = colorAttachments[attachmentIndex];
+			const nvrhi::TextureSubresourceSet cleared = color.subresources.resolve(color.texture->getDesc(), false);
+			m_CommandListHandle->setTextureState(color.texture, cleared,
+				m_CommandListHandle->getTextureSubresourceState(color.texture, cleared.baseArraySlice, cleared.baseMipLevel));
+		}
 
 		if (hasDepth)
 			nvrhi::utils::ClearDepthStencilAttachment(m_CommandListHandle, nvrhiFB->m_FramebufferHandle, k_DepthClearValue, 0);
 
+		m_LastDrawFramebuffer = nullptr;
+	}
+
+	void NvrhiCommandList::ClearTexture(Texture* texture, const glm::vec4& value)
+	{
+		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before clearing a texture.");
+		DE_CORE_ASSERT(texture, "Texture is null.");
+		DE_CORE_ASSERT(texture->GetParams().IsStorage && !texture->GetParams().IsRenderTarget && texture->GetParams().Format != TextureFormat::D32, "ClearTexture takes a colour storage texture that is not a render target.");
+
+		nvrhi::ITexture* handle = static_cast<NvrhiTexture*>(texture)->m_Handle;
+		m_CommandListHandle->clearTextureFloat(handle, nvrhi::AllSubresources, nvrhi::Color(value.r, value.g, value.b, value.a));
+
+		// Back to its initial state for a binding set kept bound across the clear; on Vulkan this is also
+		// what makes the command buffer hold the texture (see Clear).
+		const nvrhi::TextureDesc& desc = handle->getDesc();
+		if (desc.initialState != nvrhi::ResourceStates::Unknown)
+		{
+			m_CommandListHandle->setTextureState(handle, nvrhi::AllSubresources, desc.initialState);
+			m_CommandListHandle->commitBarriers();
+		}
 		m_LastDrawFramebuffer = nullptr;
 	}
 
@@ -100,13 +131,13 @@ namespace Dingo
 		UploadBuffer(buffer, nvrhiBuffer->m_Data, nvrhiBuffer->m_DataSize, nvrhiBuffer->m_DataOffset);
 	}
 
-	void NvrhiCommandList::UploadTexture(Texture* texture, const void* data, uint64_t rowPitch)
+	void NvrhiCommandList::UploadTexture(Texture* texture, const void* data, uint32_t mip, uint32_t layer, uint64_t rowPitch, uint64_t depthPitch)
 	{
 		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before uploading a texture.");
 		DE_CORE_ASSERT(texture, "Texture is null.");
 
 		nvrhi::ITexture* handle = static_cast<NvrhiTexture*>(texture)->m_Handle;
-		m_CommandListHandle->writeTexture(handle, 0, 0, data, rowPitch);
+		m_CommandListHandle->writeTexture(handle, layer, mip, data, rowPitch, depthPitch);
 		m_UploadedSinceDraw = m_LastDrawFramebuffer != nullptr;
 
 		// NVRHI requires a binding set's states only when the bound sets change, so a draw that keeps
@@ -115,9 +146,71 @@ namespace Dingo
 		const nvrhi::TextureDesc& desc = handle->getDesc();
 		if (desc.initialState != nvrhi::ResourceStates::Unknown)
 		{
-			m_CommandListHandle->setTextureState(handle, nvrhi::AllSubresources, desc.initialState);
+			m_CommandListHandle->setTextureState(handle, nvrhi::TextureSubresourceSet(mip, 1, layer, 1), desc.initialState);
 			m_CommandListHandle->commitBarriers();
 		}
+	}
+
+	void NvrhiCommandList::CopyTexture(Texture* dst, Texture* src)
+	{
+		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before copying a texture.");
+		DE_CORE_ASSERT(dst && src, "Texture is null.");
+
+		nvrhi::ITexture* dstHandle = static_cast<NvrhiTexture*>(dst)->m_Handle;
+		nvrhi::ITexture* srcHandle = static_cast<NvrhiTexture*>(src)->m_Handle;
+		const nvrhi::TextureDesc& dstDesc = dstHandle->getDesc();
+		const nvrhi::TextureDesc& srcDesc = srcHandle->getDesc();
+		DE_CORE_ASSERT(dstDesc.width == srcDesc.width && dstDesc.height == srcDesc.height && dstDesc.depth == srcDesc.depth &&
+			dstDesc.arraySize == srcDesc.arraySize && dstDesc.mipLevels == srcDesc.mipLevels && dstDesc.format == srcDesc.format,
+			"CopyTexture needs textures of the same size, layers, mips and format.");
+
+		m_CommandListHandle->setTextureState(srcHandle, nvrhi::AllSubresources, nvrhi::ResourceStates::CopySource);
+		m_CommandListHandle->setTextureState(dstHandle, nvrhi::AllSubresources, nvrhi::ResourceStates::CopyDest);
+		m_CommandListHandle->commitBarriers();
+
+		for (uint32_t layer = 0; layer < dstDesc.arraySize; ++layer)
+		{
+			for (uint32_t mip = 0; mip < dstDesc.mipLevels; ++mip)
+			{
+				nvrhi::TextureSlice slice;
+				slice.mipLevel = mip;
+				slice.arraySlice = layer;
+				m_CommandListHandle->copyTexture(dstHandle, slice, srcHandle, slice);
+			}
+		}
+		m_UploadedSinceDraw = m_LastDrawFramebuffer != nullptr;
+
+		// As UploadTexture: a stable binding set samples dst, and NVRHI only re-requires a set's states
+		// when the bound sets change. src goes back too, so a later dispatch into it starts from its own state.
+		if (dstDesc.initialState != nvrhi::ResourceStates::Unknown)
+			m_CommandListHandle->setTextureState(dstHandle, nvrhi::AllSubresources, dstDesc.initialState);
+		if (srcDesc.initialState != nvrhi::ResourceStates::Unknown)
+			m_CommandListHandle->setTextureState(srcHandle, nvrhi::AllSubresources, srcDesc.initialState);
+		m_CommandListHandle->commitBarriers();
+	}
+
+	void NvrhiCommandList::CopyBuffer(GraphicsBuffer* dst, GraphicsBuffer* src, uint64_t size)
+	{
+		DE_CORE_ASSERT(m_HasBegun, "Command list must be begun before copying a buffer.");
+		DE_CORE_ASSERT(dst && src, "Buffer is null.");
+
+		nvrhi::IBuffer* dstHandle = static_cast<NvrhiGraphicsBuffer*>(dst)->m_BufferHandle;
+		nvrhi::IBuffer* srcHandle = static_cast<NvrhiGraphicsBuffer*>(src)->m_BufferHandle;
+		if (size > dstHandle->getDesc().byteSize || size > srcHandle->getDesc().byteSize)
+		{
+			DE_CORE_ERROR("CopyBuffer: {} bytes do not fit both buffers ({} and {}).", size, dstHandle->getDesc().byteSize, srcHandle->getDesc().byteSize);
+			return;
+		}
+		m_CommandListHandle->copyBuffer(dstHandle, 0, srcHandle, 0, size);
+		m_UploadedSinceDraw = m_LastDrawFramebuffer != nullptr;
+
+		const nvrhi::BufferDesc& dstDesc = dstHandle->getDesc();
+		const nvrhi::BufferDesc& srcDesc = srcHandle->getDesc();
+		if (!dstDesc.isVolatile && dstDesc.initialState != nvrhi::ResourceStates::Unknown)
+			m_CommandListHandle->setBufferState(dstHandle, dstDesc.initialState);
+		if (!srcDesc.isVolatile && srcDesc.initialState != nvrhi::ResourceStates::Unknown)
+			m_CommandListHandle->setBufferState(srcHandle, srcDesc.initialState);
+		m_CommandListHandle->commitBarriers();
 	}
 
 	void NvrhiCommandList::SetFramebuffer(Framebuffer* framebuffer)
@@ -364,6 +457,9 @@ namespace Dingo
 					break;
 				case nvrhi::ResourceType::Texture_UAV:
 					m_CommandListHandle->setTextureState(static_cast<nvrhi::ITexture*>(item.resourceHandle), item.subresources, nvrhi::ResourceStates::UnorderedAccess);
+					break;
+				case nvrhi::ResourceType::Texture_SRV:
+					m_CommandListHandle->setTextureState(static_cast<nvrhi::ITexture*>(item.resourceHandle), item.subresources, nvrhi::ResourceStates::ShaderResource);
 					break;
 				default:
 					break;
