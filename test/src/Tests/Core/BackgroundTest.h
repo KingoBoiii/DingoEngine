@@ -69,6 +69,13 @@ namespace Dingo
 		float m_ShownAspect = 1.0f;
 		float m_StretchMinimizedAspect = 1.0f;
 		bool m_StretchAspectKept = true;
+		int32_t m_ShownWidth = 0;
+		int32_t m_ShownHeight = 0;
+		int32_t m_StretchWidth = 0;
+		int32_t m_StretchHeight = 0;
+		uint64_t m_StretchResizeGeneration = 0;
+		bool m_StretchResized = false;
+		uint32_t m_SwapChainCheckFrames = 0;
 		uint32_t m_Stretches = 0;
 		std::string m_LastStretch;
 

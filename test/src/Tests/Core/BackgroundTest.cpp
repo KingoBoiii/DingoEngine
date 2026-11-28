@@ -1,5 +1,7 @@
 #include "BackgroundTest.h"
 
+#include "DingoEngine/Graphics/RendererBackend.h"
+
 #include <glm/gtc/quaternion.hpp>
 
 #include <imgui.h>
@@ -23,6 +25,8 @@ namespace Dingo
 		// The second delta after a pause is one ordinary frame; a leak of the wait that ended the
 		// pause would add up to the 0.1 s it sleeps on window events.
 		constexpr float k_MaxSecondDeltaAfterPause = 0.05f;
+		// The restore's resize reaches the swap chain on the render thread after the next present.
+		constexpr uint32_t k_SwapChainCheckDelayFrames = 3;
 	}
 
 	void BackgroundTest::Initialize()
@@ -89,7 +93,10 @@ namespace Dingo
 		EventDispatcher dispatcher(e);
 		dispatcher.Dispatch<WindowResizeEvent>([this](WindowResizeEvent& resize)
 		{
-			SetBackground(resize.GetWidth() == 0 || resize.GetHeight() == 0, m_Unfocused);
+			const bool minimized = resize.GetWidth() == 0 || resize.GetHeight() == 0;
+			if (!minimized && (int32_t(resize.GetWidth()) != m_StretchWidth || int32_t(resize.GetHeight()) != m_StretchHeight))
+				m_StretchResized = true;
+			SetBackground(minimized, m_Unfocused);
 			return false;
 		});
 		dispatcher.Dispatch<WindowFocusEvent>([this](WindowFocusEvent& focus)
@@ -119,6 +126,11 @@ namespace Dingo
 			m_StretchSpaceEdges = 0;
 			m_StretchAspectKept = true;
 			m_StretchMinimizedAspect = m_ShownAspect;
+			m_StretchWidth = m_ShownWidth;
+			m_StretchHeight = m_ShownHeight;
+			m_StretchResized = false;
+			m_StretchResizeGeneration = Internal::RendererBackend::GetSwapChainResizeGeneration();
+			m_SwapChainCheckFrames = 0;
 			m_ReturnPending = false;
 			m_CheckSecondDelta = false;
 		}
@@ -159,11 +171,22 @@ namespace Dingo
 			m_ReturnPending = false;
 			CheckStretch(deltaTime, now);
 		}
+		else if (m_SwapChainCheckFrames > 0 && --m_SwapChainCheckFrames == 0)
+		{
+			const Window& window = Application::Get().GetWindow();
+			if (!m_StretchResized && window.GetWidth() == m_StretchWidth && window.GetHeight() == m_StretchHeight)
+			{
+				Check(Internal::RendererBackend::GetSwapChainResizeGeneration() == m_StretchResizeGeneration,
+					std::format("restoring to the same size ({} x {}) kept the Vulkan swap chain", m_StretchWidth, m_StretchHeight));
+			}
+		}
 
 		const float aspect = Application::Get().GetWindow().GetAspectRatio();
 		if (!Application::Get().IsMinimized())
 		{
 			m_ShownAspect = aspect;
+			m_ShownWidth = Application::Get().GetWindow().GetWidth();
+			m_ShownHeight = Application::Get().GetWindow().GetHeight();
 		}
 		else
 		{
@@ -259,6 +282,9 @@ namespace Dingo
 				m_CheckSecondDelta = true;
 			}
 		}
+
+		if (m_StretchMinimized && Application::Get().GetGraphicsContext().GetGraphicsAPI() == GraphicsAPI::Vulkan)
+			m_SwapChainCheckFrames = k_SwapChainCheckDelayFrames;
 
 		const uint32_t held = Input::IsKeyDown(KeyCode::Space) ? 1 : 0;
 		Check(m_SpacePresses == m_SpaceReleases + held,
