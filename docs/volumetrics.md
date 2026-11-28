@@ -53,7 +53,7 @@ scatters 0.5.
 | `HeightFalloff` | 0 | Per world unit above `BaseHeight`, density is multiplied by `e^(-HeightFalloff h)`. 0 is a uniform medium. 0 or more. |
 | `Albedo` | (1, 1, 1) | The share of the extinguished light that scatters, per channel, clamped to 0..1. |
 | `Anisotropy` | 0.2 | Henyey-Greenstein g, clamped to -0.95..0.95. Above 0 scatters towards where the light travels, so you see more of it looking at the sun. |
-| `AmbientIntensity` | 1 | Scales the scene's ambient light in the medium. |
+| `AmbientIntensity` | 1 | Scales the scene's ambient light in the medium: the flat ambient colour, or the sky's under an environment that lights the scene (below). |
 | `LightIntensity` | 1 | Scales the directional lights in the medium. |
 | `ScatterTint` | (1, 1, 1) | Multiplies the in-scatter per channel, apart from `Albedo` and the light's colour: a blue haze under a violet sun. Finite and 0 or more, **not clamped**, so a value above 1 brightens. It never changes extinction, so the transmittance is the same. |
 | `OutsideShadowLight` | 1 | How much of the sun reaches a sample no shadow cascade covers, 0 (dark: only air the shadow map proves lit scatters) to 1 (lit, today's behaviour). The light's `ShadowStrength` scales it (`mix(1, OutsideShadowLight, ShadowStrength)`), so outside air is never darker than full shadow. Clamped to 0..1. |
@@ -202,10 +202,17 @@ scene for one, copied into a 2D texture of the grid's width and height after the
 
 Under a procedural sky with `TintSun`, the main directional light's colour is already multiplied by the
 atmosphere's transmittance, so the shafts and the fog's in-scatter redden at sunset and fade out when the sun
-sets (see [Procedural sky](environment.md#procedural-sky)). The fog's ambient term stays the flat ambient colour.
+sets (see [Procedural sky](environment.md#procedural-sky)).
 
-There is no ambient occlusion fade under the volume: AO is applied after the fog (it multiplies the
-fogged colour), so SSAO darkens dense haze as well as the surfaces.
+With an [environment](environment.md#image-based-lighting) set and `Lighting` on, the medium's ambient
+light is the sky's mean radiance (band 0 of its irradiance) times `Intensity x LightingIntensity`, in
+place of the flat ambient colour, so a blue noon sky and a red dusk light the haze differently. It is
+encoded to display space like the PBR surfaces' ambient: a uniform sky of radiance 1 scatters as a white
+ambient colour of 1. Froxel and Raymarch volumes both take it.
+
+[Ambient occlusion](post-processing.md#ambient-occlusion) fades under the volume by the transmittance
+at each pixel's depth, so it darkens the surface behind the haze (`colour x T`) and leaves the
+in-scattered light alone: a mesh no light reaches through dense fog keeps no AO.
 
 ## Custom shaders
 
@@ -262,7 +269,8 @@ vec3 fogged(vec3 color, vec3 worldPosition, int target)   // target: 0 opaque/al
 
 ## Limits
 
-- No ambient occlusion fade under the volume: SSAO also darkens dense haze.
+- Ambient occlusion fades by the froxel volume of the last volumetric scene drawn into the post
+  target before AO is applied; with several such scenes in one `Begin`, the earlier ones fade by it too.
 - An orthographic camera gets no volume.
 - One temporal scene a frame: a second view that frame, such as a minimap or a mirror, draws
   without the history.
