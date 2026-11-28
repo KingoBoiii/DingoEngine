@@ -1,6 +1,7 @@
 #include "FroxelFogTest.h"
 
 #include "DingoEngine/Graphics/Renderer3DAccess.h"
+#include "DingoEngine/Graphics/RendererBackend.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
@@ -623,6 +624,7 @@ void main()
 		}
 
 		CheckUniform();
+		CheckFailedDispatchClear();
 		CheckHeightFalloff();
 		CheckPhase();
 		CheckShafts();
@@ -647,6 +649,26 @@ void main()
 			for (size_t i = 0; i < slices.size(); ++i)
 				worst = (std::max)(worst, WorstTexel(images[i], [&](uint32_t x, uint32_t y) { return UniformExpected(k_Density, k_Ambient, slices[i], x, y); }));
 			Check(ready && worst < 2e-3f, std::format("Froxel 3: slices D/2 and D-1 of a uniform ambient-only volume are alpha = e^(-sigma z |ray|) and rgb = A (1 - alpha) at every texel (worst {:.5f})", worst));
+		});
+	}
+
+	void FroxelFogTest::CheckFailedDispatchClear()
+	{
+		Internal::CommandList* list = Internal::RendererBackend::TryGetRecordingCommandList();
+		if (!list || !Integrated())
+		{
+			Check(false, "Froxel 3a: the frame's command list and the integrated volume exist");
+			return;
+		}
+		// The primitive a failed dispatch records, over the uniform volume Froxel 3 left behind.
+		list->ClearTexture(Integrated(), glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+		const std::vector<uint32_t> slices = { 0, k_Grid.z / 2, k_Grid.z - 1 };
+		ReadSlices(Integrated(), slices, m_Alive, [this](const std::vector<TexturePixels>& images)
+		{
+			float worst = 0.0f;
+			for (const TexturePixels& image : images)
+				worst = (std::max)(worst, WorstTexel(image, [](uint32_t, uint32_t) { return glm::vec4(0.0f, 0.0f, 0.0f, 1.0f); }));
+			Check(worst == 0.0f, std::format("Froxel 3a: CommandList::ClearTexture leaves the integrated volume no in-scatter and full transmittance at every texel of slices 0, D/2 and D-1 (worst {:.5f})", worst));
 		});
 	}
 
