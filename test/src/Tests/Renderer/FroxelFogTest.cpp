@@ -332,13 +332,39 @@ namespace Dingo
 			return texture && (texture->GetParams().Width == 1 && texture->GetParams().Height == 1 && texture->GetParams().Depth == 1);
 		}
 
+		const glm::vec3 k_SkyRadiance(0.4f, 0.5f, 0.6f);
+
+		float FlatPanoramaScale(const glm::vec3& color, int& exponent)
+		{
+			const float brightest = (std::max)({ color.r, color.g, color.b });
+			return std::frexp(brightest, &exponent) * 256.0f / brightest;
+		}
+
+		// What the loader decodes from WriteFlatPanorama's RGBE texel: each channel truncated to its byte.
+		glm::vec3 FlatPanoramaRadiance(const glm::vec3& color)
+		{
+			int exponent = 0;
+			const float scale = FlatPanoramaScale(color, exponent);
+			return glm::floor(color * scale) * std::ldexp(1.0f, exponent - 8);
+		}
+
+		float LinearToSrgb(float c)
+		{
+			c = (std::max)(c, 0.0f);
+			return c <= 0.0031308f ? c * 12.92f : 1.055f * std::pow(c, 1.0f / 2.4f) - 0.055f;
+		}
+
+		glm::vec3 LinearToSrgb(const glm::vec3& c)
+		{
+			return glm::vec3(LinearToSrgb(c.r), LinearToSrgb(c.g), LinearToSrgb(c.b));
+		}
+
 		void WriteFlatPanorama(const std::filesystem::path& file, const glm::vec3& color)
 		{
 			constexpr uint32_t k_Width = 16;
 			constexpr uint32_t k_Height = 8;
-			const float brightest = (std::max)({ color.r, color.g, color.b });
 			int exponent = 0;
-			const float scale = std::frexp(brightest, &exponent) * 256.0f / brightest;
+			const float scale = FlatPanoramaScale(color, exponent);
 			const std::array<uint8_t, 4> rgbe = {
 				static_cast<uint8_t>(color.r * scale), static_cast<uint8_t>(color.g * scale), static_cast<uint8_t>(color.b * scale), static_cast<uint8_t>(exponent + 128)
 			};
@@ -524,7 +550,7 @@ void main()
 		std::error_code error;
 		std::filesystem::create_directories(m_Folder, error);
 		const std::filesystem::path panorama = m_Folder / "sky.hdr";
-		WriteFlatPanorama(panorama, glm::vec3(0.4f, 0.5f, 0.6f));
+		WriteFlatPanorama(panorama, k_SkyRadiance);
 		m_Environment = Environment::Create(EnvironmentParams().SetPath(panorama).SetDebugName("FroxelFogTest sky"));
 	}
 
@@ -563,6 +589,16 @@ void main()
 			target.SubmitLight(light);
 		}
 		target.SetVolumetricFog(scene.Fog);
+		if (scene.Sky)
+		{
+			SceneEnvironment sky;
+			sky.Environment = scene.Sky;
+			sky.DrawSkybox = false;
+			sky.LightingIntensity = scene.SkyLighting;
+			target.SetEnvironment(sky);
+		}
+		else
+			target.ClearEnvironment();
 		target.SubmitMesh(m_Box, glm::translate(glm::mat4(1.0f), scene.Eye + glm::vec3(0.0f, 0.0f, -10.0f)), glm::vec4(1.0f));
 		if (scene.Slab)
 		{
@@ -623,6 +659,7 @@ void main()
 		}
 
 		CheckUniform();
+		CheckEnvironmentAmbient();
 		CheckHeightFalloff();
 		CheckPhase();
 		CheckShafts();
@@ -647,6 +684,32 @@ void main()
 			for (size_t i = 0; i < slices.size(); ++i)
 				worst = (std::max)(worst, WorstTexel(images[i], [&](uint32_t x, uint32_t y) { return UniformExpected(k_Density, k_Ambient, slices[i], x, y); }));
 			Check(ready && worst < 2e-3f, std::format("Froxel 3: slices D/2 and D-1 of a uniform ambient-only volume are alpha = e^(-sigma z |ray|) and rgb = A (1 - alpha) at every texel (worst {:.5f})", worst));
+		});
+	}
+
+	void FroxelFogTest::CheckEnvironmentAmbient()
+	{
+		constexpr float k_Density = 0.05f;
+		constexpr float k_Lighting = 2.0f;
+		const bool prepared = m_Environment->Prepare();
+		Scene scene = UniformScene(k_Density, false);
+		scene.AmbientColor = glm::vec3(1.0f, 0.0f, 0.0f);
+		scene.Sky = m_Environment;
+		scene.SkyLighting = k_Lighting;
+		const Renderer3D::Statistics stats = RenderScene(scene);
+		const bool ready = prepared && stats.EnvironmentLighting && stats.Volumetrics && stats.VolumetricDispatches == 2;
+
+		const glm::vec3 ambient = LinearToSrgb(FlatPanoramaRadiance(k_SkyRadiance) * k_Lighting);
+		const uint32_t slice = k_Grid.z - 1;
+		ReadSlices(Integrated(), { slice }, m_Alive, [this, ready, ambient, slice, stats, prepared](const std::vector<TexturePixels>& images)
+		{
+			const float worst = WorstTexel(images[0], [&](uint32_t x, uint32_t y)
+			{
+				const glm::vec4 unit = UniformExpected(k_Density, 1.0f, slice, x, y);
+				return glm::vec4(ambient * unit.r, unit.a);
+			});
+			Check(ready && worst < 3e-3f, std::format("Froxel 21: under a flat environment with LightingIntensity 2 the ambient in-scatter is the sky's sRGB-encoded radiance, not the red flat ambient (worst {:.5f}; prepared {}, environment lit {}, volumetric {})",
+				worst, prepared, stats.EnvironmentLighting, stats.Volumetrics));
 		});
 	}
 

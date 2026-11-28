@@ -23,7 +23,8 @@ namespace Dingo
 	// inside 0..1 comes out the same with bloom as without, and a small square at 8 glows past its
 	// edge with bloom and not without. Then ambient occlusion, in the room: the open floor is unchanged,
 	// the crease where floor meets wall darkens, and the wall beside the floating box's silhouette
-	// doesn't (no halo).
+	// doesn't (no halo); it draws nothing into a room wholly in distance fog or in froxel fog too dense
+	// for any surface to show through.
 	class PostTest : public GraphicsTest
 	{
 	public:
@@ -45,7 +46,7 @@ namespace Dingo
 		void DrawGradient(Framebuffer* target, const glm::vec3& base, float max, const PostProcessSettings& settings);
 		void DrawSpot(Framebuffer* target, const PostProcessSettings& settings, Material* material = nullptr);
 		void DrawRoom(Renderer3D& renderer) const;
-		void DrawRoomInto(Framebuffer* target, const PostProcessSettings& settings, const Fog* fog = nullptr);
+		void DrawRoomInto(Framebuffer* target, const PostProcessSettings& settings, const Fog* fog = nullptr, const VolumetricFog* haze = nullptr);
 		PerspectiveCamera RoomCamera(float aspect) const;
 		void RunChecks();
 
@@ -90,10 +91,13 @@ namespace Dingo
 		Framebuffer* m_RoomOccluded = nullptr;
 		Framebuffer* m_RoomFogged = nullptr;
 		Framebuffer* m_RoomFoggedOccluded = nullptr;
+		Framebuffer* m_RoomHazed = nullptr;
+		Framebuffer* m_RoomHazedOccluded = nullptr;
 		Framebuffer* m_SplitTarget = nullptr;
 		Framebuffer* m_DepthTarget = nullptr; // k_SplitSize square, with a depth the chain must write
 		std::vector<uint8_t> m_RoomPlainPixels;
 		std::vector<uint8_t> m_RoomFoggedPixels;
+		std::vector<uint8_t> m_RoomHazedPixels;
 	};
 
 }

@@ -266,6 +266,8 @@ namespace Dingo
 
 		Shader* inject = Internal::GetVolumetricShader(Internal::VolumetricShaderKind::Inject);
 		Shader* integrate = Internal::GetVolumetricShader(Internal::VolumetricShaderKind::Integrate);
+		if (!m_IblIrradiance)
+			return false;
 		if (!inject || !integrate)
 		{
 			if (!m_VolumetricWarned)
@@ -301,6 +303,7 @@ namespace Dingo
 				injectPass->SetUniformBuffer(8, m_FogVolumeBuffer);
 				injectPass->SetTexture(9, m_VolumeNoise);
 				injectPass->SetSampler(10, m_VolumeNoiseSampler);
+				injectPass->SetStorageBuffer(13, m_IblIrradiance);
 				m_VolumetricInject[i] = injectPass;
 
 				ComputePass* integratePass = ComputePass::Create(ComputePassParams().SetDebugName("Renderer3D volumetric integrate").SetShader(integrate));
@@ -427,6 +430,12 @@ namespace Dingo
 		m_CameraData.VolumeGrid = glm::vec4(glm::vec3(grid), 1.0f / firstSliceDepth);
 		m_SceneVolumeParams = m_CameraData.VolumeParams;
 		m_SceneVolumeGrid = m_CameraData.VolumeGrid;
+
+		PostProcessStack& post = Renderer::GetPostProcessStack();
+		if (post.IsActive() && post.GetSceneTarget() == Renderer::GetRenderTarget())
+			Internal::PostProcessAccess::SetAmbientOcclusionVolume(post, m_VolumetricIntegrated, m_CameraData.VolumeParams, m_CameraData.VolumeGrid);
+		else
+			Internal::PostProcessAccess::DropAmbientOcclusionVolume(post, m_VolumetricIntegrated);
 	}
 
 	void Renderer3D::DispatchVolumetrics(Texture* shadowAtlas)
@@ -573,6 +582,8 @@ namespace Dingo
 		if (!m_RaymarchCompositeShader)
 			m_RaymarchCompositeShader = new Internal::FullscreenShader("VolumeRaymarchComposite", "VolumeRaymarchComposite.glsl");
 		Shader* composite = m_RaymarchCompositeShader->GetShader();
+		if (!m_IblIrradiance)
+			return false;
 		if (!kernel || !composite || !composite->IsValid())
 		{
 			if (!m_RaymarchWarned)
@@ -609,6 +620,7 @@ namespace Dingo
 			m_RaymarchPass->SetSampler(10, m_VolumeNoiseSampler);
 			m_RaymarchPass->SetTexture(11, m_VolumetricIntegrated);
 			m_RaymarchPass->SetSampler(12, Renderer::GetClampSampler());
+			m_RaymarchPass->SetStorageBuffer(13, m_IblIrradiance);
 
 			m_RaymarchComposite = Material::Create(MaterialParams()
 				.SetDebugName("Renderer3D volume raymarch composite")

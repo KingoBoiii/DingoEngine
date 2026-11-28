@@ -3,8 +3,8 @@
 // around each pixel and writes how open it is (R8); DE_AO_BLUR blurs that along Blur.xy, weighing
 // each tap by how close its depth is so an edge stays sharp; DE_AO_APPLY multiplies the result into
 // the scene colour, upsampling from the four nearest AO texels weighed by depth as well as distance,
-// so contact darkness doesn't bleed across a silhouette, and fading it with the scene's fog as the
-// lit shader fades the surface. Mirrors AmbientOcclusionData in PostProcess.cpp.
+// so contact darkness doesn't bleed across a silhouette, and fading it with the scene's distance fog or
+// froxel volume as the lit shader fades the surface. Mirrors AmbientOcclusionData in PostProcess.cpp.
 
 #type vertex
 #version 450
@@ -26,6 +26,8 @@ layout(std140, binding = 0) uniform AmbientOcclusionData
 	vec4 Blur;   // xy = the blur's step in UV, zw = one depth texel in UV
 	vec4 Fog;    // DE_AO_APPLY's: x = start, y = end, z = density, w = mode: 0 none, 1 linear, 2 exp, 3 exp squared
 	vec4 FogOpacity; // x = the fog's max opacity
+	vec4 VolumeParams; // DE_AO_APPLY's froxel volume, Renderer3DCamera.glsl's: x = 1 when sampled, y = near, z = 1 / log2(far / near)
+	vec4 VolumeGrid;   // xyz = grid size, w = 1 / the first slice's far depth
 };
 
 vec3 ViewPosition(vec2 uv, float depth)
@@ -146,6 +148,8 @@ layout(binding = 1) uniform texture2D u_Occlusion;
 layout(binding = 2) uniform sampler u_OcclusionSampler;
 layout(binding = 3) uniform texture2D u_Depth; // the scene depth copied to R32F, at full resolution
 layout(binding = 4) uniform sampler u_DepthSampler;
+layout(binding = 5) uniform texture3D u_Volume; // Renderer3D's integrated froxel volume, or a 1 x 1 x 1 clear one
+layout(binding = 6) uniform sampler u_VolumeSampler;
 
 vec3 PositionAt(vec2 uv)
 {
@@ -164,6 +168,16 @@ float FogFactor(float distance)
 		return clamp((distance - Fog.x) / (Fog.y - Fog.x), 0.0, 1.0);
 	float density = Fog.z * distance;
 	return 1.0 - exp(Fog.w < 2.5 ? -density : -density * density);
+}
+
+// Volumetrics.glsl's DE_SampleVolumetricFog transmittance at the pixel's own UV and view depth.
+float VolumeTransmittance(vec2 uv, float viewDepth)
+{
+	float slices = VolumeGrid.z;
+	float s = slices * log2(max(viewDepth / VolumeParams.y, 1e-4)) * VolumeParams.z;
+	float w = clamp((s - 0.5) / slices, 0.5 / slices, 1.0 - 0.5 / slices);
+	float t = textureLod(sampler3D(u_Volume, u_VolumeSampler), vec3(uv, w), 0.0).a;
+	return mix(1.0, t, min(viewDepth * VolumeGrid.w, 1.0));
 }
 
 void main()
@@ -200,6 +214,10 @@ void main()
 	// would draw creases into a background that should be uniform.
 	if (Fog.w > 0.5 && Target.w < 0.5)
 		open = mix(open, 1.0, FogFactor(length(center)) * FogOpacity.x);
+	// The volume leaves color T + L. Scaling the darkening by T is exact at T = 0 and 1; between, the
+	// surface keeps more of it and the in-scatter takes a share, as with distance fog.
+	if (VolumeParams.x > 0.5 && Target.w < 0.5)
+		open = mix(1.0, open, VolumeTransmittance(v_TexCoord, max(abs(centerDepth), 1e-4)));
 	o_Color = vec4(vec3(open), 1.0);
 }
 

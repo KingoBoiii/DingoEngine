@@ -237,7 +237,8 @@ namespace Dingo
 		/// False keeps the environment for lighting without drawing the sky.
 		bool DrawSkybox = true;
 		/// True lights PBR materials from the environment (diffuse from its irradiance, specular from
-		/// its reflections) instead of SceneLights::AmbientColor; false keeps the flat ambient.
+		/// its reflections) and the volumetric fog's ambient in-scatter from its mean radiance, instead of
+		/// SceneLights::AmbientColor; false keeps the flat ambient.
 		bool Lighting = true;
 		/// Linear multiplier on the environment's lighting only, 0 or more; the sky keeps Intensity.
 		/// The lighting uses Intensity x LightingIntensity.

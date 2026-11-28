@@ -255,9 +255,10 @@ Code in `Graphics/Renderer3DVolumetrics.cpp`, `VolumetricMedia.glsl`, `VolumeRay
 - `DrawVolumeRaymarch` after the sky, before the translucent pass, in GPU timer `VolumeRaymarch`: AO first, `PostProcessAccess::RefreshSceneDepth` (re-copies the depth even if an earlier scene of the `Begin` did, unless AO's copy was just made; the timer starts after AO). The low-res scatter/depth pair is cached per scene target's depth-copy id (`AcquireRaymarchTarget`, idle pairs freed after 120 frames); binding sets rebind only when that id changes, compute march, fullscreen composite (`BlendMode::Alpha`, `(L/(1-T), 1-T)`).
 
 **Bindings**
-- Inject: b0 camera, b1 `VolumetricData`, b2 shadow data, t3/s4 atlas, b8 `FogVolumeData`, t9/s10 noise (`VolumetricMedia.glsl`, 32^3 R8 from `Internal::GenerateVolumeNoise`, Wrap sampler), t5/s6 history, u7 scatter.
+- Inject: b0 camera, b1 `VolumetricData`, b2 shadow data, t3/s4 atlas, b8 `FogVolumeData`, t9/s10 noise (`VolumetricMedia.glsl`, 32^3 R8 from `Internal::GenerateVolumeNoise`, Wrap sampler), t5/s6 history, u7 scatter, t13 `m_IblIrradiance` (SH, read-only).
+- Ambient: `DE_VolumeAmbient()` (`VolumetricMedia.glsl`, inject and raymarch) is `EnvironmentParams.x > 0.5 ? LinearToSrgb(Sh[0] * 0.282095 * EnvironmentParams.y) : AmbientColor` (#344); the select keeps the flat path bit-identical and ignores a stale SH buffer. Both kernels bind `m_IblIrradiance` at 13 always, so `EnsureVolumetricResources`/`EnsureRaymarchResources` fail without it.
 - `FogVolumeData` (b8, 3744 B, std140, volatile: `SetMaxWritesPerFrame(k_MaxScenesPerFrame)` and written every frame it is bound): `Global` (x local-light intensity, y `MaxInScatter`, z debug view, w any noise), `DirectionalScatter`, `LocalScatter[8]`, 16 x 224 B records.
-- Raymarch (compute): b0 camera, b1 `RaymarchData`, b2 shadow data, t3/s4 atlas, t5 depth copy (`texelFetch`), u6 `r32f` view distance, u7 `rgba16f` L/T, b8/t9/s10 media, t11/s12 froxel volume (`DE_VOLUMETRIC_FOG_BINDING 11`). Samplers <= 15, UAVs < 8.
+- Raymarch (compute): b0 camera, b1 `RaymarchData`, b2 shadow data, t3/s4 atlas, t5 depth copy (`texelFetch`), u6 `r32f` view distance, u7 `rgba16f` L/T, b8/t9/s10 media, t11/s12 froxel volume (`DE_VOLUMETRIC_FOG_BINDING 11`), t13 SH. Samplers <= 15, UAVs < 8.
 - Composite (fullscreen material): b0 data, t1/s2 scatter, t3/s4 ray depth, t5/s6 scene depth.
 - Slice (compute): b1 `SliceData`, t5 source volume (`texelFetch`), u7 `rgba16f` 2D out.
 
@@ -436,6 +437,7 @@ Code in `Graphics/Renderer3DVolumetrics.cpp`, `VolumetricMedia.glsl`, `VolumeRay
 - It needs the projection: `Begin(settings, projection)` (`SceneRenderer` passes the camera's; `Begin(settings)` skips AO and warns once).
 - `ApplyAmbientOcclusion()` runs it once per `Begin` with the scene target unbound for the depth reads; `End` calls it if nothing did, before bloom.
 - The apply pass fades AO by the scene's fog factor (`AmbientOcclusionData::Fog/FogOpacity`, from `SetAmbientOcclusionFog`, which `Renderer3D::EndScene` calls for a fogged scene drawn into the scene target and `Begin` clears; #151), so fogged geometry meets the background without creases.
+- Under the froxel volume it fades by T instead: `open = mix(1, open, T)` at the pixel's view depth (`AmbientOcclusionData::VolumeParams/VolumeGrid`, t5/s6 the volume; #341). `PrepareFroxelFog` hands `m_VolumetricIntegrated` over through `Internal::PostProcessAccess::SetAmbientOcclusionVolume` when the scene draws into the post scene target, and `DropAmbientOcclusionVolume` forgets it when the same renderer then fills the volume for another target; `Begin` clears it, and without one the slot holds the 1x1x1 `ClearVolume` (RGBA16F 3D like the real one, so a switch only re-bakes the set).
 - GPU timer `AO`; Post Test room checks (`--post=ao`), Lighting Test `--ao`.
 
 ## Shadows and probes

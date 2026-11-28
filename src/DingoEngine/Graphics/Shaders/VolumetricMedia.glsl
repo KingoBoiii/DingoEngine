@@ -1,7 +1,8 @@
 // The local fog volumes of the volumetric kernels: include it with <DingoEngine/VolumetricMedia.glsl> after
 // <DingoEngine/VolumetricMath.glsl>. Mirrors Renderer3D::FogVolumeData at binding 8. Define
 // DE_MEDIA_BLOCK_ONLY first to take the block alone, for a kernel that never samples a volume. Otherwise the
-// noise texture sits at 9 and its sampler at 10.
+// noise texture sits at 9 and its sampler at 10, and the environment's irradiance coefficients at 13 for
+// DE_VolumeAmbient. Include <DingoEngine/Renderer3DCamera.glsl> first.
 
 #define DE_MAX_FOG_VOLUMES 16
 
@@ -68,6 +69,22 @@ vec3 DE_ShadowSampleColor(vec3 world)
 		return vec3(1.0, 1.0, 0.0);
 	vec2 parts = DE_DirectionalShadowVolumeParts(world);
 	return mix(mix(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0), parts.x), vec3(0.0, 0.0, 1.0), parts.y);
+}
+
+// The ambient light in the medium, in display space like the fog: with the scene lit by its environment,
+// the sky's mean radiance (SH band 0 of the irradiance, which the cosine convolution leaves unscaled),
+// scaled and encoded as the PBR shader's ambient is; else the flat ambient colour. The select keeps the flat
+// path exact, and the buffer may hold an earlier scene's sky while EnvironmentParams.x is 0.
+layout(std430, binding = 13) readonly buffer DE_VolumeEnvironmentSh
+{
+	vec4 VolumeSh[9];
+};
+
+vec3 DE_VolumeAmbient()
+{
+	vec3 mean = max(VolumeSh[0].rgb * (0.282095 * EnvironmentParams.y), vec3(0.0));
+	vec3 encoded = mix(1.055 * pow(mean, vec3(1.0 / 2.4)) - vec3(0.055), mean * 12.92, step(mean, vec3(0.0031308)));
+	return EnvironmentParams.x > 0.5 ? encoded : AmbientColor.rgb;
 }
 
 #endif

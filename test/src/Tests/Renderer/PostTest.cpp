@@ -183,6 +183,8 @@ void main()
 		m_RoomOccluded = MakeTarget("PostTest room occluded", k_SceneWidth, k_SceneHeight, true);
 		m_RoomFogged = MakeTarget("PostTest room fogged", k_SceneWidth, k_SceneHeight, true);
 		m_RoomFoggedOccluded = MakeTarget("PostTest room fogged occluded", k_SceneWidth, k_SceneHeight, true);
+		m_RoomHazed = MakeTarget("PostTest room hazed", k_SceneWidth, k_SceneHeight, true);
+		m_RoomHazedOccluded = MakeTarget("PostTest room hazed occluded", k_SceneWidth, k_SceneHeight, true);
 		m_SplitTarget = MakeTarget("PostTest split", 2 * k_SplitSize, k_SplitSize, false);
 		m_DepthTarget = MakeTarget("PostTest caller depth", k_SplitSize, k_SplitSize, true);
 	}
@@ -210,7 +212,7 @@ void main()
 		renderer.SubmitMesh(renderer.GetBoxMesh(), box(k_FloatingBox, glm::vec3(0.8f)), { 0.9f, 0.6f, 0.5f, 1.0f });
 	}
 
-	void PostTest::DrawRoomInto(Framebuffer* target, const PostProcessSettings& settings, const Fog* fog)
+	void PostTest::DrawRoomInto(Framebuffer* target, const PostProcessSettings& settings, const Fog* fog, const VolumetricFog* haze)
 	{
 		Renderer3D& renderer = Application::Get().GetRenderer3D();
 		Framebuffer* previous = Renderer::GetRenderTarget();
@@ -226,8 +228,19 @@ void main()
 		DrawRoom(renderer);
 		if (fog)
 			renderer.SetFog(*fog);
+		const bool volumetrics = renderer.IsVolumetricsEnabled();
+		if (haze)
+		{
+			renderer.SetVolumetricsEnabled(true);
+			renderer.SetVolumetricFog(*haze);
+		}
 		renderer.EndScene();
 		post.End();
+		if (haze)
+		{
+			renderer.ClearVolumetricFog();
+			renderer.SetVolumetricsEnabled(volumetrics);
+		}
 
 		if (target)
 			Renderer::SetRenderTarget(previous);
@@ -436,6 +449,16 @@ void main()
 			Check(count > 0 && count == m_RoomFoggedPixels.size() && worst <= 2,
 				std::format("ambient occlusion draws nothing into a room wholly fogged (worst {}/255 against the room without it)", worst));
 		});
+		readBack(m_RoomHazed, [this](const TexturePixels& pixels) { m_RoomHazedPixels = pixels.Data; });
+		readBack(m_RoomHazedOccluded, [this](const TexturePixels& pixels)
+		{
+			int worst = 0;
+			const size_t count = (std::min)(pixels.Data.size(), m_RoomHazedPixels.size());
+			for (size_t i = 0; i < count; ++i)
+				worst = (std::max)(worst, std::abs(static_cast<int>(pixels.Data[i]) - static_cast<int>(m_RoomHazedPixels[i])));
+			Check(count > 0 && count == m_RoomHazedPixels.size() && worst <= 2,
+				std::format("ambient occlusion leaves the in-scattered light of a froxel fog no surface shows through alone (worst {}/255 against the room without it)", worst));
+		});
 
 		const glm::mat4 room = RoomCamera(static_cast<float>(k_SceneWidth) / static_cast<float>(k_SceneHeight)).GetViewProjectionMatrix();
 		const glm::ivec2 open = ToPixel(room, k_RoomFloorOpen, k_SceneWidth, k_SceneHeight);
@@ -637,6 +660,14 @@ void main()
 			fog.End = 1.0f;
 			DrawRoomInto(m_RoomFogged, roomPlain, &fog);
 			DrawRoomInto(m_RoomFoggedOccluded, roomOccluded, &fog);
+
+			// Transmittance e^-60 at the nearest surface: the room is the volume's in-scatter alone.
+			VolumetricFog haze;
+			haze.Density = 20.0f;
+			haze.Anisotropy = 0.0f;
+			haze.Temporal = false;
+			DrawRoomInto(m_RoomHazed, roomPlain, nullptr, &haze);
+			DrawRoomInto(m_RoomHazedOccluded, roomOccluded, nullptr, &haze);
 		}
 
 		if (m_ShowRoom)
@@ -678,7 +709,10 @@ void main()
 		DestroyAndDelete(m_RoomOccluded);
 		DestroyAndDelete(m_RoomFogged);
 		DestroyAndDelete(m_RoomFoggedOccluded);
+		DestroyAndDelete(m_RoomHazed);
+		DestroyAndDelete(m_RoomHazedOccluded);
 		m_RoomFoggedPixels.clear();
+		m_RoomHazedPixels.clear();
 		DestroyAndDelete(m_SplitTarget);
 		DestroyAndDelete(m_DepthTarget);
 		m_RoomPlainPixels.clear();

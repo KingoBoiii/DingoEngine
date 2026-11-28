@@ -38,6 +38,8 @@ namespace Dingo
 	//  20. after Renderer3D::ResetVolumetricHistory, or a CameraComponent with ResetVolumetricHistory
 	//      rendered by the SceneRenderer, the next frame has no history, the flag is cleared and the
 	//      frame after blends again.
+	//  21. with the scene lit by a flat environment, the ambient in-scatter is the sky's radiance times
+	//      Intensity x LightingIntensity, sRGB-encoded, whatever the flat ambient colour is.
 	// The applied fog is checked a step a frame, after the temporal checks, on a 32 x 18 RGBA16F target
 	// where a pixel is a froxel column: a flat quad at the view depth of slice boundary z_b is read at
 	// texel b - 1, so a surface S comes out as S T + L with T = e^(-sigma z_b |ray|) and L = A (1 - T).
@@ -84,6 +86,8 @@ namespace Dingo
 			std::vector<Sun> Suns;
 			bool Slab = false;
 			bool WideSlab = false;
+			Environment* Sky = nullptr;
+			float SkyLighting = 1.0f;
 			VolumetricFog Fog;
 		};
 
@@ -98,6 +102,7 @@ namespace Dingo
 		void Check(bool condition, const std::string& name) { m_Checks.Check(condition, name); }
 		void RunChecks();
 		void CheckUniform();
+		void CheckEnvironmentAmbient();
 		void CheckHeightFalloff();
 		void CheckPhase();
 		void CheckShafts();

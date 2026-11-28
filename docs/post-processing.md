@@ -117,7 +117,8 @@ Under [fog](lighting.md#fog) the result fades by the same fog factor the lit sha
 so a wholly fogged mesh keeps no AO and meets the background without dark creases. `Renderer3D` hands
 its fog over (`PostProcessStack::SetAmbientOcclusionFog`) when it draws a fogged scene into the scene
 target; `Begin` clears it. A partly fogged pixel ends up as `mix(c, fog, f) × mix(ao, 1, f)`, close to
-fogging the occluded colour.
+fogging the occluded colour. Under [volumetric fog](volumetrics.md) it fades the same way by the
+volume's transmittance T at the pixel: `(c T + L) × mix(1, ao, T)`.
 
 ## What it costs and what differs
 
