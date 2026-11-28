@@ -697,7 +697,7 @@ PRs, and the DualShock/DualSense report layouts were checked against SDL and the
 against a pad. Linux has not run on real hardware.
 
 ## v1.3.0 — PBR, Environments and Volumetric Fog
-**Status**: merged, tag pending.
+**Status**: released on 2026-11-28 (PR #347 → `90c27315`, tag on `90c27315`).
 
 A minor release: additions and fixes. Existing lit materials and shipped games look the same as in
 1.2.x, because PBR is a separate material type and volumetrics are off until a game turns them on.
@@ -724,7 +724,7 @@ Left for 1.3.1: [#337](https://github.com/KingoBoiii/DingoEngine/issues/337) (de
 
 **Test**: the owner ran the v1.3 phases on an RX 7900 XTX (Vulkan, DX11, DX12, validation layers on,
 0 VUIDs); the results are in the comments on [#343](https://github.com/KingoBoiii/DingoEngine/pull/343), [#345](https://github.com/KingoBoiii/DingoEngine/pull/345), [#340](https://github.com/KingoBoiii/DingoEngine/pull/340), [#336](https://github.com/KingoBoiii/DingoEngine/pull/336) and
-[#335](https://github.com/KingoBoiii/DingoEngine/pull/335). Build Windows and Build Linux on the merge commit are recorded below once they pass.
+[#335](https://github.com/KingoBoiii/DingoEngine/pull/335). Build Windows and Build Linux passed on the merge commit.
 Release assets: 32 (Dustlight included).
 
 ---
