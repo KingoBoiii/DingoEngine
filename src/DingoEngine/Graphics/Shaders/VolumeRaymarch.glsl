@@ -39,13 +39,13 @@ layout(binding = 7, rgba16f) uniform writeonly image2D u_RayScatter;
 const float k_NoSurface = 1e30;
 const int k_MaxRaymarchVolumes = 4;
 
-vec3 DE_RaymarchSource(int volume, vec3 world, vec3 rayDirection, float sigmaT, float weight)
+vec3 DE_RaymarchSource(int volume, vec3 world, vec3 rayDirection, float sigmaT, float weight, vec3 ambient)
 {
 	vec3 coef = Volumes[volume].VolumeAlbedo.rgb * Volumes[volume].VolumeTint.rgb * (sigmaT * weight);
 	if (MediaGlobal.z > 0.5)
 		return DE_ShadowSampleColor(world) * dot(coef * Volumes[volume].VolumeLight.x, vec3(1.0 / 3.0));
 
-	vec3 light = DE_VolumeAmbient() * Volumes[volume].VolumeAlbedo.a;
+	vec3 light = ambient * Volumes[volume].VolumeAlbedo.a;
 
 	vec2 parts = ShadowCounts.y >= 0 ? DE_DirectionalShadowVolumeParts(world) : vec2(1.0, 0.0);
 	float strength = ShadowParams.x;
@@ -98,6 +98,7 @@ void main()
 	float volumeTransmittance[k_MaxRaymarchVolumes];
 	float volumeEntry[k_MaxRaymarchVolumes];
 	int count = 0;
+	vec3 ambient = DE_VolumeAmbient();
 
 	int first = int(RayParams.x);
 	int last = first + min(int(RayParams.y), k_MaxRaymarchVolumes);
@@ -126,7 +127,7 @@ void main()
 			DE_FogVolumeSample(volume, world, t, sigmaT, weight);
 			float stepTransmittance = DE_SliceTransmittance(sigmaT, stepLength);
 			if (sigmaT > 0.0)
-				scattered += transmittance * DE_RaymarchSource(volume, world, rayDirection, sigmaT, weight) * DE_SliceInScatterFactor(sigmaT, stepLength, stepTransmittance);
+				scattered += transmittance * DE_RaymarchSource(volume, world, rayDirection, sigmaT, weight, ambient) * DE_SliceInScatterFactor(sigmaT, stepLength, stepTransmittance);
 			transmittance *= stepTransmittance;
 		}
 

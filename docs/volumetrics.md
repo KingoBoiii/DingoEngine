@@ -211,8 +211,9 @@ encoded to display space like the PBR surfaces' ambient: a uniform sky of radian
 ambient colour of 1. Froxel and Raymarch volumes both take it.
 
 [Ambient occlusion](post-processing.md#ambient-occlusion) fades under the volume by the transmittance
-at each pixel's depth, so it darkens the surface behind the haze (`colour x T`) and leaves the
-in-scattered light alone: a mesh no light reaches through dense fog keeps no AO.
+at each pixel's depth, as it does under distance fog: the darkening is scaled by T, so a mesh seen
+through dense fog keeps no AO and haze no surface shows through takes none. Between, it is an
+approximation: at T = 0.5 a crease darkens half as much, and the in-scatter in front of it takes that too.
 
 ## Custom shaders
 
@@ -271,6 +272,8 @@ vec3 fogged(vec3 color, vec3 worldPosition, int target)   // target: 0 opaque/al
 
 - Ambient occlusion fades by the froxel volume of the last volumetric scene drawn into the post
   target before AO is applied; with several such scenes in one `Begin`, the earlier ones fade by it too.
+  When that renderer then draws a volumetric scene to another target in the same `Begin` (a mirror,
+  say), AO is not faded at all, because the volume no longer holds the post target's view.
 - An orthographic camera gets no volume.
 - One temporal scene a frame: a second view that frame, such as a minimap or a mirror, draws
   without the history.

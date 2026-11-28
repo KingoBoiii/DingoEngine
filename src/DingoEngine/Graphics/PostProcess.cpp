@@ -671,6 +671,16 @@ namespace Dingo
 		data.VolumeGrid = grid;
 	}
 
+	void Internal::PostProcessAccess::DropAmbientOcclusionVolume(PostProcessStack& post, const Texture* volume)
+	{
+		PostProcessStack::Data& data = *post.m_Data;
+		if (!data.Active || data.Volume != volume)
+			return;
+		data.Volume = nullptr;
+		data.VolumeParams = glm::vec4(0.0f);
+		data.VolumeGrid = glm::vec4(0.0f);
+	}
+
 	Texture* Internal::PostProcessAccess::RefreshSceneDepth(PostProcessStack& post, bool current)
 	{
 		PostProcessStack::Data& data = *post.m_Data;

@@ -266,7 +266,9 @@ namespace Dingo
 
 		Shader* inject = Internal::GetVolumetricShader(Internal::VolumetricShaderKind::Inject);
 		Shader* integrate = Internal::GetVolumetricShader(Internal::VolumetricShaderKind::Integrate);
-		if (!inject || !integrate || !m_IblIrradiance)
+		if (!m_IblIrradiance)
+			return false;
+		if (!inject || !integrate)
 		{
 			if (!m_VolumetricWarned)
 				DE_CORE_ERROR("Renderer3D: the volumetric fog shaders are not valid; scenes draw without volumetric fog until they are.");
@@ -432,6 +434,8 @@ namespace Dingo
 		PostProcessStack& post = Renderer::GetPostProcessStack();
 		if (post.IsActive() && post.GetSceneTarget() == Renderer::GetRenderTarget())
 			Internal::PostProcessAccess::SetAmbientOcclusionVolume(post, m_VolumetricIntegrated, m_CameraData.VolumeParams, m_CameraData.VolumeGrid);
+		else
+			Internal::PostProcessAccess::DropAmbientOcclusionVolume(post, m_VolumetricIntegrated);
 	}
 
 	void Renderer3D::DispatchVolumetrics(Texture* shadowAtlas)
@@ -578,7 +582,9 @@ namespace Dingo
 		if (!m_RaymarchCompositeShader)
 			m_RaymarchCompositeShader = new Internal::FullscreenShader("VolumeRaymarchComposite", "VolumeRaymarchComposite.glsl");
 		Shader* composite = m_RaymarchCompositeShader->GetShader();
-		if (!kernel || !composite || !composite->IsValid() || !m_IblIrradiance)
+		if (!m_IblIrradiance)
+			return false;
+		if (!kernel || !composite || !composite->IsValid())
 		{
 			if (!m_RaymarchWarned)
 				DE_CORE_ERROR("Renderer3D: the Raymarch fog volume shaders are not valid; Raymarch volumes are not drawn until they are.");

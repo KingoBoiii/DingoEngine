@@ -214,7 +214,8 @@ void main()
 	// would draw creases into a background that should be uniform.
 	if (Fog.w > 0.5 && Target.w < 0.5)
 		open = mix(open, 1.0, FogFactor(length(center)) * FogOpacity.x);
-	// The volume leaves color T + L: only the surface's share T takes the occlusion.
+	// The volume leaves color T + L. Scaling the darkening by T is exact at T = 0 and 1; between, the
+	// surface keeps more of it and the in-scatter takes a share, as with distance fog.
 	if (VolumeParams.x > 0.5 && Target.w < 0.5)
 		open = mix(1.0, open, VolumeTransmittance(v_TexCoord, max(abs(centerDepth), 1e-4)));
 	o_Color = vec4(vec3(open), 1.0);
