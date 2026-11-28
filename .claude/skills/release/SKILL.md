@@ -28,7 +28,7 @@ A release is a version branch merged into `master`, then a tag, a GitHub release
 ## 3. Merge and gate
 
 1. Merge only when the owner asks: `gh pr merge N --merge` (merge commit, never squash or rebase). Record the merge sha.
-2. `gh run list --commit <sha>` shows **Build Windows** and **Build Linux**. Wait with `gh run watch <id> --exit-status` in a background command. Both must pass before tagging; if one fails, stop and report the failing job and step.
+2. Master pushes that touch only `VERSION` and markdown start no build (`paths-ignore`), so a release merge has no run. Start both on the merge commit: `gh workflow run build-windows.yml --ref master` and `gh workflow run build-linux.yml --ref master`. `--ref` takes a branch or tag, never a sha, so it builds master's tip at dispatch: confirm the tip is the merge sha first (`git fetch origin && git rev-parse origin/master`; if master moved, tag-gate the newer sha or stop and ask). Then `gh run list --workflow <file> --branch master --limit 3 --json databaseId,headSha,status` and pick the run whose `headSha` is the merge sha. Wait with `gh run watch <id> --exit-status` in a background command. Both must pass on that sha before tagging; tag only that sha. If one fails, stop and report the failing job and step.
 
 ## 4. Tag and GitHub release
 
@@ -53,7 +53,7 @@ Delete the release branch locally and on origin (`git push origin --delete refs/
 ## Release candidate (`vX.Y.Z-rc.N`)
 
 - No version branch, PR or `VERSION` bump (steps 2 and 3.1 don't apply).
-- Tag the master merge commit to release from (for rc.1, the PR that finishes the milestone), after Build Windows and Build Linux pass there (step 3.2). Lightweight tag, full-ref push as in step 4.1.
+- Tag the master merge commit to release from (for rc.1, the PR that finishes the milestone), after Build Windows and Build Linux, started by hand, pass on that sha (step 3.2). Lightweight tag, full-ref push as in step 4.1.
 - Notes as in step 4.2, with `vX.Y.Z-rc.N` in the heading, the blob links and the compare link (the final tag doesn't exist yet). `gh release create vX.Y.Z-rc.N --verify-tag --prerelease --title vX.Y.Z-rc.N --notes-file <file>`, then check `gh release view vX.Y.Z-rc.N --json isPrerelease,isDraft` gives `true`/`false`; it must not show as Latest.
 - Step 5 as usual: `gh workflow run build-release.yml --ref vX.Y.Z-rc.N`, expect the same count as step 5 (**32 assets** today). The workflow accepts only tags matching `^v\d+\.\d+\.\d+(-rc\.\d+)?$`.
 - Skip step 6 and step 7's branch deletion. Add an "RC tagged" line to the milestone plan (commit it straight to `master` like step 6), then reply as step 7 does: release URL, tag sha, asset count.
