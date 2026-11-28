@@ -428,6 +428,10 @@ namespace Dingo
 		m_CameraData.VolumeGrid = glm::vec4(glm::vec3(grid), 1.0f / firstSliceDepth);
 		m_SceneVolumeParams = m_CameraData.VolumeParams;
 		m_SceneVolumeGrid = m_CameraData.VolumeGrid;
+
+		PostProcessStack& post = Renderer::GetPostProcessStack();
+		if (post.IsActive() && post.GetSceneTarget() == Renderer::GetRenderTarget())
+			Internal::PostProcessAccess::SetAmbientOcclusionVolume(post, m_VolumetricIntegrated, m_CameraData.VolumeParams, m_CameraData.VolumeGrid);
 	}
 
 	void Renderer3D::DispatchVolumetrics(Texture* shadowAtlas)

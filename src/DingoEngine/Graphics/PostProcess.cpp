@@ -38,6 +38,8 @@ namespace Dingo
 			glm::vec4 Blur{ 0.0f };   // xy = the blur's step in UV, zw = one depth texel in UV
 			glm::vec4 Fog{ 0.0f };    // the apply pass's: x = start, y = end, z = density, w = FogMode (0 = none)
 			glm::vec4 FogOpacity{ 0.0f }; // x = the fog's MaxOpacity
+			glm::vec4 VolumeParams{ 0.0f }; // the apply pass's froxel volume, as Renderer3D::CameraData's
+			glm::vec4 VolumeGrid{ 0.0f };
 		};
 
 		constexpr uint32_t k_BloomLevels = 6;
@@ -118,6 +120,9 @@ namespace Dingo
 		std::unique_ptr<Internal::FullscreenShader> DepthRestoreShader;
 		// What the tone map's bloom slot samples while bloom is off, so its binding set stays complete.
 		Texture* Black = nullptr;
+		// What the AO apply pass's volume slot samples with no froxel volume: transmittance 1. The same
+		// format and dimension as Renderer3D's volume, so switching between them only re-bakes the set.
+		Texture* ClearVolume = nullptr;
 
 		bool Active = false;
 		bool Skipped = false;
@@ -129,6 +134,9 @@ namespace Dingo
 		glm::mat4 Projection{ 1.0f };
 		glm::vec4 Fog{ 0.0f };
 		float FogOpacity = 0.0f;
+		Texture* Volume = nullptr;
+		glm::vec4 VolumeParams{ 0.0f };
+		glm::vec4 VolumeGrid{ 0.0f };
 		bool HasProjection = false;
 		bool AmbientOcclusionApplied = false;
 		bool DepthCopied = false;
@@ -257,6 +265,20 @@ namespace Dingo
 			chain.Apply->SetSampler(0, Renderer::GetPointSampler());
 			chain.Apply->SetTexture(1, CopyDepth(target));
 			chain.Apply->SetSampler(1, Renderer::GetPointSampler());
+			if (!ClearVolume)
+			{
+				const uint16_t clearTexel[4] = { 0x0000, 0x0000, 0x0000, 0x3C00 };
+				ClearVolume = Texture::Create(TextureParams()
+					.SetDebugName("Post clear volume")
+					.SetWidth(1)
+					.SetHeight(1)
+					.SetDepth(1)
+					.SetFormat(TextureFormat::RGBA16F)
+					.SetDimension(TextureDimension::Texture3D)
+					.SetInitialData(clearTexel));
+			}
+			chain.Apply->SetTexture(2, ClearVolume);
+			chain.Apply->SetSampler(2, Renderer::GetClampSampler());
 			return chain;
 		}
 
@@ -320,6 +342,10 @@ namespace Dingo
 			data.Blur = glm::vec4(0.0f, 0.0f, depthTexel);
 			data.Fog = fog;
 			data.FogOpacity = glm::vec4(fogOpacity, 0.0f, 0.0f, 0.0f);
+			const bool volume = Volume && !orthographic;
+			data.VolumeParams = volume ? VolumeParams : glm::vec4(0.0f);
+			data.VolumeGrid = volume ? VolumeGrid : glm::vec4(0.0f);
+			chain.Apply->SetTexture(2, volume ? Volume : ClearVolume);
 			SetUniformIfChanged(chain.Apply, data);
 			Internal::DrawFullscreen(chain.Apply, target.Target);
 			Renderer::EndGpuTimer();
@@ -502,6 +528,7 @@ namespace Dingo
 		m_Data->DepthCopyShader.reset();
 		m_Data->DepthRestoreShader.reset();
 		DestroyAndDelete(m_Data->Black);
+		DestroyAndDelete(m_Data->ClearVolume);
 		m_Data->Active = false;
 	}
 
@@ -556,6 +583,9 @@ namespace Dingo
 		data.HasProjection = false;
 		data.Fog = glm::vec4(0.0f);
 		data.FogOpacity = 0.0f;
+		data.Volume = nullptr;
+		data.VolumeParams = glm::vec4(0.0f);
+		data.VolumeGrid = glm::vec4(0.0f);
 		data.AmbientOcclusionApplied = false;
 		data.DepthCopied = false;
 
@@ -629,6 +659,16 @@ namespace Dingo
 		data.DepthCopied = false;
 		post.ApplyAmbientOcclusion();
 		return data.DepthCopied;
+	}
+
+	void Internal::PostProcessAccess::SetAmbientOcclusionVolume(PostProcessStack& post, Texture* volume, const glm::vec4& params, const glm::vec4& grid)
+	{
+		PostProcessStack::Data& data = *post.m_Data;
+		if (!data.Active)
+			return;
+		data.Volume = volume;
+		data.VolumeParams = params;
+		data.VolumeGrid = grid;
 	}
 
 	Texture* Internal::PostProcessAccess::RefreshSceneDepth(PostProcessStack& post, bool current)
